@@ -1,0 +1,73 @@
+# Pushing to the `release` branch builds the installers and publishes them as the GitHub Release
+# for package.json's version. To ship a new version, bump the version first; pushing the same
+# version again replaces its files.
+name: Release
+
+on:
+  push:
+    branches: [release]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        # Add a row to build for another platform (and its target flags).
+        include:
+          - name: macos
+            runner: macos-latest
+            flags: --mac dmg zip --arm64 --x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx electron-builder ${{ matrix.flags }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Check the app's signature and launch it
+        if: matrix.name == 'macos'
+        run: |
+          codesign --verify --deep --strict release/mac-arm64/gi-ui.app
+          GI_UI_SMOKE_TEST=1 perl -e 'alarm 120; exec @ARGV' release/mac-arm64/gi-ui.app/Contents/MacOS/gi-ui | tee smoke.json
+          grep -q '"ok":true' smoke.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.AppImage
+            release/*.deb
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$(node -p "require('./package.json').version")"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" installers/* --clobber
+          else
+            gh release create "$tag" installers/* --title "gi-ui $tag" --target "$GITHUB_SHA" --generate-notes
+          fi
