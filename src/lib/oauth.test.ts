@@ -156,7 +156,7 @@ describe('pollDeviceToken', () => {
 
 describe('takeWebOAuthResult', () => {
   function fakeSessionStorage(initial?: string) {
-    const store = new Map<string, string>(initial === undefined ? [] : [['gi-ui:oauth-handoff', initial]])
+    const store = new Map<string, string>(initial === undefined ? [] : [['gh-ui:oauth-handoff', initial]])
     vi.stubGlobal('sessionStorage', {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),

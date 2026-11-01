@@ -1,4 +1,4 @@
-// gi-ui desktop shell. Serves the built SPA over app://gi-ui (so the router
+// gh-ui desktop shell. Serves the built SPA over app://gh-ui (so the router
 // and absolute asset paths work like on the web) and exposes a narrow IPC surface:
 // encrypted secrets, the gh CLI token, CORS-free requests to GitHub hosts, and
 // allow-listed git commands inside repositories the user registered.
@@ -11,13 +11,13 @@ const crypto = require('node:crypto')
 const { execFile } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
 
-const DEV_URL = process.env.GI_UI_DEV_URL
+const DEV_URL = process.env.GH_UI_DEV_URL
 const DIST = path.join(__dirname, '..', 'dist')
-const APP_ORIGIN = 'app://gi-ui'
+const APP_ORIGIN = 'app://gh-ui'
 const isMac = process.platform === 'darwin'
 
 // Tests run against a throwaway profile so they never touch real accounts or repos.
-if (process.env.GI_UI_USER_DATA) app.setPath('userData', path.resolve(process.env.GI_UI_USER_DATA))
+if (process.env.GH_UI_USER_DATA) app.setPath('userData', path.resolve(process.env.GH_UI_USER_DATA))
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
@@ -60,8 +60,8 @@ async function writeJson(name, value) {
 }
 
 // Secrets: encrypted with the OS keychain via safeStorage when available. A throwaway
-// test profile (GI_UI_USER_DATA) skips the keychain so automated runs never prompt.
-const canEncrypt = () => !process.env.GI_UI_USER_DATA && safeStorage.isEncryptionAvailable()
+// test profile (GH_UI_USER_DATA) skips the keychain so automated runs never prompt.
+const canEncrypt = () => !process.env.GH_UI_USER_DATA && safeStorage.isEncryptionAvailable()
 
 async function secretsGet(key) {
   const store = await readJson('secrets.json', {})
@@ -147,14 +147,14 @@ function isPrivateHost(host) {
 async function httpRequest(req) {
   const url = new URL(req.url)
   if (url.protocol !== 'https:' || isPrivateHost(url.hostname)) throw new Error('Only public https URLs are allowed')
-  const headers = { 'user-agent': 'gi-ui', ...(req.headers || {}) }
+  const headers = { 'user-agent': 'gh-ui', ...(req.headers || {}) }
   // body is a string, or a Uint8Array for binary uploads (release assets to uploads.github.com).
   let res = await net.fetch(url.toString(), { method: req.method || 'GET', headers, body: req.body, redirect: 'manual' })
   // Follow one redirect (Actions logs → pre-signed blob URL) without the token.
   if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
     const next = new URL(res.headers.get('location'), url)
     if (next.protocol !== 'https:') throw new Error('Refusing non-https redirect')
-    res = await net.fetch(next.toString(), { headers: { 'user-agent': 'gi-ui' } })
+    res = await net.fetch(next.toString(), { headers: { 'user-agent': 'gh-ui' } })
   }
   const outHeaders = {}
   res.headers.forEach((v, k) => (outHeaders[k] = v))
@@ -276,7 +276,7 @@ function createWindow() {
     height: 920,
     minWidth: 900,
     minHeight: 600,
-    title: 'gi-ui',
+    title: 'gh-ui',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d1117' : '#ffffff',
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 18, y: 22 },
@@ -285,16 +285,16 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      additionalArguments: [`--gi-ui-version=${app.getVersion()}`],
+      additionalArguments: [`--gh-ui-version=${app.getVersion()}`],
     },
   })
   mainWindow.loadURL(DEV_URL || `${APP_ORIGIN}/`)
   mainWindow.on('closed', () => (mainWindow = null))
-  if (process.env.GI_UI_E2E) e2eTest(mainWindow, process.env.GI_UI_E2E)
-  else if (process.env.GI_UI_SMOKE_TEST) smokeTest(mainWindow)
+  if (process.env.GH_UI_E2E) e2eTest(mainWindow, process.env.GH_UI_E2E)
+  else if (process.env.GH_UI_SMOKE_TEST) smokeTest(mainWindow)
 }
 
-// GI_UI_E2E=<file.cjs> electron . — runs scripted steps inside the real renderer
+// GH_UI_E2E=<file.cjs> electron . — runs scripted steps inside the real renderer
 // (through the real preload bridge), prints one JSON report and exits. Each step is
 // { name, js, waitMs }: `js` is an async function body; waitMs lets navigations settle.
 function e2eTest(win, file) {
@@ -321,7 +321,7 @@ function e2eTest(win, file) {
   })
 }
 
-// GI_UI_SMOKE_TEST=1 electron . — loads the UI, checks the bridge, the first render and
+// GH_UI_SMOKE_TEST=1 electron . — loads the UI, checks the bridge, the first render and
 // that Primer's styles apply at the default window size (a button keeps the browser's
 // narrow padding without them), prints a JSON report and exits non-zero on failure (for CI).
 function smokeTest(win) {
@@ -332,7 +332,7 @@ function smokeTest(win) {
   win.webContents.once('did-finish-load', () => {
     setTimeout(async () => {
       const report = await win.webContents.executeJavaScript(
-        `({ styled: parseFloat(getComputedStyle(document.querySelector('button')).paddingLeft) >= 8, url: location.href, bridge: typeof window.giUi === 'object' && typeof window.giUi.git === 'function', platform: window.giUi && window.giUi.platform, rendered: (document.getElementById('root') || {}).childElementCount > 0, title: document.title, heading: (document.querySelector('h1') || {}).textContent || null })`,
+        `({ styled: parseFloat(getComputedStyle(document.querySelector('button')).paddingLeft) >= 8, url: location.href, bridge: typeof window.ghUi === 'object' && typeof window.ghUi.git === 'function', platform: window.ghUi && window.ghUi.platform, rendered: (document.getElementById('root') || {}).childElementCount > 0, title: document.title, heading: (document.querySelector('h1') || {}).textContent || null })`,
       )
       const ok = report.bridge && report.rendered && report.styled && errors.length === 0
       process.stdout.write(JSON.stringify({ ok, ...report, errors }) + '\n')
@@ -345,7 +345,7 @@ function smokeTest(win) {
 function isAppUrl(url) {
   const u = new URL(url)
   if (DEV_URL) return u.origin === new URL(DEV_URL).origin
-  return u.protocol === 'app:' && u.host === 'gi-ui'
+  return u.protocol === 'app:' && u.host === 'gh-ui'
 }
 
 app.on('web-contents-created', (_e, contents) => {

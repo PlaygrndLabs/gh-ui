@@ -87,7 +87,7 @@ function AccountsSettings() {
         ))}
       </div>
       <p className="fg-muted text-small mt-3">
-        {isNative ? 'Tokens are encrypted at rest with Electron safeStorage (macOS Keychain, Windows DPAPI, libsecret).' : 'In the browser, tokens live in localStorage for this origin only.'} Signing out removes the token from gi-ui; revoke it on GitHub to invalidate it everywhere.
+        {isNative ? 'Tokens are encrypted at rest with Electron safeStorage (macOS Keychain, Windows DPAPI, libsecret).' : 'In the browser, tokens live in localStorage for this origin only.'} Signing out removes the token from gh-ui; revoke it on GitHub to invalidate it everywhere.
       </p>
     </>
   )
@@ -143,7 +143,7 @@ function AgentSettingsPanel() {
             </FormControl>
             <FormControl>
               <Radio value="proxy" checked={settings.mode === 'proxy'} onChange={() => updateSettings({ mode: 'proxy' })} />
-              <FormControl.Label>Use a gi-ui Worker</FormControl.Label>
+              <FormControl.Label>Use a gh-ui Worker</FormControl.Label>
               <FormControl.Caption>
                 The Cloudflare Worker holds the key and only serves GitHub users you allow (ALLOWED_GITHUB_USERS).
                 {server && (server.anthropicProxy ? ' This deployment has a key configured.' : ' This deployment has no ANTHROPIC_API_KEY set.')}
@@ -198,7 +198,7 @@ function AgentSettingsPanel() {
         ) : (
           <FormControl>
             <FormControl.Label>Worker URL</FormControl.Label>
-            <TextInput block value={settings.proxyUrl} placeholder={isNative ? 'https://gi-ui.example.workers.dev' : 'Leave empty to use this site'} onChange={(e) => updateSettings({ proxyUrl: e.target.value })} />
+            <TextInput block value={settings.proxyUrl} placeholder={isNative ? 'https://gh-ui.example.workers.dev' : 'Leave empty to use this site'} onChange={(e) => updateSettings({ proxyUrl: e.target.value })} />
             <FormControl.Caption>Your GitHub token is sent to the Worker so it can confirm who you are.</FormControl.Caption>
           </FormControl>
         )}

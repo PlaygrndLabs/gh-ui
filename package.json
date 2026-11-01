@@ -1,11 +1,11 @@
 {
-  "name": "gi-ui",
-  "productName": "gi-ui",
+  "name": "gh-ui",
+  "productName": "gh-ui",
   "license": "MIT",
-  "homepage": "https://github.com/PlaygrndLabs/gi-ui",
+  "homepage": "https://github.com/PlaygrndLabs/gh-ui",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/PlaygrndLabs/gi-ui.git"
+    "url": "git+https://github.com/PlaygrndLabs/gh-ui.git"
   },
   "version": "0.1.0",
   "description": "A GitHub client with the github.com interface, native desktop shell, and a built-in code review agent.",
@@ -18,7 +18,7 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p worker/tsconfig.json",
     "preview": "vite preview",
     "test": "vitest run",
-    "electron:dev": "concurrently -k \"vite --port 5174 --strictPort\" \"wait-on tcp:5174 && cross-env GI_UI_DEV_URL=http://localhost:5174 electron .\"",
+    "electron:dev": "concurrently -k \"vite --port 5174 --strictPort\" \"wait-on tcp:5174 && cross-env GH_UI_DEV_URL=http://localhost:5174 electron .\"",
     "electron:build": "npm run build && electron-builder --dir",
     "electron:dist": "npm run build && electron-builder",
     "cf:dev": "npm run build && wrangler dev",
@@ -26,8 +26,8 @@
     "test:e2e:desktop": "npm run build && sh scripts/e2e-desktop.sh"
   },
   "build": {
-    "appId": "dev.gi-ui.app",
-    "productName": "gi-ui",
+    "appId": "dev.gh-ui.app",
+    "productName": "gh-ui",
     "directories": {
       "output": "release",
       "buildResources": "build"

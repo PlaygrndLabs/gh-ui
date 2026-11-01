@@ -82,10 +82,10 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          app=release/mac-arm64/gi-ui.app
+          app=release/mac-arm64/gh-ui.app
           codesign --verify --deep --strict "$app"
           test "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "$VERSION"
-          GI_UI_SMOKE_TEST=1 perl -e 'alarm 120; exec @ARGV' "$app/Contents/MacOS/gi-ui" | tee smoke.json
+          GH_UI_SMOKE_TEST=1 perl -e 'alarm 120; exec @ARGV' "$app/Contents/MacOS/gh-ui" | tee smoke.json
           grep -q '"ok":true' smoke.json
       - uses: actions/upload-artifact@v4
         with:
@@ -126,4 +126,4 @@ jobs:
             echo "::error::$TAG is already released"
             exit 1
           fi
-          gh release create "$TAG" installers/* --title "gi-ui $TAG" --target "$GITHUB_SHA" --generate-notes --latest
+          gh release create "$TAG" installers/* --title "gh-ui $TAG" --target "$GITHUB_SHA" --generate-notes --latest

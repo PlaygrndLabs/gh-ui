@@ -1,4 +1,4 @@
-// Desktop end-to-end scenario for `GI_UI_E2E=e2e/desktop.e2e.cjs electron .`
+// Desktop end-to-end scenario for `GH_UI_E2E=e2e/desktop.e2e.cjs electron .`
 // (see scripts/e2e-desktop.sh, which prepares the fixtures and a throwaway profile).
 //
 // Every step runs inside the real renderer, through the real preload bridge and
@@ -10,7 +10,7 @@ const PARENT = process.env.E2E_CLONE_PARENT
 const j = JSON.stringify
 
 const helpers = `
-  const g = window.giUi
+  const g = window.ghUi
   const byText = (sel, text) => [...document.querySelectorAll(sel)].find((el) => el.textContent.trim().includes(text))
   const setInput = (el, value) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value)
@@ -31,7 +31,7 @@ exports.steps = [
       const repo = await g.repos.add(${j(LOCAL)})
       const before = await g.git(repo.id, ['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'])
       await g.git(repo.id, ['add', '--', 'notes.md'])
-      const commit = await g.git(repo.id, ['commit', '-m', 'Add notes', '-m', 'Written by the gi-ui e2e test'])
+      const commit = await g.git(repo.id, ['commit', '-m', 'Add notes', '-m', 'Written by the gh-ui e2e test'])
       const log = await g.git(repo.id, ['log', '-n', '2', '--pretty=format:%s'])
       const after = await g.git(repo.id, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])
       const preview = await g.git(repo.id, ['diff', '--no-index', '--', '/dev/null', 'scratch.txt'])

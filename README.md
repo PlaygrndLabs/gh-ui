@@ -1,19 +1,19 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/cover-dark.png" />
-    <img src="docs/assets/cover-light.png" alt="gi-ui: manage repositories and review code with an agent" width="100%" />
+    <img src="docs/assets/cover-light.png" alt="gh-ui: a GUI for GitHub, with a code review agent" width="100%" />
   </picture>
 </p>
 
-# gi-ui: a GitHub client with a built-in code review agent
+# gh-ui: a GUI for GitHub, with a built-in code review agent
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Manage your repositories and review code with an agent, in an app signed in with just a token.** PRs, Actions, issues, releases and repository settings look and work like github.com, with local git and a Claude agent beside them.
+**Like the `gh` CLI, but with a graphical interface.** Pull requests, Actions, issues, releases and repository settings look and work like github.com, with local git and a Claude agent beside them. Sign in with just a token, or reuse your `gh` login.
 
-## Why gi-ui
+## Why gh-ui
 
-Reviewing a change usually means moving between the website, the terminal and your editor. gi-ui puts them in one app, with an agent that can do the follow-up work.
+`gh` brings GitHub to your terminal. gh-ui brings it to an app, so you can read diffs, follow a failing run and review a change in one place, with an agent that can do the follow-up work.
 
 - **Review.** Multi-line comments, suggestions you can commit, and pending reviews started anywhere.
 - **Agent.** Reviews code, answers or fixes CodeRabbit and Greptile comments, and re-runs Actions. Every write waits for your approval.
@@ -23,7 +23,7 @@ Reviewing a change usually means moving between the website, the terminal and yo
 
 ## Install
 
-Download the macOS installer from [Releases](https://github.com/PlaygrndLabs/gi-ui/releases): `arm64` for Apple Silicon, `x64` for Intel. The app isn't notarized, so on first launch choose **Open Anyway** in System Settings → Privacy & Security.
+Download the macOS installer from [Releases](https://github.com/PlaygrndLabs/gh-ui/releases): `arm64` for Apple Silicon, `x64` for Intel. The app isn't notarized, so on first launch choose **Open Anyway** in System Settings → Privacy & Security.
 
 ## Run from source
 
@@ -42,4 +42,4 @@ To package the app, run `npm run electron:dist`. A web build for Cloudflare Work
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). gh-ui is an independent project, not affiliated with GitHub.

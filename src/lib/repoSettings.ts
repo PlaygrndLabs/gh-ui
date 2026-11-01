@@ -129,7 +129,7 @@ export function directAccessSummary(collaborators: number, invitations: number, 
 // ---------------------------------------------------------------------------
 // Classic branch protection rules
 
-/** The fields gi-ui reads and writes on a BranchProtectionRule (GraphQL). */
+/** The fields gh-ui reads and writes on a BranchProtectionRule (GraphQL). */
 export const PROTECTION_RULE_FIELDS = `id databaseId pattern
   requiresApprovingReviews requiredApprovingReviewCount dismissesStaleReviews requiresCodeOwnerReviews requireLastPushApproval
   requiresStatusChecks requiresStrictStatusChecks requiredStatusCheckContexts
@@ -340,7 +340,7 @@ export function webhookFormFromHook(hook: WebhookLike): WebhookForm {
   }
 }
 
-/** The events a form subscribes to; individual events keep ones gi-ui doesn't list (set through the API). */
+/** The events a form subscribes to; individual events keep ones gh-ui doesn't list (set through the API). */
 export function webhookEvents(form: WebhookForm) {
   if (form.eventChoice === 'all') return ['*']
   if (form.eventChoice === 'push') return ['push']

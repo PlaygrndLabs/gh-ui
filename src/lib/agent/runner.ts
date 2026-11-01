@@ -237,12 +237,12 @@ function isNetworkError(err: unknown): boolean {
 
 export function createClient(settings: AgentSettings, apiKey: string | null, proxyBase: string | null, github: { token: string; host: string }) {
   if (settings.mode === 'proxy') {
-    if (!proxyBase) throw new Error('Set the gi-ui Worker URL in Settings → Agent to use proxy mode in the desktop app.')
+    if (!proxyBase) throw new Error('Set the gh-ui Worker URL in Settings → Agent to use proxy mode in the desktop app.')
     return new Anthropic({
       apiKey: 'proxy',
       baseURL: proxyBase,
       dangerouslyAllowBrowser: true,
-      defaultHeaders: { 'x-gi-ui-github-token': github.token, 'x-gi-ui-github-host': github.host },
+      defaultHeaders: { 'x-gh-ui-github-token': github.token, 'x-gh-ui-github-host': github.host },
     })
   }
   if (!apiKey) throw new Error(isNative ? 'Add an Anthropic API key in Settings → Agent.' : 'Add an Anthropic API key in Settings → Agent, or switch to proxy mode.')

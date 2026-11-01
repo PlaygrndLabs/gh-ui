@@ -354,7 +354,7 @@ function ReleaseForm(props: ReleaseFormProps) {
       {canUploadAssets ? (
         <AssetDropzone onFiles={addFiles} disabled={busy} />
       ) : (
-        <p className="release-form-note">Attaching binaries needs the gi-ui desktop app: GitHub’s upload server doesn’t accept uploads from web pages.</p>
+        <p className="release-form-note">Attaching binaries needs the gh-ui desktop app: GitHub’s upload server doesn’t accept uploads from web pages.</p>
       )}
       <div className="release-form-options">
         <FormControl>

@@ -58,7 +58,7 @@ export function useLinkInterceptor() {
     if (e.metaKey || e.ctrlKey) return
     e.preventDefault()
     // App routes mirror GitHub paths, so resolve relative hrefs against the GitHub page for this route
-    // rather than the app's own origin (app://gi-ui in Electron), which appPathFromUrl never matches.
+    // rather than the app's own origin (app://gh-ui in Electron), which appPathFromUrl never matches.
     let url: string
     try {
       url = new URL(href, webBaseFor(account.host) + window.location.pathname + window.location.search).toString()

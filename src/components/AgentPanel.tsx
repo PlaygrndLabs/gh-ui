@@ -29,7 +29,7 @@ function LocalMarkdown({ text }: { text: string }) {
 
 const GENERAL_SUGGESTIONS = [
   { label: 'What needs my review?', prompt: 'Which open pull requests are waiting on my review (search_issues with review-requested:@me)? Summarize each in one line with its CI state.' },
-  { label: 'What can you do?', prompt: 'What can you help me with in gi-ui? List the kinds of tasks your tools support, with an example request for each.' },
+  { label: 'What can you do?', prompt: 'What can you help me with in gh-ui? List the kinds of tasks your tools support, with an example request for each.' },
 ]
 
 export function AgentPanel({ withLocalBar }: { withLocalBar: boolean }) {

@@ -106,7 +106,7 @@ export const canUploadAssets = !!native
 
 /** Uploads one file to a release through the desktop main process (see canUploadAssets). */
 export async function uploadReleaseAsset(account: Pick<Account, 'token'>, uploadUrl: string, file: File): Promise<void> {
-  if (!native) throw new Error('Uploading release assets needs the gi-ui desktop app.')
+  if (!native) throw new Error('Uploading release assets needs the gh-ui desktop app.')
   const res = await native.http({
     url: assetUploadUrl(uploadUrl, file.name),
     method: 'POST',

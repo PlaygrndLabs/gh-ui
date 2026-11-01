@@ -126,7 +126,7 @@ export function NotFound() {
   return (
     <div className="container-lg">
       <Blankslate icon={<AlertIcon size={32} />} title="Page not found">
-        gi-ui does not have a view for this page yet.
+        gh-ui does not have a view for this page yet.
       </Blankslate>
     </div>
   )
@@ -137,7 +137,7 @@ function OrgRedirect() {
   const { org = '', tab } = useParams()
   // Keep github.com's filters (/orgs/x/repositories?q=…&type=…): the Repositories tab reads the same names.
   const search = new URLSearchParams(useLocation().search)
-  // Tabs gi-ui doesn't have (packages, teams, …) land on the overview.
+  // Tabs gh-ui doesn't have (packages, teams, …) land on the overview.
   if (tab && ['repositories', 'projects', 'people'].includes(tab)) search.set('tab', tab)
   const query = search.toString()
   return <Navigate to={`/${org}${query ? `?${query}` : ''}`} replace />

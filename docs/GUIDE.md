@@ -1,9 +1,9 @@
-# gi-ui
+# gh-ui
 
 A GitHub client that looks and works like github.com — built on GitHub's own Primer design system — with local repository management and a built-in Claude agent that reviews code, handles CodeRabbit / Greptile comments, fixes failing CI and re-runs Actions.
 
 - **Desktop app (Electron)** — everything runs on your computer: GitHub API calls, sign-in, Actions logs, local git, and the agent (with your own Anthropic key). No server involved.
-- **Web build (optional)** — the same UI deployed to Cloudflare Workers, for using gi-ui from a browser. The Worker only exists for the few things a browser can't do itself.
+- **Web build (optional)** — the same UI deployed to Cloudflare Workers, for using gh-ui from a browser. The Worker only exists for the few things a browser can't do itself.
 
 ## Run the desktop app
 
@@ -35,7 +35,7 @@ Versions are `vX.Y.Z` git tags, and a published version is never replaced. `scri
 
 `package.json`'s version is a floor: set it higher to choose a version yourself, such as `1.0.0`. It isn't updated on each release; the installers get the tag's version at build time.
 
-macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electron-builder docs), so macOS blocks the first launch: open the app, then choose **Open Anyway** in System Settings → Privacy & Security. Smoke test a build: `GI_UI_SMOKE_TEST=1 release/mac-arm64/gi-ui.app/Contents/MacOS/gi-ui`.
+macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electron-builder docs), so macOS blocks the first launch: open the app, then choose **Open Anyway** in System Settings → Privacy & Security. Smoke test a build: `GH_UI_SMOKE_TEST=1 release/mac-arm64/gh-ui.app/Contents/MacOS/gh-ui`.
 
 ## Sign in
 
@@ -48,7 +48,7 @@ macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electr
 | GitHub Enterprise Server / GHE.com | ✓ | ✓ | “Change host” on the login screen. |
 | GitHub App installation token (`ghs_`) | — | — | Not accepted: it has no user. Use the app's client ID with the device flow instead. |
 
-Multiple accounts are supported (avatar panel → Add account / switch). Signing in again with the same login on the same host replaces that account's saved token. On desktop, tokens are encrypted with the OS keychain (Electron `safeStorage`); in the browser they live in `localStorage` for that origin. When GitHub starts rejecting a saved token (revoked, or an expired `ghu_` token), a banner offers **Sign in again**; gi-ui can't refresh tokens itself because GitHub's refresh grant needs the client secret.
+Multiple accounts are supported (avatar panel → Add account / switch). Signing in again with the same login on the same host replaces that account's saved token. On desktop, tokens are encrypted with the OS keychain (Electron `safeStorage`); in the browser they live in `localStorage` for that origin. When GitHub starts rejecting a saved token (revoked, or an expired `ghu_` token), a banner offers **Sign in again**; gh-ui can't refresh tokens itself because GitHub's refresh grant needs the client secret.
 
 ### Creating an OAuth App for sign-in
 
@@ -56,11 +56,11 @@ At github.com → Settings → Developer settings → OAuth Apps → New OAuth A
 
 | Field | Value |
 | --- | --- |
-| Application name | Anything (`gi-ui`); it's what the “Authorize” screen shows. |
+| Application name | Anything (`gh-ui`); it's what the “Authorize” screen shows. |
 | Homepage URL | Any URL, e.g. your GitHub profile. |
 | Redirect URI | Web OAuth only: `https://<your-domain>/api/oauth/callback` (locally `http://127.0.0.1:8799/api/oauth/callback`). Leave wildcard matching off. |
 | Enable Device Flow | On. |
-| Expire user access tokens | **Off.** gi-ui doesn't refresh tokens: refreshing needs the client secret, which a desktop app can't keep. With expiry on, you'd sign in again every 8 hours. |
+| Expire user access tokens | **Off.** gh-ui doesn't refresh tokens: refreshing needs the client secret, which a desktop app can't keep. With expiry on, you'd sign in again every 8 hours. |
 
 The client ID is public and can be shared or built in (`VITE_GITHUB_CLIENT_ID`). The client secret is only needed by the Worker's web flow; keep it out of the repo (`.dev.vars` locally, `wrangler secret put` in production). Anyone can authorize an OAuth App, but each person only gets a token for their own account.
 
@@ -115,7 +115,7 @@ Worker routes: `/api/config`, `/api/gh-login/*` (device-flow proxy; github.com s
 
 ## Security model (desktop)
 
-- The UI is served from a custom `app://gi-ui` origin with a CSP; navigation away from it opens your browser instead.
+- The UI is served from a custom `app://gh-ui` origin with a CSP; navigation away from it opens your browser instead.
 - Rendered markdown comes from GitHub's own HTML and is sanitized again with DOMPurify.
 - The renderer can only run allow-listed git subcommands inside repositories you added, and never with options that execute programs, write arbitrary files or force-overwrite (`electron/git-policy.cjs`, tested in `electron/git-policy.test.ts`). Your token is given to git only for HTTPS fetch/pull/push/clone to the signed-in host, through an environment-scoped credential helper.
 - Main-process HTTP (device flow, logs) is limited to public HTTPS hosts and drops the token on redirects.
@@ -133,7 +133,7 @@ Layout: `src/` React app (`pages/`, `components/`, `lib/` incl. `lib/agent/`), `
 
 ## Packaging for Windows and Linux
 
-`npm run electron:dist` is set up for NSIS (Windows) and AppImage + deb (Linux). From an Apple Silicon Mac the Windows app and the Linux AppImage/deb were built. The Linux arm64 app was launched in an Ubuntu 24.04 container under Xvfb and passed the smoke test (`GI_UI_SMOKE_TEST=1 ./gi-ui --no-sandbox`); the Windows app hasn't been launched. Two things need you:
+`npm run electron:dist` is set up for NSIS (Windows) and AppImage + deb (Linux). From an Apple Silicon Mac the Windows app and the Linux AppImage/deb were built. The Linux arm64 app was launched in an Ubuntu 24.04 container under Xvfb and passed the smoke test (`GH_UI_SMOKE_TEST=1 ./gh-ui --no-sandbox`); the Windows app hasn't been launched. Two things need you:
 
 - The `.deb` needs a maintainer: add `author` (`name`, `email`) to `package.json`, or `build.linux.maintainer`.
 - electron-builder's default NSIS and AppImage tools are x86_64 only: install Rosetta 2 or build on Windows/Linux CI. Without `xz`/`gtar` on macOS, the deb also needs `-c.deb.compression=gz`.

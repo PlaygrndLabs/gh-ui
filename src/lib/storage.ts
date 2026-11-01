@@ -1,6 +1,6 @@
 import { native } from './platform'
 
-const PREFIX = 'gi-ui:'
+const PREFIX = 'gh-ui:'
 
 // Secrets (GitHub tokens, Anthropic key). The desktop app encrypts them with the OS
 // keychain via Electron safeStorage; the web build can only use localStorage.

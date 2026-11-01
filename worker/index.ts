@@ -1,4 +1,4 @@
-// gi-ui on Cloudflare: serves the built SPA from Workers Static Assets and
+// gh-ui on Cloudflare: serves the built SPA from Workers Static Assets and
 // handles the few things a browser can't do on its own.
 //
 //   GET  /api/config                     what this deployment supports
@@ -75,7 +75,7 @@ async function deviceFlowProxy(request: Request, url: URL, env: Env) {
   body.delete('client_secret')
   const res = await fetch(`https://${host}${path}`, {
     method: 'POST',
-    headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'gi-ui' },
+    headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'gh-ui' },
     body,
   })
   return new Response(res.body, { status: res.status, headers: { 'content-type': res.headers.get('content-type') ?? 'application/json', 'cache-control': 'no-store' } })
@@ -130,7 +130,7 @@ async function oauthCallback(request: Request, url: URL, env: Env) {
 
   const res = await fetch('https://github.com/login/oauth/access_token', {
     method: 'POST',
-    headers: { accept: 'application/json', 'content-type': 'application/json', 'user-agent': 'gi-ui' },
+    headers: { accept: 'application/json', 'content-type': 'application/json', 'user-agent': 'gh-ui' },
     body: JSON.stringify({ client_id: env.GITHUB_CLIENT_ID, client_secret: env.GITHUB_CLIENT_SECRET, code, redirect_uri: `${url.origin}/api/oauth/callback` }),
   })
   // An outage or rate limit can answer with an HTML page instead of JSON. Errors come back as HTTP 200 with an error code.
@@ -172,7 +172,7 @@ function handoff(result: { token: string; host: string } | { error: string }, ne
   const payload = JSON.stringify(result).replace(/</g, '\\u003c')
   const target = JSON.stringify(`/login?next=${encodeURIComponent(next)}`).replace(/</g, '\\u003c')
   const fallback = failed ? `<noscript><p>Sign-in failed: ${escapeHtml(result.error)}</p><p><a href="/login">Back to sign in</a></p></noscript>` : ''
-  const html = `<!doctype html><meta charset="utf-8"><title>${failed ? 'Sign-in failed' : 'Signing in…'}</title><script nonce="${nonce}">sessionStorage.setItem('gi-ui:oauth-handoff', ${JSON.stringify(payload)});location.replace(${target});</script>${fallback}`
+  const html = `<!doctype html><meta charset="utf-8"><title>${failed ? 'Sign-in failed' : 'Signing in…'}</title><script nonce="${nonce}">sessionStorage.setItem('gh-ui:oauth-handoff', ${JSON.stringify(payload)});location.replace(${target});</script>${fallback}`
   const headers = new Headers({
     'content-type': 'text/html; charset=utf-8',
     'cache-control': 'no-store',
@@ -194,7 +194,7 @@ function escapeHtml(text: string) {
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'POST, GET, OPTIONS',
-  'access-control-allow-headers': 'content-type, anthropic-version, anthropic-beta, authorization, x-api-key, x-gi-ui-github-token, x-gi-ui-github-host, x-stainless-arch, x-stainless-helper, x-stainless-helper-method, x-stainless-lang, x-stainless-os, x-stainless-package-version, x-stainless-retry-count, x-stainless-runtime, x-stainless-runtime-version, x-stainless-timeout, anthropic-dangerous-direct-browser-access',
+  'access-control-allow-headers': 'content-type, anthropic-version, anthropic-beta, authorization, x-api-key, x-gh-ui-github-token, x-gh-ui-github-host, x-stainless-arch, x-stainless-helper, x-stainless-helper-method, x-stainless-lang, x-stainless-os, x-stainless-package-version, x-stainless-retry-count, x-stainless-runtime, x-stainless-runtime-version, x-stainless-timeout, anthropic-dangerous-direct-browser-access',
   'access-control-max-age': '86400',
 }
 
@@ -212,7 +212,7 @@ async function githubLogin(token: string, host: string, env: Env): Promise<strin
   const hit = identityCache.get(key)
   if (hit && hit.expires > Date.now()) return hit.login
   const api = host === 'github.com' ? 'https://api.github.com' : host.endsWith('.ghe.com') ? `https://api.${host}` : `https://${host}/api/v3`
-  const res = await fetch(`${api}/user`, { headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'user-agent': 'gi-ui' } })
+  const res = await fetch(`${api}/user`, { headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.github+json', 'user-agent': 'gh-ui' } })
   if (!res.ok) return null
   const user = (await res.json()) as { login: string }
   identityCache.set(key, { login: user.login, expires: Date.now() + 5 * 60_000 })
@@ -226,13 +226,13 @@ async function anthropicProxy(request: Request, url: URL, env: Env) {
     const requested = request.headers.get('access-control-request-headers')
     return new Response(null, { status: 204, headers: { ...CORS, ...(requested ? { 'access-control-allow-headers': requested } : {}), vary: 'access-control-request-headers' } })
   }
-  if (!env.ANTHROPIC_API_KEY) return json({ type: 'error', error: { type: 'not_configured', message: 'This gi-ui deployment has no ANTHROPIC_API_KEY.' } }, 503, CORS)
+  if (!env.ANTHROPIC_API_KEY) return json({ type: 'error', error: { type: 'not_configured', message: 'This gh-ui deployment has no ANTHROPIC_API_KEY.' } }, 503, CORS)
   // Logins are only unique per host, so a bare entry means github.com and other hosts are listed as host/login.
   const allowed = (env.ALLOWED_GITHUB_USERS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean).map((s) => (s === '*' || s.includes('/') ? s : `github.com/${s}`))
   if (!allowed.length) return json({ type: 'error', error: { type: 'not_configured', message: 'Set ALLOWED_GITHUB_USERS to enable the proxy.' } }, 503, CORS)
 
-  const token = request.headers.get('x-gi-ui-github-token')
-  const host = (request.headers.get('x-gi-ui-github-host') ?? 'github.com').toLowerCase()
+  const token = request.headers.get('x-gh-ui-github-token')
+  const host = (request.headers.get('x-gh-ui-github-host') ?? 'github.com').toLowerCase()
   const login = token ? await githubLogin(token, host, env) : null
   if (!login) return json({ type: 'error', error: { type: 'authentication_error', message: 'Sign in to GitHub to use the agent proxy.' } }, 401, CORS)
   if (!allowed.includes('*') && !allowed.includes(`${host}/${login.toLowerCase()}`)) {
@@ -276,7 +276,7 @@ async function jobLogs(request: Request, url: URL, env: Env) {
   const host = apiUrl.hostname === 'api.github.com' ? 'github.com' : apiUrl.hostname.replace(/^api\./, '')
   if (apiUrl.protocol !== 'https:' || !isAllowedHost(host, env)) return json({ error: 'api host not allowed' }, 403)
   const first = await fetch(`${apiUrl.origin}${apiUrl.pathname.replace(/\/$/, '')}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${job}/logs`, {
-    headers: { authorization: auth, accept: 'application/vnd.github+json', 'user-agent': 'gi-ui' },
+    headers: { authorization: auth, accept: 'application/vnd.github+json', 'user-agent': 'gh-ui' },
     redirect: 'manual',
   })
   const location = first.status >= 300 && first.status < 400 ? first.headers.get('location') : null

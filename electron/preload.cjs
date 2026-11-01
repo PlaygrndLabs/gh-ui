@@ -1,9 +1,9 @@
 // Exposes the NativeBridge contract (src/lib/platform.ts) to the renderer.
 const { contextBridge, ipcRenderer } = require('electron')
 
-const versionArg = process.argv.find((a) => a.startsWith('--gi-ui-version='))
+const versionArg = process.argv.find((a) => a.startsWith('--gh-ui-version='))
 
-contextBridge.exposeInMainWorld('giUi', {
+contextBridge.exposeInMainWorld('ghUi', {
   platform: process.platform,
   version: versionArg ? versionArg.split('=')[1] : '0.0.0',
   secrets: {

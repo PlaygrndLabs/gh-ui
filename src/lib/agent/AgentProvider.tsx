@@ -51,7 +51,7 @@ const nextId = () => `i${++seq}`
 
 function contextBlock(ctx: PageContext | null): string | undefined {
   if (!ctx) return undefined
-  const lines = [`The user is viewing ${ctx.label} in gi-ui.`]
+  const lines = [`The user is viewing ${ctx.label} in gh-ui.`]
   for (const [k, v] of Object.entries(ctx.details ?? {})) if (v !== undefined && v !== null && v !== '') lines.push(`${k}: ${v}`)
   return lines.join('\n')
 }
@@ -165,7 +165,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (!active || running) return
       const ctxText = contextBlock(contextRef.current)
       setItems((prev) => [...prev, { id: nextId(), kind: 'user', text, context: contextRef.current?.label }])
-      const userContent = ctxText ? `<gi_ui_context>\n${ctxText}\n</gi_ui_context>\n\n${text}` : text
+      const userContent = ctxText ? `<gh_ui_context>\n${ctxText}\n</gh_ui_context>\n\n${text}` : text
       history.current.push({ role: 'user', content: userContent })
 
       const controller = new AbortController()

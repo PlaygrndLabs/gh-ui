@@ -1,5 +1,5 @@
 // Maps github.com (and API) URLs onto in-app routes so links inside rendered
-// markdown, notifications and timelines stay inside gi-ui.
+// markdown, notifications and timelines stay inside gh-ui.
 
 const RESERVED_OWNERS = new Set([
   'settings', 'notifications', 'pulls', 'issues', 'login', 'marketplace', 'explore', 'topics', 'sponsors',
@@ -15,7 +15,7 @@ const SUPPORTED_REPO_SECTIONS = new Set([
 
 const ORG_TABS = new Set(['repositories', 'projects', 'people'])
 
-// Repository settings pages gi-ui has; the rest (Pages, Actions, ruleset editing, …) open on github.com.
+// Repository settings pages gh-ui has; the rest (Pages, Actions, ruleset editing, …) open on github.com.
 const SETTINGS_PATHS = /^(|access|branches|branch_protection_rules\/(new|\d+)|rules|hooks|keys|secrets\/actions|variables\/actions)$/
 
 export function appPathFromUrl(href: string, host: string): string | null {
@@ -36,7 +36,7 @@ export function appPathFromUrl(href: string, host: string): string | null {
   const [owner, repo, section = '', ...rest] = parts
   if (RESERVED_OWNERS.has(owner.toLowerCase())) {
     if (['pulls', 'issues', 'notifications'].includes(owner) && parts.length === 1) return `/${owner}`
-    // /orgs/<org>[/<tab>] is the organization profile; only the tabs gi-ui has stay in-app.
+    // /orgs/<org>[/<tab>] is the organization profile; only the tabs gh-ui has stay in-app.
     if (owner === 'orgs' && repo && (!section || ORG_TABS.has(section)) && rest.length === 0) {
       const search = new URLSearchParams(url.search)
       if (section) search.set('tab', section)
@@ -96,7 +96,7 @@ export function appPathFromApiUrl(apiUrl: string | null | undefined): string | n
 /** A ?next= target as a path on this origin. Resolving it catches what a prefix check misses: /\host and tab tricks become //host. */
 export function safeNextPath(next: string | null | undefined): string {
   if (!next?.startsWith('/')) return '/'
-  const base = 'https://gi-ui.invalid'
+  const base = 'https://gh-ui.invalid'
   try {
     const url = new URL(next, base)
     return url.origin === base ? url.pathname + url.search + url.hash : '/'

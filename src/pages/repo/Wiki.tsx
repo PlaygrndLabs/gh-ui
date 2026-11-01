@@ -155,7 +155,7 @@ function LocalWiki({ wikiUrl }: { wikiUrl: string }) {
     return (
       <div className="container-md">
         <Blankslate icon={<DeviceDesktopIcon size={32} />} title="Clone this wiki to read it here">
-          gi-ui keeps a local clone of {repo}.wiki.git and renders its pages. It also shows up under Local repositories, so you can edit and push.
+          gh-ui keeps a local clone of {repo}.wiki.git and renders its pages. It also shows up under Local repositories, so you can edit and push.
         </Blankslate>
         <div className="flex gap-2 mt-3">
           <TextInput className="flex-1" value={parent} onChange={(e) => setParent(e.target.value)} placeholder="Parent folder" aria-label="Parent folder" />

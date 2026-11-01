@@ -45,7 +45,7 @@ async function deviceFlowProxy(req: IncomingMessage, res: ServerResponse) {
     body.delete('client_secret')
     const upstream = await fetch(`https://${host}${url.pathname}`, {
       method: 'POST',
-      headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'gi-ui' },
+      headers: { accept: 'application/json', 'content-type': 'application/x-www-form-urlencoded', 'user-agent': 'gh-ui' },
       body,
     })
     res.statusCode = upstream.status
@@ -64,7 +64,7 @@ async function deviceFlowProxy(req: IncomingMessage, res: ServerResponse) {
 // mirroring what the Electron shell does over IPC. Never part of a production build.
 function ghCliDevBridge(): Plugin {
   return {
-    name: 'gi-ui-gh-cli-dev-bridge',
+    name: 'gh-ui-gh-cli-dev-bridge',
     apply: 'serve',
     // `vite preview` has no Worker either, so it needs the device-flow proxy too.
     configurePreviewServer(server) {

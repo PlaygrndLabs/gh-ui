@@ -19,7 +19,7 @@ function SettingsNotFound() {
 
 /**
  * /:owner/:repo/settings/*: github.com's settings side navigation (same groups and order) beside the section page.
- * gi-ui covers General, Collaborators, Branches, Rulesets, Webhooks, Deploy keys and Actions secrets/variables.
+ * gh-ui covers General, Collaborators, Branches, Rulesets, Webhooks, Deploy keys and Actions secrets/variables.
  */
 export function RepoSettingsLayout() {
   const ctx = useRepo()

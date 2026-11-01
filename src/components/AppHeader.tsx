@@ -60,7 +60,7 @@ export function useRouteRepo() {
   return { owner, repo, section, top: '' }
 }
 
-export function GiUiMark({ size = 32 }: { size?: number }) {
+export function GhUiMark({ size = 32 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
       <rect width="32" height="32" rx="8" fill="currentColor" />
@@ -124,7 +124,7 @@ export function AppHeader() {
       <div className="AppHeader-globalBar">
         <IconButton icon={ThreeBarsIcon} aria-label="Open global navigation menu" onClick={() => setNavOpen(true)} />
         <Link to="/" className="AppHeader-logo" aria-label="Home">
-          <GiUiMark />
+          <GhUiMark />
         </Link>
         <nav className="AppHeader-context" aria-label="Page context">
           {owner ? (
@@ -468,7 +468,7 @@ function GlobalNav({ onClose }: { onClose(): void }) {
     staleTime: 5 * 60_000,
   })
   return (
-    <Dialog title={<GiUiMark size={28} />} position="left" width="small" onClose={onClose}>
+    <Dialog title={<GhUiMark size={28} />} position="left" width="small" onClose={onClose}>
       <NavList aria-label="Global">
         <NavList.Item as={Link} to="/" aria-current={pathname === '/' ? 'page' : undefined} onClick={onClose}>
           <NavList.LeadingVisual>

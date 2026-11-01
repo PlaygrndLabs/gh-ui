@@ -31,7 +31,7 @@ export function Dashboard() {
   const [filter, setFilter] = useState('')
 
   useAgentPageContext({
-    label: 'their gi-ui dashboard',
+    label: 'their gh-ui dashboard',
     suggestions: [
       { label: 'What needs my attention?', prompt: 'Look at the pull requests waiting on my review, my own open pull requests (CI state, unresolved review comments) and issues assigned to me. Give me a prioritized to-do list for today.' },
       { label: 'Bot comments to handle', prompt: 'Across my open pull requests, which have unresolved comments from review bots like CodeRabbit or Greptile? List them with counts.' },

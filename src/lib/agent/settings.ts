@@ -4,7 +4,7 @@ import { isNative } from '../platform'
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 export interface AgentSettings {
-  /** direct: the browser/app calls api.anthropic.com with your key. proxy: a gi-ui Worker holds the key. */
+  /** direct: the browser/app calls api.anthropic.com with your key. proxy: a gh-ui Worker holds the key. */
   mode: 'direct' | 'proxy'
   /** Worker origin for proxy mode. Empty = same origin (Cloudflare deploy). Required in the desktop app. */
   proxyUrl: string
