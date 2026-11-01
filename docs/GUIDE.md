@@ -19,7 +19,21 @@ npm run electron:build      # unpacked app in release/ (fast, for testing)
 npm run electron:dist       # dmg/zip (mac), nsis (win), AppImage/deb (linux)
 ```
 
-Pushing to the `release` branch builds the macOS installers in GitHub Actions and publishes them as the GitHub Release for `package.json`'s version (`.github/workflows/release.yml`). Bump the version to ship a new release; to add a platform, add a row to the workflow's matrix.
+### Releases
+
+Work lands on `main`. Merging `main` into the `release` branch builds the macOS installers in GitHub Actions and publishes them as a new GitHub Release (`.github/workflows/release.yml`). A pull request from `main` into `release` runs the same build without publishing and shows the version it would release in the run's summary. To add a platform, add a row to the workflow's matrix.
+
+Use **Create a merge commit** on that pull request. A squash, a rebase or a direct commit to `release` fails the run without publishing, because it would give wrong versions; undo it on `release` and merge again.
+
+Versions are `vX.Y.Z` git tags, and a published version is never replaced. `scripts/next-version.mjs` bumps the latest tag from the commit messages since it:
+
+| Commits since the last release | Bump | Example |
+| --- | --- | --- |
+| `feat!:`, any `type!:` or a `BREAKING CHANGE:` footer | major (minor before 1.0) | `1.2.3` → `2.0.0` |
+| `feat:` | minor | `1.2.3` → `1.3.0` |
+| anything else | patch | `1.2.3` → `1.2.4` |
+
+`package.json`'s version is a floor: set it higher to choose a version yourself, such as `1.0.0`. It isn't updated on each release; the installers get the tag's version at build time.
 
 macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electron-builder docs), so macOS blocks the first launch: open the app, then choose **Open Anyway** in System Settings → Privacy & Security. Smoke test a build: `GI_UI_SMOKE_TEST=1 release/mac-arm64/gi-ui.app/Contents/MacOS/gi-ui`.
 
