@@ -1,0 +1,9 @@
+node_modules
+dist
+release
+.wrangler
+.dev.vars
+*.log
+.DS_Store
+.claude
+*.tsbuildinfo
