@@ -321,8 +321,9 @@ function e2eTest(win, file) {
   })
 }
 
-// GI_UI_SMOKE_TEST=1 electron . — loads the UI, checks the bridge and the first
-// render, prints a JSON report and exits non-zero on failure (for CI).
+// GI_UI_SMOKE_TEST=1 electron . — loads the UI, checks the bridge, the first render and
+// that Primer's styles apply at the default window size (a button keeps the browser's
+// narrow padding without them), prints a JSON report and exits non-zero on failure (for CI).
 function smokeTest(win) {
   const errors = []
   win.webContents.on('console-message', (event) => {
@@ -331,9 +332,9 @@ function smokeTest(win) {
   win.webContents.once('did-finish-load', () => {
     setTimeout(async () => {
       const report = await win.webContents.executeJavaScript(
-        `({ url: location.href, bridge: typeof window.giUi === 'object' && typeof window.giUi.git === 'function', platform: window.giUi && window.giUi.platform, rendered: (document.getElementById('root') || {}).childElementCount > 0, title: document.title, heading: (document.querySelector('h1') || {}).textContent || null })`,
+        `({ styled: parseFloat(getComputedStyle(document.querySelector('button')).paddingLeft) >= 8, url: location.href, bridge: typeof window.giUi === 'object' && typeof window.giUi.git === 'function', platform: window.giUi && window.giUi.platform, rendered: (document.getElementById('root') || {}).childElementCount > 0, title: document.title, heading: (document.querySelector('h1') || {}).textContent || null })`,
       )
-      const ok = report.bridge && report.rendered && errors.length === 0
+      const ok = report.bridge && report.rendered && report.styled && errors.length === 0
       process.stdout.write(JSON.stringify({ ok, ...report, errors }) + '\n')
       app.exit(ok ? 0 : 1)
     }, 2500)

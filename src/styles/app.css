@@ -343,8 +343,8 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
   white-space: nowrap;
 }
 .diff-marker { width: 20px; padding-left: 8px !important; user-select: none; color: var(--fgColor-muted); }
-.diff-code { padding-right: 16px !important; white-space: pre-wrap; word-break: break-all; color: var(--fgColor-default); }
-.diff-table.nowrap .diff-code { white-space: pre; word-break: normal; }
+.diff-code { padding-right: 16px !important; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fgColor-default); }
+.diff-table.nowrap .diff-code { white-space: pre; overflow-wrap: normal; }
 .diff-line.add .diff-code, .diff-line.add .diff-marker { background: var(--diffBlob-additionLine-bgColor); }
 .diff-line.add .diff-num { background: var(--diffBlob-additionNum-bgColor); color: var(--diffBlob-additionNum-fgColor, var(--fgColor-default)); }
 .diff-line.del .diff-code, .diff-line.del .diff-marker { background: var(--diffBlob-deletionLine-bgColor); }
@@ -1663,6 +1663,8 @@ a.project-table-title-text:hover { color: var(--fgColor-accent); }
 .release-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 16px; border-top: 1px solid var(--borderColor-default); }
 @media (max-width: 1011px) {
   .release-form-title { width: 100%; }
+}
+
 /* ---------- Repository settings ---------- */
 /* github.com's settings Layout: a 256px side nav beside the section page, stacking below 1012px. */
 .repo-settings-layout { display: grid; grid-template-columns: 256px minmax(0, 1fr); gap: 24px; align-items: start; }
