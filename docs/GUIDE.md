@@ -62,7 +62,7 @@ At github.com → Settings → Developer settings → OAuth Apps → New OAuth A
 | Enable Device Flow | On. |
 | Expire user access tokens | **Off.** gh-ui doesn't refresh tokens: refreshing needs the client secret, which a desktop app can't keep. With expiry on, you'd sign in again every 8 hours. |
 
-The client ID is public and can be shared or built in (`VITE_GITHUB_CLIENT_ID`). The client secret is only needed by the Worker's web flow; keep it out of the repo (`.dev.vars` locally, `wrangler secret put` in production). Anyone can authorize an OAuth App, but each person only gets a token for their own account.
+gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and used on github.com, so users don't enter a client ID there; other hosts ask for their own. A client ID is public and can be shared. If you fork gh-ui, replace it with your own. The client secret is only needed by the Worker's web flow; keep it out of the repo (`.dev.vars` locally, `wrangler secret put` in production). Anyone can authorize an OAuth App, but each person only gets a token for their own account.
 
 ## What's in it
 
@@ -140,4 +140,4 @@ Layout: `src/` React app (`pages/`, `components/`, `lib/` incl. `lib/agent/`), `
 
 ## Not covered yet
 
-Not checked against real accounts: OAuth sign-in with a real OAuth App, and project editing (mocked data only). Logged-in screens follow GitHub's docs and weren't compared side by side with github.com. Mixed-side comment ranges (from a deleted line to an added line); editing rulesets, environment and organization secrets, and settings pages without an API (Pages, Actions permissions, social preview, …); multi-select fields, labels/assignees and the item side panel in Projects; signed/notarized builds. The Windows package builds but hasn't been launched. Actions logs are split into steps from GitHub's second-precision step times (the API no longer exposes per-step logs), so a composite action's last inner step can occasionally show at the top of the next step.
+Not checked against real accounts: the web OAuth flow in the Cloudflare build, and project editing (mocked data only). Logged-in screens follow GitHub's docs and weren't compared side by side with github.com. Mixed-side comment ranges (from a deleted line to an added line); editing rulesets, environment and organization secrets, and settings pages without an API (Pages, Actions permissions, social preview, …); multi-select fields, labels/assignees and the item side panel in Projects; signed/notarized builds. The Windows package builds but hasn't been launched. Actions logs are split into steps from GitHub's second-precision step times (the API no longer exposes per-step logs), so a composite action's last inner step can occasionally show at the top of the next step.

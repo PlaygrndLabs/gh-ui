@@ -34,11 +34,13 @@ export function fetchServerConfig(): Promise<ServerConfig | null> {
   return serverConfigPromise
 }
 
-export async function resolveClientId(): Promise<string | null> {
+export async function resolveClientId(host = 'github.com'): Promise<string | null> {
   const fromPrefs = readPref<string>('oauthClientId', '').trim()
   if (fromPrefs) return fromPrefs
   const cfg = await fetchServerConfig()
-  return cfg?.oauthClientId || (import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined) || null
+  if (cfg?.oauthClientId) return cfg.oauthClientId
+  // The built-in OAuth App exists only on github.com; other hosts need their own.
+  return host === 'github.com' ? (import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined) || null : null
 }
 
 async function postLogin(host: string, path: string, params: Record<string, string>): Promise<Record<string, unknown>> {

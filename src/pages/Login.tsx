@@ -216,9 +216,9 @@ function DeviceFlow({ host, disabled, onToken, onError }: { host: string; disabl
   const abort = useRef<AbortController | null>(null)
 
   useEffect(() => {
-    void resolveClientId().then(setClientId)
-    return () => abort.current?.abort()
-  }, [])
+    void resolveClientId(host).then(setClientId)
+  }, [host])
+  useEffect(() => () => abort.current?.abort(), [])
 
   const start = async (id: string) => {
     setStarting(true)

@@ -32,7 +32,7 @@ npm install
 npm run electron:dev
 ```
 
-Sign in with a [personal access token](https://github.com/settings/tokens) and add your Anthropic key in Settings → Agent to use the agent.
+Sign in with **Continue with GitHub**, a [personal access token](https://github.com/settings/tokens) or your `gh` login, and add your Anthropic key in Settings → Agent to use the agent.
 
 To package the app, run `npm run electron:dist`. A web build for Cloudflare Workers is also available with `npm run cf:deploy`.
 
