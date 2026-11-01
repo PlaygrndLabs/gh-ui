@@ -75,6 +75,8 @@ jobs:
       - run: npx electron-builder ${{ matrix.flags }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          # Pull requests skip signing by default to protect certificates; ad-hoc signing uses none.
+          CSC_FOR_PULL_REQUEST: 'true'
       - name: Check the app's signature, version and launch
         if: matrix.name == 'macos'
         env:
