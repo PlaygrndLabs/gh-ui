@@ -39,7 +39,7 @@ function usageSummary({ input, output, cacheRead, cacheWrite }: { input: number;
   return `${(prompt + output).toLocaleString()} tokens · ${Math.round((cacheRead / Math.max(prompt, 1)) * 100)}% of input from cache`
 }
 
-export function AgentPanel({ withLocalBar }: { withLocalBar: boolean }) {
+export function AgentPanel() {
   const agent = useAgent()
   const [draft, setDraft] = useState('')
   const scroller = useRef<HTMLDivElement>(null)
@@ -62,7 +62,7 @@ export function AgentPanel({ withLocalBar }: { withLocalBar: boolean }) {
   }
 
   return (
-    <aside className={`agent-panel ${withLocalBar ? 'with-local' : ''}`} aria-label="Agent">
+    <aside className="agent-panel" aria-label="Agent">
       <div className="agent-header">
         <SparkleFillIcon className="fg-done" />
         <span className="text-bold">Agent</span>

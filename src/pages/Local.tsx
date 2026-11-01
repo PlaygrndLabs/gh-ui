@@ -30,6 +30,7 @@ import { firstLine, shortSha } from '../lib/format'
 import { readPref, writePref } from '../lib/storage'
 import { generateCommitMessage } from '../lib/agent/oneshot'
 import { useAgentPageContext } from '../lib/agent/AgentProvider'
+import { useEffectOnChange } from '../lib/activity'
 import { FileDiffBox } from '../components/DiffView'
 import { Blankslate, ErrorBox, Loading } from '../components/Bits'
 
@@ -157,7 +158,7 @@ function CloneDialog({ initial, onClose, onCloned }: { initial: string; onClose(
     queryKey: [key, 'clone-repos'],
     queryFn: async () => (await octokit.rest.repos.listForAuthenticatedUser({ sort: 'pushed', per_page: 100 })).data,
   })
-  useEffect(() => {
+  useEffectOnChange(() => {
     if (initial && /^[\w.-]+\/[\w.-]+$/.test(initial)) {
       setUrl(`https://${account.host}/${initial}.git`)
       setName(initial.split('/')[1])

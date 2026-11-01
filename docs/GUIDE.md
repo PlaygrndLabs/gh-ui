@@ -66,6 +66,7 @@ gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and u
 
 ## What's in it
 
+- **Tabs (desktop)** — browser-style tabs, each with its own page and back/forward history. Cmd-click or middle-click any in-app link to open it in the background, Cmd+Shift-click to open it in front; other links go to your browser. Drag to reorder, middle-click to close. Tabs come back after a restart, per account and device. Recent tabs stay alive, so half-written comments, scroll position and expanded logs survive switching; beyond 8 live tabs the least recently used hidden ones unload and reload from their URL when shown. A tab with unsent text, or something still running, is never unloaded, and closing it or switching account asks first. The tab strip stays the same size when the page is zoomed. The agent panel is shared and follows the active tab.
 - **Dashboard** — review requests, your PRs (with CI + review state), assigned issues, activity feed, top repositories.
 - **Code** — file tree, README, About/languages/releases, branch & tag picker, go-to-file, syntax-highlighted file view with line links, in-place edit & commit, commits and commit diffs, branches (ahead/behind, PR links, create/delete).
 - **Pull requests** — list with GitHub search filters; conversation timeline with review threads (reply, resolve/unresolve, edit, delete), merge box (checks, reviews, update branch, ready for review, merge/squash/rebase, delete branch), reviewers/assignees/labels editing, Commits, Checks (annotations, re-run), Files changed (file tree, unified/split diff, “viewed” tracking, approve / request changes), compare & create PR.
@@ -81,6 +82,21 @@ gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and u
 - **Repository settings** (admins) — General (rename, features, merge buttons, default branch, Danger Zone with typed confirmations), About details, Collaborators and invitations, classic branch protection rules, rulesets (read-only), Webhooks with recent deliveries and redeliver, Deploy keys, Actions secrets (encrypted in the app with the repository's public key) and variables.
 - **Wiki** — the desktop app clones `<repo>.wiki.git` and renders its pages (GitHub has no wiki API).
 - **Local repositories (desktop)** — clone (HTTPS uses your signed-in token), add existing, changes with staging checkboxes, diff, discard, commit (with agent-written messages), branch switch/create, fetch/pull/push/publish, history.
+
+### Keyboard shortcuts (desktop)
+
+| Shortcut | Action |
+| --- | --- |
+| ⌘T | New tab (dashboard) |
+| ⌘W | Close tab; closing the last one leaves a fresh dashboard. ⌘⇧W closes the window. |
+| ⌘⇧T | Reopen the last closed tab |
+| ⌘1…⌘8, ⌘9 | Go to that tab; ⌘9 is the last one |
+| ⌃Tab, ⌃⇧Tab | Next, previous tab |
+| ⌘[, ⌘] | Back, forward in the active tab |
+| ⌥⌘1…⌥⌘5 | Home, Pull requests, Issues, Notifications, Local repositories (in the active tab) |
+| ⌘⇧A | Toggle the agent |
+
+On Windows and Linux, use Ctrl for ⌘.
 
 ## The agent
 
@@ -115,7 +131,7 @@ Worker routes: `/api/config`, `/api/gh-login/*` (device-flow proxy; github.com s
 
 ## Security model (desktop)
 
-- The UI is served from a custom `app://gh-ui` origin with a CSP; navigation away from it opens your browser instead.
+- The UI is served from a custom `app://gh-ui` origin with a CSP. Nothing navigates that document or opens another window: links outside the app go to your browser, and in-app links become validated paths in a tab's own router.
 - Rendered markdown comes from GitHub's own HTML and is sanitized again with DOMPurify.
 - The renderer can only run allow-listed git subcommands inside repositories you added, and never with options that execute programs, write arbitrary files or force-overwrite (`electron/git-policy.cjs`, tested in `electron/git-policy.test.ts`). Your token is given to git only for HTTPS fetch/pull/push/clone to the signed-in host, through an environment-scoped credential helper.
 - Main-process HTTP (device flow, logs) is limited to public HTTPS hosts and drops the token on redirects.
@@ -124,8 +140,8 @@ Worker routes: `/api/config`, `/api/gh-login/*` (device-flow proxy; github.com s
 
 ```bash
 npm run typecheck           # app + worker
-npm test                    # vitest: agent loop (mocked API), Worker routes, device flow, PAT verification, git policy, suggestions, sealed box, projects GraphQL, parsers, links
-npm run test:e2e:desktop    # real Electron app, throwaway profile: local git flow, gh sign-in, wiki clone + render
+npm test                    # vitest: agent loop (mocked API), Worker routes, device flow, PAT verification, git policy, suggestions, sealed box, projects GraphQL, parsers, links, tab state
+npm run test:e2e:desktop    # real Electron app, throwaway profile: local git flow, gh sign-in, tabs, wiki clone + render
 npm run build               # typecheck + production bundle
 ```
 

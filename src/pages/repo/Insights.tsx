@@ -18,6 +18,7 @@ import { useRepo } from '../../lib/repo'
 import { useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { openExternal } from '../../lib/platform'
 import { webBaseFor } from '../../lib/hosts'
+import { contentElementById } from '../../lib/scroll'
 import { ErrorBox, Loading, Blankslate, InlineTitle } from '../../components/Bits'
 
 /** GitHub computes repository statistics lazily and answers 202 until ready. */
@@ -501,7 +502,7 @@ function PulseOverviewBox({ data, base }: { data: PulseOverview; base: string })
           <li key={s.href}>
             <a href={s.href} onClick={(e) => {
               e.preventDefault()
-              document.getElementById(s.href.slice(1))?.scrollIntoView({ behavior: 'smooth' })
+              contentElementById(s.href.slice(1))?.scrollIntoView({ behavior: 'smooth' })
             }}>
               <span className="pulse-stat-count">
                 {s.icon} {s.count}

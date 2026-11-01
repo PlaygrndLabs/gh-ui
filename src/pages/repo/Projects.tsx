@@ -202,7 +202,7 @@ export function ProjectPage() {
     [model, scopeRefused, run],
   )
 
-  useAgentPageContext(model ? { label: `project “${model.title}” (#${number}) of ${fullName}`, owner, repo, details: { items: model.total } } : null)
+  useAgentPageContext(model ? { label: `project “${model.title}” (#${number}) of ${fullName}`, tabTitle: model.title, owner, repo, details: { items: model.total } } : null)
 
   if (project.isLoading) return <Loading />
   if (project.error || !model || !editor)

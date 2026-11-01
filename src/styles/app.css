@@ -20,20 +20,23 @@ a:hover { text-decoration: underline; }
 code, pre, kbd, .mono { font-family: var(--fontStack-monospace); }
 hr { border: 0; border-top: 1px solid var(--borderColor-muted); margin: 16px 0; }
 
-.app-shell { display: flex; flex-direction: column; min-height: 100%; }
+body:has(.app-shell) { overflow: hidden; }
+.app-shell { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 .app-body { display: flex; flex: 1; min-height: 0; }
-.app-main { flex: 1; min-width: 0; }
+/* The content scrolls on its own, so its scrollbar starts below the header. */
+.app-main { flex: 1; min-width: 0; overflow: auto; outline: none; }
 
 /* ---------- Header ---------- */
-/* Sticky offsets below the header on repository pages: the AppHeader there is 105px tall (global bar + repo nav),
-   the pull request tab nav 48px and the Files changed toolbar 44px. Every offset below derives from these. */
+/* Sticky elements are offset within .app-main, which starts below the header. The pull request tab nav is 48px and
+   the Files changed toolbar 44px. The AppHeader on repository pages is 105px tall (global bar + repo nav), which
+   only matters for sizing things to the visible height. */
 :root { --gd-header-h: 105px; --gd-prtabs-h: 48px; --gd-files-toolbar-h: 44px; }
 .AppHeader {
   background: var(--bgColor-inset);
   border-bottom: 1px solid var(--borderColor-muted);
   padding: 16px 16px 0;
-  position: sticky;
-  top: 0;
+  flex-shrink: 0;
+  position: relative;
   z-index: 20;
 }
 .AppHeader.no-local { padding-bottom: 16px; }
@@ -75,9 +78,130 @@ hr { border: 0; border-top: 1px solid var(--borderColor-muted); margin: 16px 0; 
   background: var(--bgColor-accent-emphasis);
   border: 2px solid var(--bgColor-inset);
 }
-.is-native-mac .AppHeader { padding-left: 84px; -webkit-app-region: drag; }
+/* macOS window buttons float over the top-left corner, centered on the 36px tab strip (see trafficLightPosition).
+   Only that row makes room for them. The sign-in page has no strip, and nothing there reaches the corner. */
+.is-native-mac { --window-buttons-w: 72px; }
+.is-native-mac.is-fullscreen { --window-buttons-w: 0px; }
+.is-native-mac .AppHeader { -webkit-app-region: drag; }
+.is-native-mac .global-nav-dialog [class*='Dialog-Header-'] {
+  display: flex;
+  align-items: center;
+  height: 37px;
+  zoom: calc(1 / var(--page-zoom, 1));
+  padding: 0 16px 1px calc(16px + var(--window-buttons-w, 0px));
+  overflow: hidden;
+  -webkit-app-region: drag;
+}
+.is-native-mac .global-nav-dialog [class*='Dialog-HeaderInner'] { flex: 1; align-items: center; }
+.is-native-mac .global-nav-dialog [class*='Dialog-HeaderContent'] { padding: 0; }
+.is-native-mac .global-nav-dialog [class*='Dialog-Title'] { display: flex; }
+.is-native-mac .global-nav-dialog button { -webkit-app-region: no-drag; }
+/* The sign-in page has no header, so give the window a strip to be dragged by. */
+.is-native-mac .login-page::before { content: ''; position: fixed; inset: 0 0 auto 0; height: 48px; -webkit-app-region: drag; }
 .is-native-mac .AppHeader a, .is-native-mac .AppHeader button, .is-native-mac .AppHeader input,
 .is-native-mac .AppHeader nav, .is-native-mac .AppHeader [role='button'] { -webkit-app-region: no-drag; }
+/* The sign-in page scrolls by itself: the tabs it opens over keep .app-shell in the document. */
+.is-native .login-page { height: 100vh; overflow: auto; }
+
+/* ---------- Desktop tabs ---------- */
+/* Each tab renders the header and content of its own page, and the agent panel is shared by all of them, yet the header
+   still has to span the panel. So the shell is a grid, and a tab's pane (display:contents) puts its parts straight in it. */
+/* The strip stays one size at any page zoom, so --tab-strip-h, in the page's pixels, shrinks as the page zooms in. */
+.is-native { --tab-strip-h: calc(37px / var(--page-zoom, 1)); --gd-header-h: 142px; }
+.app-shell.tabbed { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto minmax(0, 1fr); }
+.tab-pane { display: contents; }
+.tabbed > .tab-strip { grid-area: 1 / 1 / 2 / -1; }
+.tabbed .AppHeader { grid-area: 2 / 1 / 3 / -1; }
+.tabbed .rejected-token-banner { grid-area: 3 / 1 / 4 / -1; }
+.tabbed .app-main { grid-area: 4 / 1 / 5 / 2; min-height: 0; }
+.tabbed > .agent-dock { grid-area: 4 / 2 / 5 / 3; display: flex; min-height: 0; }
+
+.tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 37px;
+  zoom: calc(1 / var(--page-zoom, 1));
+  padding: 0 16px 0 max(16px, calc(var(--window-buttons-w, 0px) + 12px));
+  background: var(--bgColor-inset);
+  border-bottom: 1px solid var(--borderColor-muted);
+  font-size: 13px;
+  line-height: 20px;
+}
+.tab-list {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 1 200px;
+  width: 200px;
+  min-width: 96px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--fgColor-muted);
+  user-select: none;
+  container-type: inline-size;
+}
+.tab-item:hover { background: var(--control-transparent-bgColor-hover); color: var(--fgColor-default); }
+.tab-item.is-active { background: var(--bgColor-default); color: var(--fgColor-default); box-shadow: inset 0 0 0 1px var(--borderColor-muted); }
+.tab-item.is-dragging { z-index: 1; box-shadow: inset 0 0 0 1px var(--borderColor-default), var(--shadow-resting-small); }
+.tab-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 2px 0 8px;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.tab-main:focus-visible { outline: none; }
+.tab-item:has(> .tab-main:focus-visible) { outline: 2px solid var(--focus-outlineColor); outline-offset: -2px; }
+.tab-icon { flex-shrink: 0; color: var(--fgColor-muted); }
+.tab-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tab-close {
+  display: inline-flex;
+  visibility: hidden;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-right: 4px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  color: var(--fgColor-muted);
+}
+.tab-item:hover .tab-close, .tab-item.is-active .tab-close { visibility: visible; }
+/* Its room stays reserved, so titles don't re-truncate under a passing mouse, until a narrow tab needs it for the title. */
+@container (max-width: 140px) {
+  .tab-close { display: none; }
+  .tab-main { padding-right: 8px; }
+  .tab-item:hover .tab-close, .tab-item.is-active .tab-close { display: inline-flex; }
+  .tab-item:hover .tab-main, .tab-item.is-active .tab-main { padding-right: 2px; }
+}
+.tab-close:hover { background: var(--control-transparent-bgColor-hover); color: var(--fgColor-default); }
+.tab-new { flex-shrink: 0; }
+/* The strip's empty area drags the window, like the title bar it replaces. */
+.is-native-mac .tab-strip { -webkit-app-region: drag; }
+.is-native-mac .tab-item, .is-native-mac .tab-new { -webkit-app-region: no-drag; }
 
 /* ---------- Containers ---------- */
 .container-xl { max-width: 1280px; margin: 0 auto; padding: 24px 32px; }
@@ -91,7 +215,7 @@ hr { border: 0; border-top: 1px solid var(--borderColor-muted); margin: 16px 0; 
 
 .layout-sidebar { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 24px; }
 .layout-sidebar-left { display: grid; grid-template-columns: 296px minmax(0, 1fr); gap: 24px; }
-.layout-dashboard { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 0; min-height: calc(100vh - 65px); }
+.layout-dashboard { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 0; min-height: calc(100vh - 65px - var(--tab-strip-h, 0px)); }
 @media (max-width: 1012px) {
   .layout-sidebar, .layout-sidebar-left, .layout-dashboard { grid-template-columns: minmax(0, 1fr); }
 }
@@ -565,7 +689,7 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
   line-height: 20px;
   overflow: auto;
   border-radius: 0 0 6px 6px;
-  max-height: calc(100vh - 220px);
+  max-height: calc(100vh - 220px - var(--tab-strip-h, 0px));
 }
 .log-step { border-top: 1px solid var(--borderColor-muted); }
 .log-step:first-child { border-top: 0; }
@@ -617,14 +741,11 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
   background: var(--bgColor-default);
   display: flex;
   flex-direction: column;
-  position: sticky;
-  top: 65px;
-  height: calc(100vh - 65px);
+  flex-shrink: 0;
+  min-height: 0;
 }
-.agent-panel.with-local { top: 113px; height: calc(100vh - 113px); }
 @media (max-width: 1100px) {
-  .agent-panel { position: fixed; right: 0; top: 0; height: 100vh; z-index: 40; box-shadow: var(--shadow-floating-large); }
-  .agent-panel.with-local { top: 0; height: 100vh; }
+  .agent-panel { position: fixed; right: 0; top: var(--tab-strip-h, 0px); height: calc(100vh - var(--tab-strip-h, 0px)); z-index: 40; box-shadow: var(--shadow-floating-large); }
 }
 @media (max-width: 520px) { .agent-panel { width: 100vw; } }
 .agent-header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--borderColor-muted); }
@@ -665,7 +786,7 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 .agent-chip:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ---------- Login ---------- */
-.login-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 48px 16px; background: var(--bgColor-inset); }
+.login-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: safe center; box-sizing: border-box; padding: 24px 16px; background: var(--bgColor-inset); }
 .login-card { width: 100%; max-width: 440px; }
 .login-card h1 { font-size: 24px; font-weight: 300; text-align: center; margin: 16px 0 24px; letter-spacing: -0.5px; }
 .login-reauth { text-align: center; color: var(--fgColor-muted); margin: -12px 0 16px; }
@@ -675,7 +796,7 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 .device-code { font-family: var(--fontStack-monospace); font-size: 32px; letter-spacing: 6px; text-align: center; font-weight: 600; padding: 12px; border: 1px dashed var(--borderColor-default); border-radius: 6px; background: var(--bgColor-default); }
 
 /* ---------- Local repos ---------- */
-.desktop-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: calc(100vh - 65px); }
+.desktop-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: calc(100vh - 65px - var(--tab-strip-h, 0px)); }
 .desktop-sidebar { border-right: 1px solid var(--borderColor-default); display: flex; flex-direction: column; min-height: 0; }
 .desktop-toolbar { display: flex; align-items: stretch; border-bottom: 1px solid var(--borderColor-default); background: var(--bgColor-muted); }
 .desktop-toolbar-item { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-right: 1px solid var(--borderColor-default); min-width: 0; }
@@ -733,7 +854,7 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
   white-space: nowrap;
   vertical-align: middle;
 }
-.tabnav-sticky { position: sticky; top: var(--gd-header-h); z-index: 10; background: var(--bgColor-default); }
+.tabnav-sticky { position: sticky; top: 0; z-index: 10; background: var(--bgColor-default); }
 .error-box { padding: 16px; border: 1px solid var(--borderColor-danger-muted); background: var(--bgColor-danger-muted); border-radius: 6px; color: var(--fgColor-default); }
 .suggestion-block { border: 1px solid var(--borderColor-default); border-radius: 6px; overflow: hidden; margin: 8px 0; }
 
@@ -748,12 +869,12 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 
 /* ---------- ui pass: pr-tabs ---------- */
 /* Files changed: sticky toolbar, file tree column with the filter box on top (github.com layout). */
-.files-toolbar { position: sticky; top: calc(var(--gd-header-h) + var(--gd-prtabs-h)); z-index: 9; background: var(--bgColor-default); padding: 8px 0; min-height: var(--gd-files-toolbar-h); }
+.files-toolbar { position: sticky; top: var(--gd-prtabs-h); z-index: 9; background: var(--bgColor-default); padding: 8px 0; min-height: var(--gd-files-toolbar-h); }
 .files-layout { grid-template-columns: 296px minmax(0, 1fr); }
 .files-layout.no-tree { grid-template-columns: minmax(0, 1fr); }
 .files-layout.no-tree .files-tree { display: none; }
-.files-tree { top: calc(var(--gd-header-h) + var(--gd-prtabs-h) + var(--gd-files-toolbar-h) + 8px); max-height: calc(100vh - var(--gd-header-h) - var(--gd-prtabs-h) - var(--gd-files-toolbar-h) - 24px); }
-.files-layout .file-diff-header { top: calc(var(--gd-header-h) + var(--gd-prtabs-h) + var(--gd-files-toolbar-h)); }
+.files-tree { top: calc(var(--gd-prtabs-h) + var(--gd-files-toolbar-h) + 8px); max-height: calc(100vh - var(--gd-header-h) - var(--gd-prtabs-h) - var(--gd-files-toolbar-h) - 24px); }
+.files-layout .file-diff-header { top: calc(var(--gd-prtabs-h) + var(--gd-files-toolbar-h)); }
 @media (max-width: 1012px) {
   .files-layout { grid-template-columns: minmax(0, 1fr); }
   .files-tree { max-height: 280px; }
@@ -761,7 +882,7 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
   .files-layout.no-tree .files-tree { display: block; }
   /* The toolbar can wrap onto two lines here, so it scrolls away and file headers stick right under the tabs. */
   .files-toolbar { position: static; }
-  .files-layout .file-diff-header { top: calc(var(--gd-header-h) + var(--gd-prtabs-h)); }
+  .files-layout .file-diff-header { top: var(--gd-prtabs-h); }
 }
 /* Hunk headers line up with the code column; review threads stay at github.com's 780px reading width. */
 .file-diff .diff-table:not(.diff-split) .diff-line.hunk .diff-code { padding-left: 20px !important; }
@@ -1009,7 +1130,7 @@ a.dx-row-comments:hover { color: var(--fgColor-accent); text-decoration: none; }
 .dx-header-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .dx-state { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; border: 1px solid var(--borderColor-default); border-radius: 2em; font-weight: 500; line-height: 20px; white-space: nowrap; }
 .dx-comment { border: 1px solid var(--borderColor-default); border-radius: 6px; margin-bottom: 16px; background: var(--bgColor-default); overflow: hidden; }
-.dx-comment, .dx-reply { scroll-margin-top: calc(var(--gd-header-h) + 16px); }
+.dx-comment, .dx-reply { scroll-margin-top: 16px; }
 .dx-comment.answer { border: 2px solid var(--borderColor-success-emphasis); }
 .dx-comment-header { display: flex; align-items: center; gap: 8px; padding: 8px 16px 0; min-width: 0; }
 .dx-comment-body { padding: 16px; }
@@ -1071,14 +1192,14 @@ a.release-subnav-item { padding: 5px 16px; font-weight: 500; line-height: 20px; 
 a.release-subnav-item:hover { background: var(--bgColor-muted); text-decoration: none; }
 a.release-subnav-item[aria-current='page'] { z-index: 2; color: var(--fgColor-onEmphasis); background: var(--bgColor-accent-emphasis); border-color: var(--borderColor-accent-emphasis); }
 .release-layout { display: flex; justify-content: center; }
-.release-toc { flex: 0 0 16.6667%; min-width: 195px; padding-right: 40px; position: sticky; top: var(--gd-header-h); align-self: flex-start; }
+.release-toc { flex: 0 0 16.6667%; min-width: 195px; padding-right: 40px; position: sticky; top: 0; align-self: flex-start; }
 .release-toc-title { font-size: 20px; font-weight: 600; margin: 0; padding: 24px 0 8px; }
 .release-toc ul { list-style: none; margin: 0; padding: 0; }
 .release-toc li a { display: block; padding: 6px 8px; border-radius: 6px; color: var(--fgColor-default); font-size: 14px; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .release-toc li a:hover { background: var(--control-transparent-bgColor-hover); text-decoration: none; }
 .release-toc-pagination { margin-top: 16px; }
 .release-main { flex: 1 1 75%; max-width: 75%; min-width: 0; }
-.release-section { margin: 32px 0; scroll-margin-top: calc(var(--gd-header-h) + 16px); }
+.release-section { margin: 32px 0; scroll-margin-top: 16px; }
 .release-section:first-child { margin-top: 0; }
 @media (max-width: 767px) {
   .release-head, .release-head-width { width: 100%; }

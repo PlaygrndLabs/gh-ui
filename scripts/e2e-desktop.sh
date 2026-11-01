@@ -20,4 +20,7 @@ GH_UI_USER_DATA="$WORK/profile" \
 E2E_LOCAL_REPO="$WORK/e2e-local" \
 E2E_CLONE_PARENT="$WORK/clones" \
 GH_UI_E2E=e2e/desktop.e2e.cjs \
-  ./node_modules/.bin/electron . 2>/dev/null | sed -n '/^{/,$p'
+  ./node_modules/.bin/electron . 2>/dev/null | sed -n '/^{/,$p' > "$WORK/report.json"
+cat "$WORK/report.json"
+# Electron's own exit status is lost in the pipe, so judge the run by its report.
+grep -q '"ok": true' "$WORK/report.json" && ! grep -q '"ok": false' "$WORK/report.json"

@@ -18,6 +18,7 @@
 - **Review.** Multi-line comments, suggestions you can commit, and pending reviews started anywhere.
 - **Agent.** Reviews code, answers or fixes CodeRabbit and Greptile comments, and re-runs Actions. Every write waits for your approval.
 - **Local git.** Clone, stage, commit, switch branches, pull and push.
+- **Tabs.** Browser-style tabs in the desktop app, each with its own page and history.
 - **Any sign-in.** PAT, GitHub CLI session, OAuth, or GitHub Enterprise.
 - **Runs on your computer.** No server. Tokens are encrypted with your OS keychain, and the agent uses your own Anthropic key.
 

@@ -1,6 +1,8 @@
 // Maps github.com (and API) URLs onto in-app routes so links inside rendered
 // markdown, notifications and timelines stay inside gh-ui.
 
+import { webBaseFor } from './hosts'
+
 const RESERVED_OWNERS = new Set([
   'settings', 'notifications', 'pulls', 'issues', 'login', 'marketplace', 'explore', 'topics', 'sponsors',
   'orgs', 'features', 'about', 'pricing', 'enterprise', 'apps', 'codespaces', 'search', 'new', 'organizations',
@@ -99,10 +101,31 @@ export function safeNextPath(next: string | null | undefined): string {
   const base = 'https://gh-ui.invalid'
   try {
     const url = new URL(next, base)
-    return url.origin === base ? url.pathname + url.search + url.hash : '/'
+    // /..//host resolves to a same-origin //host, which still reads as another host once it's a path.
+    return url.origin === base && !url.pathname.startsWith('//') ? url.pathname + url.search + url.hash : '/'
   } catch {
     return '/'
   }
+}
+
+export type LinkTarget = { app: string } | { external: string }
+
+/**
+ * Where a link leads, for opening it in a new tab: an in-app path, a URL for the system browser, or nowhere.
+ * In-app links have absolute paths. In rendered markdown every href is the author's and means a page on GitHub, even an
+ * absolute path: it only reaches the routes that GitHub URLs map onto, as a plain click on it does (useLinkInterceptor).
+ */
+export function linkTarget(href: string, host: string, routePath: string, rendered = false): LinkTarget | null {
+  if (!rendered && href.startsWith('/') && !href.startsWith('//')) return { app: safeNextPath(href) }
+  let url: string
+  try {
+    url = new URL(href, webBaseFor(host) + routePath).toString()
+  } catch {
+    return null
+  }
+  const app = appPathFromUrl(url, host)
+  if (app) return { app: safeNextPath(app) }
+  return /^(https?|mailto):/i.test(url) ? { external: url } : null
 }
 
 export function webUrl(host: string, path: string) {

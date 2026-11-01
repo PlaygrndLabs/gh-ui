@@ -36,6 +36,8 @@ import { highlightLines, languageFor } from '../../lib/highlight'
 import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { isNative, openExternal } from '../../lib/platform'
 import { appPathFromUrl, webUrl } from '../../lib/links'
+import { contentElementById } from '../../lib/scroll'
+import { useEffectOnChange } from '../../lib/activity'
 import { BranchPicker } from '../../components/BranchPicker'
 import { Markdown } from '../../components/Markdown'
 import { CommitHeadline, CopyButton, ErrorBox, Loading, UserAvatar } from '../../components/Bits'
@@ -819,8 +821,8 @@ export function BlobPage() {
   const loc = useMemo(() => (text ? text.replace(/\n$/, '').split('\n').filter((l) => l.trim() !== '').length : 0), [text])
   const range = parseLineHash(location.hash)
 
-  useEffect(() => {
-    if (range && lines.length) document.getElementById(`L${range[0]}`)?.scrollIntoView({ block: 'center' })
+  useEffectOnChange(() => {
+    if (range && lines.length) contentElementById(`L${range[0]}`)?.scrollIntoView({ block: 'center' })
   }, [range?.[0], lines.length])
 
   const canEdit = !!data.permissions?.push && isText

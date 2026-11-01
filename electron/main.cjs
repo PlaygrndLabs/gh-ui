@@ -232,10 +232,22 @@ function sendMenu(action) {
   mainWindow?.webContents.send('menu', action)
 }
 
+// Page contents can't reach these directly: a tab's history and page live in the renderer, so every action goes to it.
 function buildMenu() {
   const template = [
     ...(isMac ? [{ role: 'appMenu' }] : []),
-    { role: 'fileMenu' },
+    {
+      label: 'File',
+      submenu: [
+        { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: () => sendMenu('new-tab') },
+        { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T', click: () => sendMenu('reopen-tab') },
+        { type: 'separator' },
+        // Closes the tab, never the window: closing the last tab leaves a fresh dashboard.
+        { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: () => sendMenu('close-tab') },
+        { role: 'close', label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W' },
+        ...(isMac ? [] : [{ type: 'separator' }, { role: 'quit' }]),
+      ],
+    },
     { role: 'editMenu' },
     {
       label: 'View',
@@ -255,17 +267,28 @@ function buildMenu() {
     {
       label: 'Go',
       submenu: [
-        { label: 'Home', accelerator: 'CmdOrCtrl+1', click: () => sendMenu('navigate:/') },
-        { label: 'Pull Requests', accelerator: 'CmdOrCtrl+2', click: () => sendMenu('navigate:/pulls') },
-        { label: 'Issues', accelerator: 'CmdOrCtrl+3', click: () => sendMenu('navigate:/issues') },
-        { label: 'Notifications', accelerator: 'CmdOrCtrl+4', click: () => sendMenu('navigate:/notifications') },
-        { label: 'Local Repositories', accelerator: 'CmdOrCtrl+5', click: () => sendMenu('navigate:/local') },
+        { label: 'Home', accelerator: 'CmdOrCtrl+Alt+1', click: () => sendMenu('navigate:/') },
+        { label: 'Pull Requests', accelerator: 'CmdOrCtrl+Alt+2', click: () => sendMenu('navigate:/pulls') },
+        { label: 'Issues', accelerator: 'CmdOrCtrl+Alt+3', click: () => sendMenu('navigate:/issues') },
+        { label: 'Notifications', accelerator: 'CmdOrCtrl+Alt+4', click: () => sendMenu('navigate:/notifications') },
+        { label: 'Local Repositories', accelerator: 'CmdOrCtrl+Alt+5', click: () => sendMenu('navigate:/local') },
         { type: 'separator' },
-        { label: 'Back', accelerator: 'CmdOrCtrl+[', click: () => mainWindow?.webContents.navigationHistory.goBack() },
-        { label: 'Forward', accelerator: 'CmdOrCtrl+]', click: () => mainWindow?.webContents.navigationHistory.goForward() },
+        { label: 'Back', accelerator: 'CmdOrCtrl+[', click: () => sendMenu('back') },
+        { label: 'Forward', accelerator: 'CmdOrCtrl+]', click: () => sendMenu('forward') },
       ],
     },
-    { role: 'windowMenu' },
+    {
+      label: 'Tabs',
+      submenu: [
+        { label: 'Next Tab', accelerator: 'Ctrl+Tab', click: () => sendMenu('next-tab') },
+        { label: 'Previous Tab', accelerator: 'Ctrl+Shift+Tab', click: () => sendMenu('previous-tab') },
+        { type: 'separator' },
+        ...[1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({ label: `Tab ${n}`, accelerator: `CmdOrCtrl+${n}`, click: () => sendMenu(`select-tab:${n}`) })),
+        { label: 'Last Tab', accelerator: 'CmdOrCtrl+9', click: () => sendMenu('select-tab:9') },
+      ],
+    },
+    // The default menu's Close would take Cmd+W back on Windows and Linux.
+    { role: 'windowMenu', submenu: [{ role: 'minimize' }, { role: 'zoom' }, ...(isMac ? [{ type: 'separator' }, { role: 'front' }] : [])] },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
@@ -279,7 +302,8 @@ function createWindow() {
     title: 'gh-ui',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d1117' : '#ffffff',
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
-    trafficLightPosition: { x: 18, y: 22 },
+    // Centered on the tab strip (src/styles/app.css): 36px tall, and the buttons are 14px.
+    trafficLightPosition: { x: 16, y: 11 },
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -290,13 +314,19 @@ function createWindow() {
   })
   mainWindow.loadURL(DEV_URL || `${APP_ORIGIN}/`)
   mainWindow.on('closed', () => (mainWindow = null))
+  // The window buttons hide in full screen, so the tab strip stops leaving room for them.
+  const sendFullScreen = () => sendMenu(`fullscreen:${mainWindow.isFullScreen()}`)
+  mainWindow.on('enter-full-screen', sendFullScreen)
+  mainWindow.on('leave-full-screen', sendFullScreen)
+  mainWindow.webContents.on('did-finish-load', sendFullScreen)
   if (process.env.GH_UI_E2E) e2eTest(mainWindow, process.env.GH_UI_E2E)
   else if (process.env.GH_UI_SMOKE_TEST) smokeTest(mainWindow)
 }
 
 // GH_UI_E2E=<file.cjs> electron . — runs scripted steps inside the real renderer
 // (through the real preload bridge), prints one JSON report and exits. Each step is
-// { name, js, waitMs }: `js` is an async function body; waitMs lets navigations settle.
+// { name, js, waitMs } or { name, accelerator, waitMs }: `js` is an async function body; `accelerator` runs the app
+// menu item with that shortcut, the way pressing it does; waitMs lets navigations settle.
 function e2eTest(win, file) {
   const { steps } = require(path.resolve(file))
   const errors = []
@@ -308,7 +338,8 @@ function e2eTest(win, file) {
     const results = []
     for (const step of steps) {
       try {
-        const result = await win.webContents.executeJavaScript(`(async () => { ${step.js} })()`)
+        if (step.accelerator) findMenuItem(Menu.getApplicationMenu(), step.accelerator).click()
+        const result = step.js ? await win.webContents.executeJavaScript(`(async () => { ${step.js} })()`) : true
         results.push({ step: step.name, ok: true, result })
       } catch (err) {
         results.push({ step: step.name, ok: false, error: String(err && err.message ? err.message : err) })
@@ -321,9 +352,18 @@ function e2eTest(win, file) {
   })
 }
 
+function findMenuItem(menu, accelerator) {
+  for (const item of menu.items) {
+    if (item.accelerator === accelerator) return item
+    const inner = item.submenu && findMenuItem(item.submenu, accelerator)
+    if (inner) return inner
+  }
+  return null
+}
+
 // GH_UI_SMOKE_TEST=1 electron . — loads the UI, checks the bridge, the first render and
-// that Primer's styles apply at the default window size (a button keeps the browser's
-// narrow padding without them), prints a JSON report and exits non-zero on failure (for CI).
+// that Primer's styles apply at the default window size (a Primer button keeps the
+// browser's 21px height without them), prints a JSON report and exits non-zero on failure (for CI).
 function smokeTest(win) {
   const errors = []
   win.webContents.on('console-message', (event) => {
@@ -332,7 +372,7 @@ function smokeTest(win) {
   win.webContents.once('did-finish-load', () => {
     setTimeout(async () => {
       const report = await win.webContents.executeJavaScript(
-        `({ styled: parseFloat(getComputedStyle(document.querySelector('button')).paddingLeft) >= 8, url: location.href, bridge: typeof window.ghUi === 'object' && typeof window.ghUi.git === 'function', platform: window.ghUi && window.ghUi.platform, rendered: (document.getElementById('root') || {}).childElementCount > 0, title: document.title, heading: (document.querySelector('h1') || {}).textContent || null })`,
+        `({ styled: (document.querySelector('button[class*="prc-Button"]') || {}).offsetHeight >= 24, url: location.href, bridge: typeof window.ghUi === 'object' && typeof window.ghUi.git === 'function', platform: window.ghUi && window.ghUi.platform, rendered: (document.getElementById('root') || {}).childElementCount > 0, title: document.title, heading: (document.querySelector('h1') || {}).textContent || null })`,
       )
       const ok = report.bridge && report.rendered && report.styled && errors.length === 0
       process.stdout.write(JSON.stringify({ ok, ...report, errors }) + '\n')
@@ -348,15 +388,24 @@ function isAppUrl(url) {
   return u.protocol === 'app:' && u.host === 'gh-ui'
 }
 
+const appPath = (url) => {
+  const { pathname, search, hash } = new URL(url)
+  return pathname + search + hash
+}
+
+// The app is one document, with a router per tab, so nothing may navigate it. Windows are always denied: a link that
+// reaches this (the renderer handles Cmd-click and middle-click itself) becomes a tab, and the renderer validates its path.
 app.on('web-contents-created', (_e, contents) => {
   contents.on('will-navigate', (event, url) => {
-    if (!isAppUrl(url)) {
-      event.preventDefault()
-      if (/^https?:/.test(url)) void shell.openExternal(url)
-    }
+    // The same URL is a reload (Vite's among them), which brings the saved tabs back.
+    if (url === contents.getURL()) return
+    event.preventDefault()
+    if (isAppUrl(url)) sendMenu(`navigate:${appPath(url)}`)
+    else if (/^https?:/.test(url)) void shell.openExternal(url)
   })
-  contents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/.test(url)) void shell.openExternal(url)
+  contents.setWindowOpenHandler(({ url, disposition }) => {
+    if (isAppUrl(url)) sendMenu(`open-tab:${disposition === 'foreground-tab' ? 'foreground' : 'background'}:${appPath(url)}`)
+    else if (/^https?:/.test(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
 })

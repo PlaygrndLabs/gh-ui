@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { Avatar, Button, FormControl, Label, NavList, Radio, RadioGroup, Select, TextInput, Textarea, ToggleSwitch, Banner } from '@primer/react'
 import { PersonIcon, PaintbrushIcon, SparkleFillIcon, KeyIcon, PersonAddIcon, ShieldLockIcon } from '@primer/octicons-react'
 import { useAuth, AUTH_METHOD_LABEL, reauthPath } from '../lib/auth'
+import { useSwitchAccount } from '../lib/TabsProvider'
 import { TOKEN_KIND_LABEL } from '../lib/hosts'
 import { THEME_LABEL, useAppTheme, type ThemeChoice } from '../lib/theme'
 import { useAgent } from '../lib/agent/AgentProvider'
@@ -40,7 +41,8 @@ export function SettingsPage() {
 }
 
 function AccountsSettings() {
-  const { accounts, active, rejected, switchTo, signOut } = useAuth()
+  const { accounts, active, rejected, signOut } = useAuth()
+  const switchTo = useSwitchAccount()
   return (
     <>
       <div className="subhead">
@@ -76,7 +78,7 @@ function AccountsSettings() {
               </Button>
             )}
             {a.id !== active?.id && (
-              <Button size="small" onClick={() => switchTo(a.id)}>
+              <Button size="small" onClick={() => void switchTo(a.id)}>
                 Switch
               </Button>
             )}

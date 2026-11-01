@@ -299,7 +299,7 @@ function ReleaseForm(props: ReleaseFormProps) {
       ) : isNewTag ? (
         <p className="release-form-note">Excellent! This tag will be created from the target when you publish this release.</p>
       ) : null}
-      <TextInput className="release-form-title" placeholder="Release title" aria-label="Release title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <TextInput data-tab-draft className="release-form-title" placeholder="Release title" aria-label="Release title" value={title} onChange={(e) => setTitle(e.target.value)} />
       <Composer
         value={body}
         onChange={setBody}

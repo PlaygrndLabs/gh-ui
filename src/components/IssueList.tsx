@@ -1,9 +1,10 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Avatar, AvatarStack, Button, ButtonGroup, CounterLabel, Label, RelativeTime, TextInput } from '@primer/react'
 import { SearchIcon, CommentIcon, ChevronLeftIcon, ChevronRightIcon, IssueOpenedIcon, GitPullRequestIcon, CheckIcon, IssueClosedIcon, TriangleDownIcon, TagIcon, MilestoneIcon } from '@primer/octicons-react'
 import { useGitHub } from '../lib/github'
+import { useEffectOnChange } from '../lib/activity'
 import { Blankslate, ErrorBox, IssueLabel, Loading } from './Bits'
 import { CommitStatusMark, IssueStateIcon, PullStateIcon } from './Status'
 
@@ -70,8 +71,8 @@ export function IssueList({ kind, scope, defaultQuery, showRepo, actions, labels
   const [cursors, setCursors] = useState<Array<string | null>>([null])
   const presetIdx = Number(params.get('f') ?? 0)
   const effectiveScope = presets ? presets[presetIdx]?.scope ?? presets[0].scope : scope
-  useEffect(() => setDraft(q), [q])
-  useEffect(() => setCursors([null]), [q, effectiveScope])
+  useEffectOnChange(() => setDraft(q), [q])
+  useEffectOnChange(() => setCursors([null]), [q, effectiveScope])
 
   const typeQ = kind === 'pr' ? 'is:pr' : 'is:issue'
   const withoutState = q.replace(/\b(is|state):(open|closed|merged)\b/g, '').replace(/\s+/g, ' ').trim()

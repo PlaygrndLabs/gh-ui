@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Button, ButtonGroup, SegmentedControl, TextInput } from '@primer/react'
@@ -14,6 +14,8 @@ import { Blankslate, DiffStat, ErrorBox, Loading, UserAvatar } from '../../compo
 import { FileDiffBox } from '../../components/DiffView'
 import { PullStateIcon } from '../../components/Status'
 import { openExternal } from '../../lib/platform'
+import { contentElementById } from '../../lib/scroll'
+import { useEffectOnChange } from '../../lib/activity'
 import { CommitTimeline } from './Commits'
 
 const DIFF_DOCS = 'https://docs.github.com/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/about-comparing-branches-in-pull-requests#three-dot-and-two-dot-git-diff-comparisons'
@@ -100,7 +102,7 @@ function CompareForm() {
     queryFn: async () => (await octokit.rest.pulls.list({ owner, repo, head: head.includes(':') ? head : `${owner}:${head}`, base, state: 'open' })).data[0] ?? null,
   })
 
-  useEffect(() => {
+  useEffectOnChange(() => {
     const commits = compare.data?.commits
     if (!commits || title) return
     if (commits.length === 1) {
@@ -190,7 +192,7 @@ function CompareForm() {
               </div>
               <div className="flex-1" style={{ minWidth: 0 }}>
                 <div className="flex-center gap-2 mb-2">
-                  <TextInput block size="large" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Title" />
+                  <TextInput data-tab-draft block size="large" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Title" />
                   <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Write a pull request title and description for merging ${head} into ${base} in ${fullName}. First line is the title, then the markdown body.`)}>
                     Draft with agent
                   </Button>
@@ -278,7 +280,7 @@ function CompareForm() {
                     onClick={(e) => {
                       e.preventDefault()
                       setCollapsed((s) => ({ ...s, [i]: false }))
-                      requestAnimationFrame(() => document.getElementById(`diff-${i}`)?.scrollIntoView({ block: 'start' }))
+                      requestAnimationFrame(() => contentElementById(`diff-${i}`)?.scrollIntoView({ block: 'start' }))
                     }}
                   >
                     {f.filename}

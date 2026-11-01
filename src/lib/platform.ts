@@ -38,6 +38,8 @@ export interface HttpResponse {
 export interface NativeBridge {
   platform: 'darwin' | 'win32' | 'linux'
   version: string
+  /** The page's zoom (View > Zoom In): the window buttons don't zoom with it. */
+  zoomFactor(): number
   secrets: {
     get(key: string): Promise<string | null>
     set(key: string, value: string): Promise<void>

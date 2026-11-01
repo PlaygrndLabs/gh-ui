@@ -4,6 +4,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { useAuth } from '../auth'
 import { octokitFor } from '../github'
 import { readPref, writePref } from '../storage'
+import { useTabTitle } from '../TabsProvider'
 import { BASE_SYSTEM_PROMPT } from './prompt'
 import { createClient, describeAgentError, runAgent, type AgentEvent } from './runner'
 import { getAnthropicKey, loadAgentSettings, proxyBaseUrl, saveAgentSettings, type AgentSettings } from './settings'
@@ -11,6 +12,8 @@ import { getAnthropicKey, loadAgentSettings, proxyBaseUrl, saveAgentSettings, ty
 export interface PageContext {
   /** e.g. "pull request acme/web#42 “Fix login”" */
   label: string
+  /** What a desktop tab calls this page, e.g. "#128 Retry failed uploads". Without one the tab's title comes from the URL. */
+  tabTitle?: string
   owner?: string
   repo?: string
   details?: Record<string, string | number | boolean | null | undefined>
@@ -302,4 +305,5 @@ export function useAgentPageContext(ctx: PageContext | null) {
     return () => setPageContext(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serialized, setPageContext])
+  useTabTitle(ctx?.tabTitle)
 }

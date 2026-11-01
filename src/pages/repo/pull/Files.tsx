@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ActionList, ActionMenu, Banner, Button, Checkbox, CounterLabel, Dialog, FormControl, IconButton, Label, ProgressBar, Radio, RadioGroup, TextInput, Textarea, TreeView, useConfirm } from '@primer/react'
 import {
@@ -34,8 +34,9 @@ import {
 } from '../../../lib/github'
 import { useRepo, encodePath } from '../../../lib/repo'
 import { useAgent } from '../../../lib/agent/AgentProvider'
-import { readPref, writePref } from '../../../lib/storage'
+import { readPref, useSharedPref, writePref } from '../../../lib/storage'
 import { plural } from '../../../lib/format'
+import { contentElementById } from '../../../lib/scroll'
 import type { DiffLine, LineSelection } from '../../../lib/diff'
 import { parseSuggestions } from '../../../lib/suggestions'
 import { FileDiffBox, lineAnchor, anchorKey, type DiffSide } from '../../../components/DiffView'
@@ -93,9 +94,9 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
   const [split, setSplit] = useState(() => readPref('diffSplit', false))
   const [showTree, setShowTree] = useState(() => readPref('diffFileTree', true))
   const [filter, setFilter] = useState('')
-  const [viewed, setViewed] = useState<Record<string, string>>(() => readPref(`viewed:${storeKey}`, {}))
+  const [viewed, setViewed] = useSharedPref<Record<string, string>>(`viewed:${storeKey}`, {})
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-  const [pending, setPending] = useState<LocalComment[]>(() => readPref(`pendingReview:${storeKey}`, []))
+  const [pending, setPending] = useSharedPref<LocalComment[]>(`pendingReview:${storeKey}`, [])
   const [selection, setSelection] = useState<{ path: string; range: LineSelection } | null>(null)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [draftText, setDraftText] = useState('')
@@ -103,24 +104,18 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  // Switching to a cached PR keeps this component mounted, so reload the per-PR state during render,
-  // before the effects below can save the previous PR's values under the new PR's keys.
+  // Switching to a cached PR keeps this component mounted, so reset the per-PR state during render.
   const [loadedKey, setLoadedKey] = useState(storeKey)
   if (loadedKey !== storeKey) {
     setLoadedKey(storeKey)
     setFilter('')
-    setViewed(readPref(`viewed:${storeKey}`, {}))
     setCollapsed({})
-    setPending(readPref(`pendingReview:${storeKey}`, []))
     setSelection(null)
     setDraft(null)
     setDraftText('')
     setReviewOpen(false)
     setError(null)
   }
-
-  useEffect(() => writePref(`viewed:${storeKey}`, viewed), [viewed, storeKey])
-  useEffect(() => writePref(`pendingReview:${storeKey}`, pending), [pending, storeKey])
 
   // The viewer's pending review on GitHub (started here, on github.com or anywhere): while it exists, new
   // comments and replies go straight into it, and the local comments join it when the review is submitted.
@@ -341,6 +336,8 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
 
   return (
     <SuggestionProvider pr={pr} canApply={!!reviewState.data?.viewerCanApplySuggestion} currentLine={currentLine} onCommitted={invalidate}>
+      {/* A collapsed file takes its comment box with it, but not the text in it (src/lib/TabsProvider.tsx). */}
+      {draft && draftText.trim() && <span hidden data-tab-draft />}
       <div className="flex-center gap-2 wrap mb-3 files-toolbar">
         <IconButton
           className="files-tree-toggle"
@@ -402,7 +399,7 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
             files={shown}
             onSelect={(path) => {
               setCollapsed((c) => ({ ...c, [path]: false }))
-              requestAnimationFrame(() => document.getElementById(`diff-${cssId(path)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+              requestAnimationFrame(() => contentElementById(`diff-${cssId(path)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
             }}
             viewed={viewed}
           />

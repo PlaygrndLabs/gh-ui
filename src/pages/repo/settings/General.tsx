@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Banner, BranchName, Button, Checkbox, Dialog, FormControl, IconButton, Select, TextInput, useConfirm } from '@primer/react'
@@ -100,6 +100,7 @@ function RepositoryName() {
   const confirm = useConfirm()
   const [name, setName] = useState(data.name)
   const [error, setError] = useState<string | null>(null)
+  const renameNoteId = useId()
   const next = sanitizeRepoName(name)
   const rename = useMutation({
     mutationFn: () => update({ name: next }),
@@ -111,7 +112,7 @@ function RepositoryName() {
       <FormControl>
         <FormControl.Label>Repository name</FormControl.Label>
         <div className="settings-inline-field">
-          <TextInput value={name} onChange={(e) => setName(e.target.value)} aria-describedby="rename-note" />
+          <TextInput value={name} onChange={(e) => setName(e.target.value)} aria-describedby={renameNoteId} />
           <Button
             disabled={!next || next === data.name || rename.isPending}
             onClick={async () => {
@@ -136,7 +137,7 @@ function RepositoryName() {
             Rename
           </Button>
         </div>
-        {next !== name.trim() && next && <FormControl.Caption id="rename-note">Your repository will be renamed to {next}.</FormControl.Caption>}
+        {next !== name.trim() && next && <FormControl.Caption id={renameNoteId}>Your repository will be renamed to {next}.</FormControl.Caption>}
       </FormControl>
       {error && <div className="fg-danger text-small mt-1">{error}</div>}
     </div>

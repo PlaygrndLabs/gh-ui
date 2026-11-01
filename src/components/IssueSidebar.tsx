@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useId, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button, IconButton, SelectPanel } from '@primer/react'
@@ -267,6 +267,7 @@ function PickerSection({
 }
 
 export function IssueSidebar({ number, isPull, pull, labels, assignees, milestone, onChanged }: IssueSidebarProps) {
+  const subscriptionId = useId()
   const { owner, repo, data } = useRepo()
   const { octokit, key } = useGitHub()
   const qc = useQueryClient()
@@ -546,10 +547,10 @@ export function IssueSidebar({ number, isPull, pull, labels, assignees, mileston
       )}
       {!isPull && extra.data?.viewerCanSubscribe && (
         <Section title="Notifications">
-          <Button size="small" block leadingVisual={subscribed ? BellSlashIcon : BellIcon} loading={subscribe.isPending} onClick={() => subscribe.mutate()} aria-describedby="issue-subscription-description">
+          <Button size="small" block leadingVisual={subscribed ? BellSlashIcon : BellIcon} loading={subscribe.isPending} onClick={() => subscribe.mutate()} aria-describedby={subscriptionId}>
             {subscribed ? 'Unsubscribe' : 'Subscribe'}
           </Button>
-          <p id="issue-subscription-description" className="fg-muted mt-2" style={{ marginBottom: 0 }}>
+          <p id={subscriptionId} className="fg-muted mt-2" style={{ marginBottom: 0 }}>
             {subscribed ? 'You’re receiving notifications because you’re subscribed to this thread.' : 'You’re not receiving notifications from this thread.'}
           </p>
           {subscribe.error && <div className="fg-danger mt-1">{errorMessage(subscribe.error)}</div>}

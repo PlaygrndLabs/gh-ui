@@ -13,6 +13,7 @@ import { readPref, writePref } from '../../lib/storage'
 import { BranchPicker } from '../../components/BranchPicker'
 import { Blankslate, CommitHeadline, CopyButton, DiffStat, ErrorBox, Loading, UserAvatar, titleParts } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
+import { scrollContentToTop } from '../../lib/scroll'
 
 const PER_PAGE = 35
 
@@ -107,7 +108,7 @@ export function CommitsPage() {
               onPageChange={(e, n) => {
                 e.preventDefault()
                 setParams((p) => (p.set('page', String(n)), p))
-                window.scrollTo(0, 0)
+                scrollContentToTop()
               }}
             />
           )}
