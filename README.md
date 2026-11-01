@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/cover-dark.svg" />
-    <img src="docs/assets/cover-light.svg" alt="gi-ui: GitHub's interface as a desktop app, with a code review agent built in" width="100%" />
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/cover-dark.png" />
+    <img src="docs/assets/cover-light.png" alt="gi-ui: manage repositories and review code with an agent" width="100%" />
   </picture>
 </p>
 
@@ -9,11 +9,11 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**GitHub's interface as a desktop app, signed in with just a token.** PRs, Actions, issues, releases and repository settings look and work like github.com, with GitHub Desktop-style local git and a Claude agent beside them.
+**Manage your repositories and review code with an agent, in an app signed in with just a token.** PRs, Actions, issues, releases and repository settings look and work like github.com, with local git and a Claude agent beside them.
 
 ## Why gi-ui
 
-GitHub Desktop is good for local git, but PRs, Actions and most of the website are out of reach. gi-ui puts them all in one app.
+Reviewing a change usually means moving between the website, the terminal and your editor. gi-ui puts them in one app, with an agent that can do the follow-up work.
 
 - **Review.** Multi-line comments, suggestions you can commit, and pending reviews started anywhere.
 - **Agent.** Reviews code, answers or fixes CodeRabbit and Greptile comments, and re-runs Actions. Every write waits for your approval.

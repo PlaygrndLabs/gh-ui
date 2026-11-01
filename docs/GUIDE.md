@@ -1,6 +1,6 @@
 # gi-ui
 
-A GitHub client that looks and works like github.com — built on GitHub's own Primer design system — with GitHub Desktop–style local repository management and a built-in Claude agent that reviews code, handles CodeRabbit / Greptile comments, fixes failing CI and re-runs Actions.
+A GitHub client that looks and works like github.com — built on GitHub's own Primer design system — with local repository management and a built-in Claude agent that reviews code, handles CodeRabbit / Greptile comments, fixes failing CI and re-runs Actions.
 
 - **Desktop app (Electron)** — everything runs on your computer: GitHub API calls, sign-in, Actions logs, local git, and the agent (with your own Anthropic key). No server involved.
 - **Web build (optional)** — the same UI deployed to Cloudflare Workers, for using gi-ui from a browser. The Worker only exists for the few things a browser can't do itself.
