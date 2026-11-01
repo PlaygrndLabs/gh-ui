@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/cover-dark.svg" />
+    <img src="docs/assets/cover-light.svg" alt="gi-ui: GitHub's interface as a desktop app, with a code review agent built in" width="100%" />
+  </picture>
+</p>
+
 # gi-ui: a GitHub client with a built-in code review agent
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
