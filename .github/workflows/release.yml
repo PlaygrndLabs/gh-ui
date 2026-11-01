@@ -1,17 +1,55 @@
-# Pushing to the `release` branch builds the installers and publishes them as the GitHub Release
-# for package.json's version. To ship a new version, bump the version first; pushing the same
-# version again replaces its files.
+# Merging main into the `release` branch builds the installers and publishes them as a new GitHub
+# Release; the version comes from scripts/next-version.mjs. A pull request into `release` runs the
+# same build without publishing, and shows the version it would release.
 name: Release
 
 on:
   push:
     branches: [release]
+  pull_request:
+    branches: [release]
 
 permissions:
   contents: read
 
+# Unlike the default shell, `bash` fails a step when any command in a pipe fails.
+defaults:
+  run:
+    shell: bash
+
+# One at a time, so two merges can't work out the same version.
+concurrency:
+  group: release-${{ github.ref }}
+
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      # A squash or rebase would hide main's commits from the version bump, now and in the next
+      # release, and a published version can't be replaced. So nothing else gets released.
+      - name: Check this is a merge from main
+        if: github.event_name == 'push'
+        run: |
+          if git merge-base --is-ancestor HEAD origin/main; then exit 0; fi
+          if git rev-parse --verify --quiet HEAD^2 >/dev/null && git merge-base --is-ancestor HEAD^2 origin/main; then exit 0; fi
+          echo "::error::release only takes merges from main (a merge commit, not a squash or rebase, and no direct commits)"
+          exit 1
+      - name: Work out the next version
+        id: next
+        run: |
+          output=$(node scripts/next-version.mjs)
+          echo "$output" | tee -a "$GITHUB_OUTPUT"
+          echo "Next version: ${output#version=}" >> "$GITHUB_STEP_SUMMARY"
+
   build:
+    needs: version
+    if: needs.version.outputs.version
     strategy:
       fail-fast: false
       matrix:
@@ -29,15 +67,23 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # The version lives in the tags, not in a commit, so main and release never diverge over it.
+      - run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
       - run: npm run build
       - run: npx electron-builder ${{ matrix.flags }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-      - name: Check the app's signature and launch it
+      - name: Check the app's signature, version and launch
         if: matrix.name == 'macos'
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          codesign --verify --deep --strict release/mac-arm64/gi-ui.app
-          GI_UI_SMOKE_TEST=1 perl -e 'alarm 120; exec @ARGV' release/mac-arm64/gi-ui.app/Contents/MacOS/gi-ui | tee smoke.json
+          app=release/mac-arm64/gi-ui.app
+          codesign --verify --deep --strict "$app"
+          test "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "$VERSION"
+          GI_UI_SMOKE_TEST=1 perl -e 'alarm 120; exec @ARGV' "$app/Contents/MacOS/gi-ui" | tee smoke.json
           grep -q '"ok":true' smoke.json
       - uses: actions/upload-artifact@v4
         with:
@@ -51,12 +97,12 @@ jobs:
             release/*.deb
 
   publish:
-    needs: build
+    needs: [version, build]
+    if: github.event_name == 'push' && needs.version.outputs.version
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: installers
@@ -64,10 +110,18 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.version.outputs.version }}
         run: |
-          tag="v$(node -p "require('./package.json').version")"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" installers/* --clobber
-          else
-            gh release create "$tag" installers/* --title "gi-ui $tag" --target "$GITHUB_SHA" --generate-notes
+          # Re-running an old run must not publish old code after a newer merge; the newer run releases it too.
+          tip=$(gh api "repos/$GH_REPO/git/ref/heads/release" --jq .object.sha)
+          if [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "::error::release has moved on to $tip since this run"
+            exit 1
           fi
+          # A published version is never replaced.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::$TAG is already released"
+            exit 1
+          fi
+          gh release create "$TAG" installers/* --title "gi-ui $TAG" --target "$GITHUB_SHA" --generate-notes --latest
