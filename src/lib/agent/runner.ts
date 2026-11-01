@@ -18,7 +18,7 @@ export type AgentEvent =
   | { type: 'tool_result'; id: string; ok: boolean; output: string; denied?: boolean }
   | { type: 'fallback'; from: string; to: string }
   | { type: 'notice'; text: string }
-  | { type: 'usage'; input: number; output: number; cacheRead: number }
+  | { type: 'usage'; input: number; output: number; cacheRead: number; cacheWrite: number }
 
 export interface ToolCallInfo {
   id: string
@@ -52,10 +52,12 @@ function requestParams(opts: RunOptions) {
   return {
     model: settings.model,
     max_tokens: 64000,
-    system: [{ type: 'text' as const, text: system, cache_control: { type: 'ephemeral' as const } }],
+    // People pause between questions for longer than 5 minutes, so the tools + system prefix keeps a 1-hour entry.
+    // Within a run requests are minutes apart at most, so the conversation tail stays on the cheaper 5-minute one.
+    system: [{ type: 'text' as const, text: system, cache_control: { type: 'ephemeral' as const, ttl: '1h' as const } }],
     tools: TOOL_DEFINITIONS,
     messages,
-    cache_control: { type: 'ephemeral' as const },
+    cache_control: { type: 'ephemeral' as const, ttl: '5m' as const },
     thinking: { type: 'adaptive' as const, display: 'summarized' as const },
     output_config: { effort: settings.effort },
     ...(FALLBACK_MODELS.has(settings.model)
@@ -105,6 +107,7 @@ export async function runAgent(opts: RunOptions): Promise<void> {
       input: message.usage.input_tokens,
       output: message.usage.output_tokens,
       cacheRead: message.usage.cache_read_input_tokens ?? 0,
+      cacheWrite: message.usage.cache_creation_input_tokens ?? 0,
     })
     for (const block of message.content) {
       if (block.type === 'fallback') onEvent({ type: 'fallback', from: block.from.model, to: block.to.model })
