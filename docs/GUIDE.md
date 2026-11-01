@@ -19,7 +19,9 @@ npm run electron:build      # unpacked app in release/ (fast, for testing)
 npm run electron:dist       # dmg/zip (mac), nsis (win), AppImage/deb (linux)
 ```
 
-macOS builds are unsigned unless you configure code signing (see electron-builder docs). Smoke test a build: `GI_UI_SMOKE_TEST=1 release/mac-arm64/gi-ui.app/Contents/MacOS/gi-ui`.
+Pushing to the `release` branch builds the macOS installers in GitHub Actions and publishes them as the GitHub Release for `package.json`'s version (`.github/workflows/release.yml`). Bump the version to ship a new release; to add a platform, add a row to the workflow's matrix.
+
+macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electron-builder docs), so macOS blocks the first launch: open the app, then choose **Open Anyway** in System Settings → Privacy & Security. Smoke test a build: `GI_UI_SMOKE_TEST=1 release/mac-arm64/gi-ui.app/Contents/MacOS/gi-ui`.
 
 ## Sign in
 
@@ -124,4 +126,4 @@ Layout: `src/` React app (`pages/`, `components/`, `lib/` incl. `lib/agent/`), `
 
 ## Not covered yet
 
-Mixed-side comment ranges (from a deleted line to an added line); editing rulesets, environment and organization secrets, and settings pages without an API (Pages, Actions permissions, social preview, …); multi-select fields, labels/assignees and the item side panel in Projects; signed/notarized builds. The Windows package builds but hasn't been launched. Actions logs are split into steps from GitHub's second-precision step times (the API no longer exposes per-step logs), so a composite action's last inner step can occasionally show at the top of the next step.
+Not checked against real accounts: OAuth sign-in with a real OAuth App, and project editing (mocked data only). Logged-in screens follow GitHub's docs and weren't compared side by side with github.com. Mixed-side comment ranges (from a deleted line to an added line); editing rulesets, environment and organization secrets, and settings pages without an API (Pages, Actions permissions, social preview, …); multi-select fields, labels/assignees and the item side panel in Projects; signed/notarized builds. The Windows package builds but hasn't been launched. Actions logs are split into steps from GitHub's second-precision step times (the API no longer exposes per-step logs), so a composite action's last inner step can occasionally show at the top of the next step.

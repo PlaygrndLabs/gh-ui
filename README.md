@@ -14,7 +14,11 @@ GitHub Desktop is good for local git, but PRs, Actions and most of the website a
 - **Any sign-in.** PAT, GitHub CLI session, OAuth, or GitHub Enterprise.
 - **Runs on your computer.** No server. Tokens are encrypted with your OS keychain, and the agent uses your own Anthropic key.
 
-## Quick start
+## Install
+
+Download the macOS installer from [Releases](https://github.com/PlaygrndLabs/gi-ui/releases): `arm64` for Apple Silicon, `x64` for Intel. The app isn't notarized, so on first launch choose **Open Anyway** in System Settings → Privacy & Security.
+
+## Run from source
 
 ```bash
 npm install
@@ -23,7 +27,7 @@ npm run electron:dev
 
 Sign in with a [personal access token](https://github.com/settings/tokens) and add your Anthropic key in Settings → Agent to use the agent.
 
-To package the app, run `npm run electron:dist`. Builds are unsigned. A web build for Cloudflare Workers is also available with `npm run cf:deploy`.
+To package the app, run `npm run electron:dist`. A web build for Cloudflare Workers is also available with `npm run cf:deploy`.
 
 ## More
 
