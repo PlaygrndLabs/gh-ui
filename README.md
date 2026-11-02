@@ -24,7 +24,7 @@
 
 ## Install
 
-Download the macOS installer from [Releases](https://github.com/PlaygrndLabs/gh-ui/releases): `arm64` for Apple Silicon, `x64` for Intel. The app isn't notarized, so on first launch choose **Open Anyway** in System Settings → Privacy & Security.
+Download the macOS installer from [Releases](https://github.com/PlaygrndLabs/gh-ui/releases): `arm64` for Apple Silicon, `x64` for Intel. The desktop app is named **GitHub UI**.
 
 ## Run from source
 
