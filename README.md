@@ -24,7 +24,31 @@
 
 ## Install
 
-On macOS, install with Homebrew: `brew tap PlaygrndLabs/tap && brew trust PlaygrndLabs/tap && brew install --cask github-ui`. You can also download `GitHub-UI-arm64.dmg` (Apple Silicon) or `GitHub-UI-x64.dmg` (Intel) from [Releases](https://github.com/PlaygrndLabs/gh-ui/releases). The desktop app is named **GitHub UI**.
+### macOS with Homebrew
+
+This is the recommended option. Install [Homebrew](https://brew.sh/) first, then run:
+
+```bash
+brew tap PlaygrndLabs/tap
+brew trust PlaygrndLabs/tap
+brew install --cask github-ui
+```
+
+Open **GitHub UI** from Applications or Spotlight. To update it later:
+
+```bash
+brew upgrade --cask github-ui
+```
+
+### macOS direct download
+
+Download `GitHub-UI-arm64.dmg` for Apple Silicon or `GitHub-UI-x64.dmg` for Intel from [Releases](https://github.com/PlaygrndLabs/gh-ui/releases). Open the disk image and move **GitHub UI** to Applications.
+
+The app is not Apple-notarized. If macOS blocks the first launch, run:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/gh-ui.app
+```
 
 ## Run from source
 
