@@ -4,6 +4,7 @@ import type Anthropic from '@anthropic-ai/sdk'
 import { useAuth } from '../auth'
 import { octokitFor } from '../github'
 import { readPref, writePref } from '../storage'
+import { useTabTitle } from '../TabsProvider'
 import { BASE_SYSTEM_PROMPT } from './prompt'
 import { createClient, describeAgentError, runAgent, type AgentEvent } from './runner'
 import { getAnthropicKey, loadAgentSettings, proxyBaseUrl, saveAgentSettings, type AgentSettings } from './settings'
@@ -11,6 +12,8 @@ import { getAnthropicKey, loadAgentSettings, proxyBaseUrl, saveAgentSettings, ty
 export interface PageContext {
   /** e.g. "pull request acme/web#42 “Fix login”" */
   label: string
+  /** What a desktop tab calls this page, e.g. "#128 Retry failed uploads". Without one the tab's title comes from the URL. */
+  tabTitle?: string
   owner?: string
   repo?: string
   details?: Record<string, string | number | boolean | null | undefined>
@@ -41,7 +44,7 @@ interface AgentApi {
   respond(toolId: string, approved: boolean): void
   settings: AgentSettings
   updateSettings(patch: Partial<AgentSettings>): void
-  usage: { input: number; output: number; cacheRead: number }
+  usage: { input: number; output: number; cacheRead: number; cacheWrite: number }
 }
 
 const AgentContext = createContext<AgentApi | null>(null)
@@ -51,7 +54,7 @@ const nextId = () => `i${++seq}`
 
 function contextBlock(ctx: PageContext | null): string | undefined {
   if (!ctx) return undefined
-  const lines = [`The user is viewing ${ctx.label} in gi-ui.`]
+  const lines = [`The user is viewing ${ctx.label} in gh-ui.`]
   for (const [k, v] of Object.entries(ctx.details ?? {})) if (v !== undefined && v !== null && v !== '') lines.push(`${k}: ${v}`)
   return lines.join('\n')
 }
@@ -64,7 +67,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [running, setRunning] = useState(false)
   const [pageContext, setPageContext] = useState<PageContext | null>(null)
   const [settings, setSettings] = useState<AgentSettings>(loadAgentSettings)
-  const [usage, setUsage] = useState({ input: 0, output: 0, cacheRead: 0 })
+  const [usage, setUsage] = useState({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
 
   const history = useRef<Anthropic.Beta.BetaMessageParam[]>([])
   const abort = useRef<AbortController | null>(null)
@@ -141,7 +144,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const onEvent = useCallback(
     (e: AgentEvent) => {
       if (e.type === 'usage') {
-        setUsage((u) => ({ input: u.input + e.input, output: u.output + e.output, cacheRead: u.cacheRead + e.cacheRead }))
+        setUsage((u) => ({ input: u.input + e.input, output: u.output + e.output, cacheRead: u.cacheRead + e.cacheRead, cacheWrite: u.cacheWrite + e.cacheWrite }))
         return
       }
       pending.current.push(e)
@@ -165,7 +168,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       if (!active || running) return
       const ctxText = contextBlock(contextRef.current)
       setItems((prev) => [...prev, { id: nextId(), kind: 'user', text, context: contextRef.current?.label }])
-      const userContent = ctxText ? `<gi_ui_context>\n${ctxText}\n</gi_ui_context>\n\n${text}` : text
+      const userContent = ctxText ? `<gh_ui_context>\n${ctxText}\n</gh_ui_context>\n\n${text}` : text
       history.current.push({ role: 'user', content: userContent })
 
       const controller = new AbortController()
@@ -241,7 +244,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
     abort.current?.abort()
     history.current = []
     setItems([])
-    setUsage({ input: 0, output: 0, cacheRead: 0 })
+    setUsage({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
   }, [])
 
   const respond = useCallback((toolId: string, approved: boolean) => {
@@ -302,4 +305,5 @@ export function useAgentPageContext(ctx: PageContext | null) {
     return () => setPageContext(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serialized, setPageContext])
+  useTabTitle(ctx?.tabTitle)
 }

@@ -21,7 +21,7 @@ import { openExternal, isNative } from '../lib/platform'
 import { readPref, writePref } from '../lib/storage'
 import { copyText } from '../lib/format'
 import { safeNextPath } from '../lib/links'
-import { GiUiMark } from '../components/AppHeader'
+import { GhUiMark } from '../components/AppHeader'
 
 export function LoginPage() {
   const { signIn, accounts, ready } = useAuth()
@@ -77,16 +77,16 @@ export function LoginPage() {
 
   const normalizedHost = normalizeHost(host)
   const tokenUrl =
-    `https://${normalizedHost}/settings/tokens/new?description=gi-ui&scopes=${encodeURIComponent(DEFAULT_SCOPES.join(','))}`
+    `https://${normalizedHost}/settings/tokens/new?description=gh-ui&scopes=${encodeURIComponent(DEFAULT_SCOPES.join(','))}`
   const fineGrainedUrl = `https://${normalizedHost}/settings/personal-access-tokens/new`
 
   return (
     <div className="login-page">
       <div className="login-card">
         <div style={{ textAlign: 'center', color: 'var(--fgColor-default)' }}>
-          <GiUiMark size={48} />
+          <GhUiMark size={48} />
         </div>
-        <h1>{reauth ? 'Sign in again' : adding ? 'Add a GitHub account' : 'Sign in to gi-ui'}</h1>
+        <h1>{reauth ? 'Sign in again' : adding ? 'Add a GitHub account' : 'Sign in to gh-ui'}</h1>
         {reauth && (
           <p className="login-reauth">
             GitHub no longer accepts the saved token for <strong>{reauth.login}</strong>
@@ -198,7 +198,7 @@ export function LoginPage() {
         {adding && accounts.length > 0 && (
           <p style={{ textAlign: 'center' }}>
             <Link to={next} className="flex-center gap-1" style={{ justifyContent: 'center' }}>
-              <ArrowLeftIcon /> Back to gi-ui
+              <ArrowLeftIcon /> Back to gh-ui
             </Link>
           </p>
         )}
@@ -216,9 +216,9 @@ function DeviceFlow({ host, disabled, onToken, onError }: { host: string; disabl
   const abort = useRef<AbortController | null>(null)
 
   useEffect(() => {
-    void resolveClientId().then(setClientId)
-    return () => abort.current?.abort()
-  }, [])
+    void resolveClientId(host).then(setClientId)
+  }, [host])
+  useEffect(() => () => abort.current?.abort(), [])
 
   const start = async (id: string) => {
     setStarting(true)

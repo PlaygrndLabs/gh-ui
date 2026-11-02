@@ -34,11 +34,13 @@ export function fetchServerConfig(): Promise<ServerConfig | null> {
   return serverConfigPromise
 }
 
-export async function resolveClientId(): Promise<string | null> {
+export async function resolveClientId(host = 'github.com'): Promise<string | null> {
   const fromPrefs = readPref<string>('oauthClientId', '').trim()
   if (fromPrefs) return fromPrefs
   const cfg = await fetchServerConfig()
-  return cfg?.oauthClientId || (import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined) || null
+  if (cfg?.oauthClientId) return cfg.oauthClientId
+  // The built-in OAuth App exists only on github.com; other hosts need their own.
+  return host === 'github.com' ? (import.meta.env.VITE_GITHUB_CLIENT_ID as string | undefined) || null : null
 }
 
 async function postLogin(host: string, path: string, params: Record<string, string>): Promise<Record<string, unknown>> {
@@ -141,9 +143,9 @@ export type WebOAuthResult = { token: string; host: string } | { error: string }
 /** What /api/oauth/callback (Cloudflare web OAuth flow) handed over: a token, or why sign-in failed. */
 export function takeWebOAuthResult(): WebOAuthResult | null {
   try {
-    const raw = sessionStorage.getItem('gi-ui:oauth-handoff')
+    const raw = sessionStorage.getItem('gh-ui:oauth-handoff')
     if (!raw) return null
-    sessionStorage.removeItem('gi-ui:oauth-handoff')
+    sessionStorage.removeItem('gh-ui:oauth-handoff')
     const parsed = JSON.parse(raw) as { token?: string; host?: string; error?: string }
     if (parsed.token) return { token: parsed.token, host: parsed.host || DEFAULT_HOST }
     return parsed.error ? { error: parsed.error } : null

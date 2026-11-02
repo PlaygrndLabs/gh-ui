@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Banner, Button, NavList, RelativeTime, TextInput, IconButton } from '@primer/react'
@@ -32,6 +32,7 @@ import { fetchJobLogs, parseLog, splitLogBySteps, type LogLine, type StepLog } f
 import { durationBetween, shortSha, copyText } from '../../lib/format'
 import { webUrl } from '../../lib/links'
 import { openExternal } from '../../lib/platform'
+import { useEffectOnChange } from '../../lib/activity'
 import { CheckStatusIcon } from '../../components/Status'
 import { Blankslate, CopyButton, ErrorBox, Loading, UserAvatar } from '../../components/Bits'
 
@@ -89,6 +90,7 @@ export function RunPage() {
   useAgentPageContext(
     r
       ? {
+          tabTitle: r.display_title,
           label: `workflow run “${r.display_title}” (${r.name} #${r.run_number}, run id ${r.id}) in ${fullName}${selectedJob ? `, job “${selectedJob.name}” (job id ${selectedJob.id})` : ''}`,
           owner,
           repo,
@@ -736,7 +738,7 @@ function JobLogs({ job, canWrite, onChanged }: { job: Job; canWrite: boolean; on
     const split = splitLogBySteps(job.steps ?? [], parsed)
     return split.length ? split : [{ number: 1, name: job.name, status: job.status, conclusion: job.conclusion, lines: parsed }]
   }, [logs.data, job])
-  useEffect(() => {
+  useEffectOnChange(() => {
     // Expand failed steps by default, like github.com.
     const next: Record<number, boolean> = {}
     // Expand failed steps, and any step GitHub annotated with an error, like github.com.

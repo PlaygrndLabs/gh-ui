@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Button, ButtonGroup, NavList, RelativeTime, SegmentedControl, TextInput } from '@primer/react'
@@ -103,6 +103,7 @@ export function DiscussionsPage() {
   const filter = FILTERS.some(([v]) => v === params.get('filter')) ? params.get('filter')! : 'open'
   const [search, setSearch] = useState(q)
   const [cursors, setCursors] = useState<Array<string | null>>([null])
+  const listHeadingId = useId()
   const setParam = (k: string, v: string | null) => {
     const next = new URLSearchParams(params)
     if (v) next.set(k, v)
@@ -279,7 +280,7 @@ export function DiscussionsPage() {
           </NavList>
         </div>
         <div style={{ minWidth: 0 }}>
-          <h2 id="discussions-list" className="dx-list-title">
+          <h2 id={listHeadingId} className="dx-list-title">
             {q ? `${d.discussions.totalCount.toLocaleString()} ${d.discussions.totalCount === 1 ? 'result' : 'results'}` : 'Discussions'}
           </h2>
           <div className="Box">
@@ -289,7 +290,7 @@ export function DiscussionsPage() {
                 title={unknownCategory ? 'There are no matching discussions.' : q || filter !== 'all' ? 'No discussions match your search' : 'There aren’t any discussions yet'}
               />
             ) : (
-              <ul className="dx-list" aria-labelledby="discussions-list">
+              <ul className="dx-list" aria-labelledby={listHeadingId}>
                 {d.discussions.nodes.map((n) => (
                   <li key={n.number} className="Box-row hoverable dx-row">
                     <div className="dx-row-vote">
@@ -415,6 +416,7 @@ export function DiscussionPage() {
     d
       ? {
           label: `discussion ${fullName}#${number} “${d.title}”`,
+          tabTitle: `#${number} ${d.title}`,
           owner,
           repo,
           suggestions: [

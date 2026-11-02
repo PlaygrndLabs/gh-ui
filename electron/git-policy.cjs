@@ -13,8 +13,8 @@ function gitAuthEnv(auth) {
     GIT_CONFIG_KEY_0: key,
     GIT_CONFIG_VALUE_0: '',
     GIT_CONFIG_KEY_1: key,
-    GIT_CONFIG_VALUE_1: '!f() { test "$1" = get && echo username=x-access-token && echo "password=$GI_UI_GIT_TOKEN"; }; f',
-    GI_UI_GIT_TOKEN: auth.token,
+    GIT_CONFIG_VALUE_1: '!f() { test "$1" = get && echo username=x-access-token && echo "password=$GH_UI_GIT_TOKEN"; }; f',
+    GH_UI_GIT_TOKEN: auth.token,
   }
 }
 

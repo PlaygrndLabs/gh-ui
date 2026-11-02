@@ -299,7 +299,7 @@ function ReleaseForm(props: ReleaseFormProps) {
       ) : isNewTag ? (
         <p className="release-form-note">Excellent! This tag will be created from the target when you publish this release.</p>
       ) : null}
-      <TextInput className="release-form-title" placeholder="Release title" aria-label="Release title" value={title} onChange={(e) => setTitle(e.target.value)} />
+      <TextInput data-tab-draft className="release-form-title" placeholder="Release title" aria-label="Release title" value={title} onChange={(e) => setTitle(e.target.value)} />
       <Composer
         value={body}
         onChange={setBody}
@@ -354,7 +354,7 @@ function ReleaseForm(props: ReleaseFormProps) {
       {canUploadAssets ? (
         <AssetDropzone onFiles={addFiles} disabled={busy} />
       ) : (
-        <p className="release-form-note">Attaching binaries needs the gi-ui desktop app: GitHub’s upload server doesn’t accept uploads from web pages.</p>
+        <p className="release-form-note">Attaching binaries needs the gh-ui desktop app: GitHub’s upload server doesn’t accept uploads from web pages.</p>
       )}
       <div className="release-form-options">
         <FormControl>

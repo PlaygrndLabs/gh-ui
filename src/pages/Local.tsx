@@ -30,6 +30,7 @@ import { firstLine, shortSha } from '../lib/format'
 import { readPref, writePref } from '../lib/storage'
 import { generateCommitMessage } from '../lib/agent/oneshot'
 import { useAgentPageContext } from '../lib/agent/AgentProvider'
+import { useEffectOnChange } from '../lib/activity'
 import { FileDiffBox } from '../components/DiffView'
 import { Blankslate, ErrorBox, Loading } from '../components/Bits'
 
@@ -38,7 +39,7 @@ export function LocalReposPage() {
     return (
       <div className="container-lg">
         <Blankslate icon={<DeviceDesktopIcon size={32} />} title="Local repositories need the desktop app">
-          Cloning, committing and pushing local repositories works in the gi-ui desktop app (npm run electron:dev or a packaged build). Everything else works here in the browser.
+          Cloning, committing and pushing local repositories works in the gh-ui desktop app (npm run electron:dev or a packaged build). Everything else works here in the browser.
         </Blankslate>
       </div>
     )
@@ -157,7 +158,7 @@ function CloneDialog({ initial, onClose, onCloned }: { initial: string; onClose(
     queryKey: [key, 'clone-repos'],
     queryFn: async () => (await octokit.rest.repos.listForAuthenticatedUser({ sort: 'pushed', per_page: 100 })).data,
   })
-  useEffect(() => {
+  useEffectOnChange(() => {
     if (initial && /^[\w.-]+\/[\w.-]+$/.test(initial)) {
       setUrl(`https://${account.host}/${initial}.git`)
       setName(initial.split('/')[1])
@@ -418,7 +419,7 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
         <div className="desktop-toolbar-item ml-auto" style={{ borderRight: 0, borderLeft: '1px solid var(--borderColor-default)' }}>
           {remote.data && (
             <>
-              <IconButton description="Open repository in gi-ui" as={Link} to={`/${remote.data.owner}/${remote.data.repo}`} icon={MarkGithubIcon} aria-label="Open repository in gi-ui" />
+              <IconButton description="Open repository in gh-ui" as={Link} to={`/${remote.data.owner}/${remote.data.repo}`} icon={MarkGithubIcon} aria-label="Open repository in gh-ui" />
               {st?.branch && st.upstream && (
                 <IconButton description="Create pull request for this branch" as={Link} to={`/${remote.data.owner}/${remote.data.repo}/compare/${encodeURIComponent(st.branch)}`} icon={GitPullRequestIcon} aria-label="Create pull request" />
               )}
@@ -426,11 +427,11 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
           )}
           <IconButton description="Open in editor" icon={CodeIcon} aria-label="Open in editor" onClick={() => void native!.openInEditor(repo.id)} />
           <IconButton description="Show in file manager" icon={FileDirectoryIcon} aria-label="Show in file manager" onClick={() => void native!.revealInFinder(repo.id)} />
-          <IconButton description="Remove from gi-ui (files stay on disk)"
+          <IconButton description="Remove from gh-ui (files stay on disk)"
               icon={TrashIcon}
               aria-label="Remove repository from list"
               onClick={async () => {
-                if (await confirm({ title: `Remove ${repo.name}?`, content: 'It is removed from gi-ui only; the folder stays on disk.', confirmButtonContent: 'Remove' })) {
+                if (await confirm({ title: `Remove ${repo.name}?`, content: 'It is removed from gh-ui only; the folder stays on disk.', confirmButtonContent: 'Remove' })) {
                   await native!.repos.remove(repo.id)
                   void qc.invalidateQueries({ queryKey: ['local-repos'] })
                 }

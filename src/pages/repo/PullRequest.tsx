@@ -57,6 +57,7 @@ function PullRequestView() {
     pr
       ? {
           label: `pull request ${owner}/${repo}#${number} “${pr.title}”`,
+          tabTitle: `#${number} ${pr.title}`,
           owner,
           repo,
           details: {

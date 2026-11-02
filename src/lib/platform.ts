@@ -1,5 +1,5 @@
 // Contract between the React app and the Electron preload (electron/preload.cjs).
-// In a plain browser (Cloudflare deploy, `vite dev`) `window.giUi` is undefined
+// In a plain browser (Cloudflare deploy, `vite dev`) `window.ghUi` is undefined
 // and every caller must fall back to a web path or hide the feature.
 
 export interface GitResult {
@@ -38,6 +38,8 @@ export interface HttpResponse {
 export interface NativeBridge {
   platform: 'darwin' | 'win32' | 'linux'
   version: string
+  /** The page's zoom (View > Zoom In): the window buttons don't zoom with it. */
+  zoomFactor(): number
   secrets: {
     get(key: string): Promise<string | null>
     set(key: string, value: string): Promise<void>
@@ -64,11 +66,11 @@ export interface NativeBridge {
 
 declare global {
   interface Window {
-    giUi?: NativeBridge
+    ghUi?: NativeBridge
   }
 }
 
-export const native: NativeBridge | undefined = typeof window !== 'undefined' ? window.giUi : undefined
+export const native: NativeBridge | undefined = typeof window !== 'undefined' ? window.ghUi : undefined
 export const isNative = native !== undefined
 export const isDev = import.meta.env.DEV
 

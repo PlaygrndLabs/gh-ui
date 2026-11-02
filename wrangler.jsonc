@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "gi-ui",
+  "name": "gh-ui",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
   "assets": {

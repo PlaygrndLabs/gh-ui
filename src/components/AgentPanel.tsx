@@ -29,10 +29,17 @@ function LocalMarkdown({ text }: { text: string }) {
 
 const GENERAL_SUGGESTIONS = [
   { label: 'What needs my review?', prompt: 'Which open pull requests are waiting on my review (search_issues with review-requested:@me)? Summarize each in one line with its CI state.' },
-  { label: 'What can you do?', prompt: 'What can you help me with in gi-ui? List the kinds of tasks your tools support, with an example request for each.' },
+  { label: 'What can you do?', prompt: 'What can you help me with in gh-ui? List the kinds of tasks your tools support, with an example request for each.' },
 ]
 
-export function AgentPanel({ withLocalBar }: { withLocalBar: boolean }) {
+/** input_tokens is only the uncached remainder; the prompt is that plus what the cache read and wrote. */
+function usageSummary({ input, output, cacheRead, cacheWrite }: { input: number; output: number; cacheRead: number; cacheWrite: number }) {
+  const prompt = input + cacheRead + cacheWrite
+  if (prompt + output === 0) return null
+  return `${(prompt + output).toLocaleString()} tokens · ${Math.round((cacheRead / Math.max(prompt, 1)) * 100)}% of input from cache`
+}
+
+export function AgentPanel() {
   const agent = useAgent()
   const [draft, setDraft] = useState('')
   const scroller = useRef<HTMLDivElement>(null)
@@ -55,7 +62,7 @@ export function AgentPanel({ withLocalBar }: { withLocalBar: boolean }) {
   }
 
   return (
-    <aside className={`agent-panel ${withLocalBar ? 'with-local' : ''}`} aria-label="Agent">
+    <aside className="agent-panel" aria-label="Agent">
       <div className="agent-header">
         <SparkleFillIcon className="fg-done" />
         <span className="text-bold">Agent</span>
@@ -123,8 +130,7 @@ export function AgentPanel({ withLocalBar }: { withLocalBar: boolean }) {
         />
         <div className="flex-center gap-2">
           <span className="fg-muted text-small">
-            {agent.usage.input + agent.usage.output > 0 &&
-              `${(agent.usage.input + agent.usage.output).toLocaleString()} tokens${agent.usage.cacheRead ? ` · ${agent.usage.cacheRead.toLocaleString()} cached` : ''}`}
+            {usageSummary(agent.usage)}
           </span>
           <span className="ml-auto">
             {agent.running ? (

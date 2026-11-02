@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import worker, { type Env } from './index'
 
-const ORIGIN = 'https://gi-ui.example'
+const ORIGIN = 'https://gh-ui.example'
 
 type FetchHandler = (url: string, init?: RequestInit) => Response | Promise<Response>
 
@@ -13,7 +13,7 @@ function mockFetch(handler: FetchHandler = () => new Response('unexpected upstre
 }
 
 function makeEnv(vars: Partial<Omit<Env, 'ASSETS'>> = {}) {
-  const assets = vi.fn(async () => new Response('<!doctype html><title>gi-ui</title>', { headers: { 'content-type': 'text/html' } }))
+  const assets = vi.fn(async () => new Response('<!doctype html><title>gh-ui</title>', { headers: { 'content-type': 'text/html' } }))
   return { env: { ASSETS: { fetch: assets } as unknown as Fetcher, ...vars } as Env, assets }
 }
 
@@ -33,7 +33,7 @@ function runHandoff(html: string) {
     { setItem: (k: string, v: string) => stored.set(k, v) },
     { replace: (to: string) => (location.replaced = to) },
   )
-  const raw = stored.get('gi-ui:oauth-handoff')
+  const raw = stored.get('gh-ui:oauth-handoff')
   return { nonce: script[1], payload: raw ? (JSON.parse(raw) as { token?: string; host?: string; error?: string }) : null, target: location.replaced }
 }
 
@@ -171,7 +171,7 @@ describe('GET /api/oauth/callback', () => {
   it.each([
     ['bad_verification_code', 'The code passed is incorrect or expired.', /^The code passed is incorrect or expired\. Start again\.$/],
     ['incorrect_client_credentials', 'The client_id and/or client_secret passed are incorrect.', /incorrect\. Check GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET/],
-    ['redirect_uri_mismatch', 'The redirect_uri MUST match the registered callback URL for this application.', /callback URL to https:\/\/gi-ui\.example\/api\/oauth\/callback\.$/],
+    ['redirect_uri_mismatch', 'The redirect_uri MUST match the registered callback URL for this application.', /callback URL to https:\/\/gh-ui\.example\/api\/oauth\/callback\.$/],
     ['unverified_user_email', 'The user must have a verified primary email.', /^The user must have a verified primary email\.$/],
     ['Not Found', undefined, /^GitHub answered “Not Found” for client ID Ov23liTestClient\. Check GITHUB_CLIENT_ID/],
   ])('turns GitHub’s %s into a readable message', async (error, description, expected) => {
@@ -346,7 +346,7 @@ describe('/api/anthropic/* (agent proxy)', () => {
     const fetchMock = upstream({})
     const { env } = makeEnv({ ANTHROPIC_API_KEY: 'sk-server', ALLOWED_GITHUB_USERS: '*' })
     expect((await post(env, {})).status).toBe(401)
-    const res = await post(env, { 'x-gi-ui-github-token': freshToken() })
+    const res = await post(env, { 'x-gh-ui-github-token': freshToken() })
     expect(res.status).toBe(401)
     expect(res.headers.get('access-control-allow-origin')).toBe('*')
     expect(anthropicCalls(fetchMock)).toHaveLength(0)
@@ -356,7 +356,7 @@ describe('/api/anthropic/* (agent proxy)', () => {
     const token = freshToken()
     const fetchMock = upstream({ [`api.github.com|${token}`]: 'Octo' })
     const { env } = makeEnv({ ANTHROPIC_API_KEY: 'sk-server', ALLOWED_GITHUB_USERS: 'someone, octo' })
-    const res = await post(env, { 'x-gi-ui-github-token': token, authorization: 'Bearer proxy', 'x-api-key': 'sk-client' })
+    const res = await post(env, { 'x-gh-ui-github-token': token, authorization: 'Bearer proxy', 'x-api-key': 'sk-client' })
     expect(res.status).toBe(200)
     expect(res.headers.get('request-id')).toBe('req_1')
     const [[url, init]] = anthropicCalls(fetchMock)
@@ -364,14 +364,14 @@ describe('/api/anthropic/* (agent proxy)', () => {
     const headers = new Headers(init?.headers)
     expect(headers.get('x-api-key')).toBe('sk-server')
     expect(headers.get('authorization')).toBeNull()
-    expect(headers.get('x-gi-ui-github-token')).toBeNull()
+    expect(headers.get('x-gh-ui-github-token')).toBeNull()
     expect(headers.get('anthropic-version')).toBe('2023-06-01')
   })
 
   it('refuses a user who is not on the list', async () => {
     const token = freshToken()
     const fetchMock = upstream({ [`api.github.com|${token}`]: 'mallory' })
-    const res = await post(makeEnv({ ANTHROPIC_API_KEY: 'sk-server', ALLOWED_GITHUB_USERS: 'octo' }).env, { 'x-gi-ui-github-token': token })
+    const res = await post(makeEnv({ ANTHROPIC_API_KEY: 'sk-server', ALLOWED_GITHUB_USERS: 'octo' }).env, { 'x-gh-ui-github-token': token })
     expect(res.status).toBe(403)
     expect(((await res.json()) as { error: { message: string } }).error.message).toBe('github.com/mallory is not in ALLOWED_GITHUB_USERS.')
     expect(anthropicCalls(fetchMock)).toHaveLength(0)
@@ -381,7 +381,7 @@ describe('/api/anthropic/* (agent proxy)', () => {
     const token = freshToken()
     const fetchMock = upstream({ [`git.corp.example|${token}`]: 'octo' })
     const vars = { ANTHROPIC_API_KEY: 'sk-server', GHES_HOSTS: 'git.corp.example' }
-    const ghes = { 'x-gi-ui-github-token': token, 'x-gi-ui-github-host': 'git.corp.example' }
+    const ghes = { 'x-gh-ui-github-token': token, 'x-gh-ui-github-host': 'git.corp.example' }
     expect((await post(makeEnv({ ...vars, ALLOWED_GITHUB_USERS: 'octo' }).env, ghes)).status).toBe(403)
     expect(fetchMock.mock.calls[0][0]).toBe('https://git.corp.example/api/v3/user')
     expect((await post(makeEnv({ ...vars, ALLOWED_GITHUB_USERS: 'git.corp.example/Octo' }).env, ghes)).status).toBe(200)
@@ -392,8 +392,8 @@ describe('/api/anthropic/* (agent proxy)', () => {
     const token = freshToken()
     const fetchMock = upstream({ [`api.github.com|${token}`]: 'anyone', [`evil.example|${token}`]: 'octo' })
     const { env } = makeEnv({ ANTHROPIC_API_KEY: 'sk-server', ALLOWED_GITHUB_USERS: '*' })
-    expect((await post(env, { 'x-gi-ui-github-token': token })).status).toBe(200)
-    const evil = await post(env, { 'x-gi-ui-github-token': token, 'x-gi-ui-github-host': 'evil.example' })
+    expect((await post(env, { 'x-gh-ui-github-token': token })).status).toBe(200)
+    const evil = await post(env, { 'x-gh-ui-github-token': token, 'x-gh-ui-github-host': 'evil.example' })
     expect(evil.status).toBe(401)
     expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('evil.example'))).toBe(false)
   })
@@ -401,7 +401,7 @@ describe('/api/anthropic/* (agent proxy)', () => {
   it('only forwards the messages and models endpoints', async () => {
     const token = freshToken()
     const fetchMock = upstream({ [`api.github.com|${token}`]: 'octo' })
-    const res = await post(makeEnv({ ANTHROPIC_API_KEY: 'sk-server', ALLOWED_GITHUB_USERS: 'octo' }).env, { 'x-gi-ui-github-token': token }, '/api/anthropic/v1/files')
+    const res = await post(makeEnv({ ANTHROPIC_API_KEY: 'sk-server', ALLOWED_GITHUB_USERS: 'octo' }).env, { 'x-gh-ui-github-token': token }, '/api/anthropic/v1/files')
     expect(res.status).toBe(404)
     expect(anthropicCalls(fetchMock)).toHaveLength(0)
   })

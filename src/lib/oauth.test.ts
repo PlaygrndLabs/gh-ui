@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_SCOPES, pollDeviceToken, requestDeviceCode, takeWebOAuthResult, type DeviceCode } from './oauth'
+import { DEFAULT_SCOPES, pollDeviceToken, requestDeviceCode, resolveClientId, takeWebOAuthResult, type DeviceCode } from './oauth'
 
 // In a plain browser (no Electron bridge) the device flow goes through /api/gh-login.
 function mockLogin(...replies: Array<{ status?: number; body: unknown }>) {
@@ -156,7 +156,7 @@ describe('pollDeviceToken', () => {
 
 describe('takeWebOAuthResult', () => {
   function fakeSessionStorage(initial?: string) {
-    const store = new Map<string, string>(initial === undefined ? [] : [['gi-ui:oauth-handoff', initial]])
+    const store = new Map<string, string>(initial === undefined ? [] : [['gh-ui:oauth-handoff', initial]])
     vi.stubGlobal('sessionStorage', {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
@@ -184,5 +184,15 @@ describe('takeWebOAuthResult', () => {
     expect(takeWebOAuthResult()).toBeNull()
     fakeSessionStorage('{}')
     expect(takeWebOAuthResult()).toBeNull()
+  })
+})
+
+describe('resolveClientId', () => {
+  it('uses the built-in OAuth App only on github.com', async () => {
+    vi.stubEnv('VITE_GITHUB_CLIENT_ID', 'Ov23liBuiltIn')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })))
+    expect(await resolveClientId()).toBe('Ov23liBuiltIn')
+    expect(await resolveClientId('github.example.com')).toBeNull()
+    vi.unstubAllEnvs()
   })
 })

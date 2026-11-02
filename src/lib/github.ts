@@ -6,6 +6,10 @@ import { hunkSide } from './suggestions'
 
 const clients = new Map<string, Octokit>()
 
+let writes = 0
+/** Requests under way that change something on GitHub. Tabs wait for these before unloading. */
+export const writesInFlight = () => writes
+
 // GitHub marks API responses cacheable for 60 seconds, so the refetch after a write (a submitted review, a
 // committed suggestion) would get the browser's stale copy. Revalidate instead: unchanged data comes back as a
 // 304, which doesn't count against the rate limit. React Query does the caching.
@@ -20,6 +24,17 @@ export function octokitFor(account: Pick<Account, 'id' | 'token' | 'apiBase'>): 
     client.hook.error('request', (error) => {
       if ((error as { status?: number }).status === 401) reportRejectedToken(account.id, account.token)
       throw error
+    })
+    client.hook.wrap('request', async (request, options) => {
+      // GraphQL reads are POSTs too; anything that isn't plainly a query counts as a write.
+      const graphqlRead = options.url === '/graphql' && /^\s*(query\b|\{)/.test(String(options.query))
+      const write = options.method !== 'GET' && options.method !== 'HEAD' && !graphqlRead
+      if (write) writes++
+      try {
+        return await request(options)
+      } finally {
+        if (write) writes--
+      }
     })
     clients.set(key, client)
   }

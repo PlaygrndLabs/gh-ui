@@ -28,6 +28,7 @@ import { Blankslate, CopyButton, ErrorBox, Loading, UserAvatar, botName, isBot }
 import { Markdown } from '../../components/Markdown'
 import { ReactionSummary } from '../../components/Timeline'
 import { useCanPush, useDeleteRelease } from './ReleaseForm'
+import { contentElementById, scrollContentToTop } from '../../lib/scroll'
 
 type TagCommit = { oid: string; verified: boolean }
 
@@ -117,7 +118,7 @@ function ReleaseListPage() {
 
   const goTo = (n: number) => {
     setParams({ page: String(n) })
-    window.scrollTo(0, 0)
+    scrollContentToTop()
   }
   const pageCount = Math.max(page, releases.data?.pageCount ?? 1, releases.data?.hasNext ? page + 1 : 1)
 
@@ -176,7 +177,7 @@ function ReleaseListPage() {
                         title={r.name || r.tag_name}
                         onClick={(e) => {
                           e.preventDefault()
-                          document.getElementById(`release-${r.tag_name}`)?.scrollIntoView({ block: 'start' })
+                          contentElementById(`release-${r.tag_name}`)?.scrollIntoView({ block: 'start' })
                         }}
                       >
                         {r.name || r.tag_name}

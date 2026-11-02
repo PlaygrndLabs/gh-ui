@@ -34,6 +34,7 @@ import {
   PeopleIcon,
 } from '@primer/octicons-react'
 import { useAuth, useAccount } from '../lib/auth'
+import { useSwitchAccount } from '../lib/TabsProvider'
 import { canReadNotifications } from '../lib/hosts'
 import { useGitHub } from '../lib/github'
 import { useAgent } from '../lib/agent/AgentProvider'
@@ -53,14 +54,14 @@ const safeDecode = (s: string) => {
   }
 }
 
-export function useRouteRepo() {
+function useRouteRepo() {
   const { pathname } = useLocation()
   const [owner = '', repo = '', section = ''] = pathname.split('/').filter(Boolean).slice(0, 3).map(safeDecode)
   if (TOP_LEVEL.has(owner)) return { owner: '', repo: '', section: '', top: owner }
   return { owner, repo, section, top: '' }
 }
 
-export function GiUiMark({ size = 32 }: { size?: number }) {
+export function GhUiMark({ size = 32 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
       <rect width="32" height="32" rx="8" fill="currentColor" />
@@ -124,7 +125,7 @@ export function AppHeader() {
       <div className="AppHeader-globalBar">
         <IconButton icon={ThreeBarsIcon} aria-label="Open global navigation menu" onClick={() => setNavOpen(true)} />
         <Link to="/" className="AppHeader-logo" aria-label="Home">
-          <GiUiMark />
+          <GhUiMark />
         </Link>
         <nav className="AppHeader-context" aria-label="Page context">
           {owner ? (
@@ -294,7 +295,8 @@ function AccountMenu() {
 }
 
 function AccountPanel({ onClose }: { onClose(): void }) {
-  const { accounts, active, rejected, switchTo, signOut } = useAuth()
+  const { accounts, active, rejected, signOut } = useAuth()
+  const switchTo = useSwitchAccount()
   const navigate = useNavigate()
   if (!active) return null
   const { login, host } = active
@@ -385,13 +387,13 @@ function AccountPanel({ onClose }: { onClose(): void }) {
         <ActionList.Divider />
         {accounts.length > 1 && (
           <ActionList.Group selectionVariant="single">
-            <ActionList.GroupHeading>Switch account</ActionList.GroupHeading>
+            <ActionList.GroupHeading as="h3">Switch account</ActionList.GroupHeading>
             {accounts.map((a) => (
               <ActionList.Item
                 key={a.id}
                 selected={a.id === active.id}
                 onSelect={() => {
-                  switchTo(a.id)
+                  void switchTo(a.id)
                   onClose()
                 }}
               >
@@ -468,7 +470,7 @@ function GlobalNav({ onClose }: { onClose(): void }) {
     staleTime: 5 * 60_000,
   })
   return (
-    <Dialog title={<GiUiMark size={28} />} position="left" width="small" onClose={onClose}>
+    <Dialog className="global-nav-dialog" title={<GhUiMark size={28} />} position="left" width="small" onClose={onClose}>
       <NavList aria-label="Global">
         <NavList.Item as={Link} to="/" aria-current={pathname === '/' ? 'page' : undefined} onClick={onClose}>
           <NavList.LeadingVisual>

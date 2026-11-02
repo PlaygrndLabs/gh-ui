@@ -201,7 +201,7 @@ function sectionFrom(sub: string, legacyTab: string | null): Section {
   const first = sub.split('/')[0]
   const fromPath = (Object.keys(SECTION_PATH) as Section[]).find((s) => s !== 'overview' && SECTION_PATH[s] === `/${first}`)
   if (fromPath) return fromPath
-  // Older gi-ui links used ?tab=<section>.
+  // Older gh-ui links used ?tab=<section>.
   if (legacyTab && legacyTab in SECTION_PATH) return legacyTab as Section
   return 'overview'
 }

@@ -17,12 +17,20 @@ import '@primer/primitives/dist/css/functional/typography/typography.css'
 import './styles/markdown.css'
 import './styles/app.css'
 import App from './App'
+import { NativeApp } from './NativeApp'
 import { AuthProvider } from './lib/auth'
 import { AppThemeProvider } from './lib/theme'
 import { native } from './lib/platform'
 
 if (native) {
   document.body.classList.add('is-native', `is-native-${native.platform === 'darwin' ? 'mac' : native.platform}`)
+  // Like a browser's tabs, the strip stays one size at any page zoom: it shares its row with the window buttons.
+  const syncZoom = () => document.body.style.setProperty('--page-zoom', String(native!.zoomFactor()))
+  window.addEventListener('resize', syncZoom)
+  syncZoom()
+  native.onMenu((action) => {
+    if (action.startsWith('fullscreen:')) document.body.classList.toggle('is-fullscreen', action === 'fullscreen:true')
+  })
 }
 
 const queryClient = new QueryClient({
@@ -46,9 +54,14 @@ createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <AppThemeProvider>
         <AuthProvider>
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
+          {/* The desktop app gives each tab its own router; browsers already have tabs. */}
+          {native ? (
+            <NativeApp />
+          ) : (
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          )}
         </AuthProvider>
       </AppThemeProvider>
     </QueryClientProvider>

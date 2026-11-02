@@ -42,7 +42,7 @@ describe('gitAuthEnv', () => {
     const env = gitAuthEnv({ token: 'ghp_x', host: 'github.com' })
     expect(env.GIT_CONFIG_KEY_1).toBe('credential.https://github.com.helper')
     expect(env.GIT_CONFIG_VALUE_0).toBe('')
-    expect(env.GI_UI_GIT_TOKEN).toBe('ghp_x')
+    expect(env.GH_UI_GIT_TOKEN).toBe('ghp_x')
     expect(env.GIT_CONFIG_VALUE_1).not.toContain('ghp_x')
   })
   it('ignores malformed hosts', () => {

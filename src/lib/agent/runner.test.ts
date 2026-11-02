@@ -232,6 +232,36 @@ describe('runAgent', () => {
     expect(approve).toHaveBeenCalledOnce()
   })
 
+  it('keeps the prompt cache valid across the steps of a run', async () => {
+    const { client, requests } = fakeApi([sse(READ_AND_WRITE, 'tool_use'), sse([{ type: 'text', text: 'Done.' }], 'end_turn')])
+    const { ctx } = fakeGitHub()
+    const messages: Anthropic.Beta.BetaMessageParam[] = [{ role: 'user', content: 'review' }]
+
+    await runAgent({ client, settings: DEFAULT_SETTINGS, system: 'sys', messages, ctx, signal: new AbortController().signal, onEvent: () => {}, approve: async () => true })
+
+    const [first, second] = requests.map((r) => r.body)
+    // A 1-hour entry must come before the 5-minute one, and both breakpoints must stay.
+    expect(first.system).toEqual([{ type: 'text', text: 'sys', cache_control: { type: 'ephemeral', ttl: '1h' } }])
+    expect(first.cache_control).toEqual({ type: 'ephemeral', ttl: '5m' })
+    // Caching is a prefix match: tools, system and every earlier message must repeat byte for byte.
+    expect(JSON.stringify(second.tools)).toBe(JSON.stringify(first.tools))
+    expect(JSON.stringify(second.system)).toBe(JSON.stringify(first.system))
+    const prefix = JSON.stringify(first.messages).slice(0, -1)
+    expect(JSON.stringify(second.messages).startsWith(prefix)).toBe(true)
+    for (const setting of ['model', 'thinking', 'output_config']) expect(second[setting]).toEqual(first[setting])
+  })
+
+  it('reports cache reads and writes', async () => {
+    const turn = sse([{ type: 'text', text: 'Hi.' }], 'end_turn').replace(/"usage":\{"input_tokens":\d+/, '"usage":{"cache_read_input_tokens":900,"cache_creation_input_tokens":50,"input_tokens":3')
+    const { client } = fakeApi([turn])
+    const { ctx } = fakeGitHub()
+    const events: AgentEvent[] = []
+
+    await runAgent({ client, settings: DEFAULT_SETTINGS, system: 'sys', messages: [{ role: 'user', content: 'hi' }], ctx, signal: new AbortController().signal, onEvent: (e) => events.push(e), approve: async () => true })
+
+    expect(events.find((e) => e.type === 'usage')).toMatchObject({ input: 3, cacheRead: 900, cacheWrite: 50 })
+  })
+
   it('omits the fallback beta for models without server-side fallback', async () => {
     const { client, requests } = fakeApi([sse([{ type: 'text', text: 'hi' }], 'end_turn')])
     const { ctx } = fakeGitHub()

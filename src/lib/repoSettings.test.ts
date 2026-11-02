@@ -187,9 +187,9 @@ describe('branch protection form', () => {
     })
   })
   it('switches off options under an unchecked parent', () => {
-    const input = protectionInput({ ...EMPTY_PROTECTION_FORM, pattern: ' gi-ui-test/* ', dismissStale: true, strictStatusChecks: true, statusChecks: ['ci'] })
+    const input = protectionInput({ ...EMPTY_PROTECTION_FORM, pattern: ' gh-ui-test/* ', dismissStale: true, strictStatusChecks: true, statusChecks: ['ci'] })
     expect(input).toMatchObject({
-      pattern: 'gi-ui-test/*',
+      pattern: 'gh-ui-test/*',
       requiresApprovingReviews: false,
       requiredApprovingReviewCount: 0,
       dismissesStaleReviews: false,
@@ -246,7 +246,7 @@ describe('webhooks', () => {
   })
 
   it('validates payload URLs and formats deliveries', () => {
-    expect(isValidPayloadUrl('https://example.com/gi-ui-test')).toBe(true)
+    expect(isValidPayloadUrl('https://example.com/gh-ui-test')).toBe(true)
     expect(isValidPayloadUrl('ftp://example.com')).toBe(false)
     expect(isValidPayloadUrl('example.com')).toBe(false)
     expect(formatPayload('{"a":1}')).toBe('{\n  "a": 1\n}')
@@ -257,10 +257,10 @@ describe('webhooks', () => {
 })
 
 describe('deploy keys', () => {
-  const pub = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQF/bXOgvmmSgoPAsjzUFtom4FLqBnITPY2HVv9+IQ4 gi-ui-test'
+  const pub = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQF/bXOgvmmSgoPAsjzUFtom4FLqBnITPY2HVv9+IQ4 gh-ui-test'
 
   it('computes OpenSSH’s SHA256 fingerprint', async () => {
-    // ssh-keygen -lf: 256 SHA256:LkLN8f4siSgfl9CsmY475VSxoaWmIrzVAGuU4pe7ww8 gi-ui-test (ED25519)
+    // ssh-keygen -lf: 256 SHA256:LkLN8f4siSgfl9CsmY475VSxoaWmIrzVAGuU4pe7ww8 gh-ui-test (ED25519)
     expect(await sshFingerprint(pub)).toBe('SHA256:LkLN8f4siSgfl9CsmY475VSxoaWmIrzVAGuU4pe7ww8')
     expect(sshKeyBlob(pub)?.type).toBe('ssh-ed25519')
     expect(sshKeyBlob('not a key')).toBeNull()
@@ -279,12 +279,12 @@ describe('deploy keys', () => {
 
 describe('actions secret and variable names', () => {
   it('applies GitHub’s naming rules', () => {
-    expect(actionsNameError('GI_UI_TEST_SECRET', 'secret')).toBeNull()
+    expect(actionsNameError('GH_UI_TEST_SECRET', 'secret')).toBeNull()
     expect(actionsNameError('', 'secret')).toBeNull()
     expect(actionsNameError('my var', 'variable')).toMatch(/Spaces are not allowed/)
     expect(actionsNameError('a-b', 'secret')).toMatch(/alphanumeric/)
     expect(actionsNameError('1ABC', 'secret')).toMatch(/cannot start with a number/)
     expect(actionsNameError('github_token', 'variable')).toMatch(/GITHUB_/)
-    expect(normalizeActionsName(' gi_ui_test_var ')).toBe('GI_UI_TEST_VAR')
+    expect(normalizeActionsName(' gh_ui_test_var ')).toBe('GH_UI_TEST_VAR')
   })
 })

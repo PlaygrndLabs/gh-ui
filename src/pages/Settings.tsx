@@ -3,6 +3,7 @@ import { Link, useLocation, useParams } from 'react-router-dom'
 import { Avatar, Button, FormControl, Label, NavList, Radio, RadioGroup, Select, TextInput, Textarea, ToggleSwitch, Banner } from '@primer/react'
 import { PersonIcon, PaintbrushIcon, SparkleFillIcon, KeyIcon, PersonAddIcon, ShieldLockIcon } from '@primer/octicons-react'
 import { useAuth, AUTH_METHOD_LABEL, reauthPath } from '../lib/auth'
+import { useSwitchAccount } from '../lib/TabsProvider'
 import { TOKEN_KIND_LABEL } from '../lib/hosts'
 import { THEME_LABEL, useAppTheme, type ThemeChoice } from '../lib/theme'
 import { useAgent } from '../lib/agent/AgentProvider'
@@ -40,7 +41,8 @@ export function SettingsPage() {
 }
 
 function AccountsSettings() {
-  const { accounts, active, rejected, switchTo, signOut } = useAuth()
+  const { accounts, active, rejected, signOut } = useAuth()
+  const switchTo = useSwitchAccount()
   return (
     <>
       <div className="subhead">
@@ -76,7 +78,7 @@ function AccountsSettings() {
               </Button>
             )}
             {a.id !== active?.id && (
-              <Button size="small" onClick={() => switchTo(a.id)}>
+              <Button size="small" onClick={() => void switchTo(a.id)}>
                 Switch
               </Button>
             )}
@@ -87,7 +89,7 @@ function AccountsSettings() {
         ))}
       </div>
       <p className="fg-muted text-small mt-3">
-        {isNative ? 'Tokens are encrypted at rest with Electron safeStorage (macOS Keychain, Windows DPAPI, libsecret).' : 'In the browser, tokens live in localStorage for this origin only.'} Signing out removes the token from gi-ui; revoke it on GitHub to invalidate it everywhere.
+        {isNative ? 'Tokens are encrypted at rest with Electron safeStorage (macOS Keychain, Windows DPAPI, libsecret).' : 'In the browser, tokens live in localStorage for this origin only.'} Signing out removes the token from gh-ui; revoke it on GitHub to invalidate it everywhere.
       </p>
     </>
   )
@@ -143,7 +145,7 @@ function AgentSettingsPanel() {
             </FormControl>
             <FormControl>
               <Radio value="proxy" checked={settings.mode === 'proxy'} onChange={() => updateSettings({ mode: 'proxy' })} />
-              <FormControl.Label>Use a gi-ui Worker</FormControl.Label>
+              <FormControl.Label>Use a gh-ui Worker</FormControl.Label>
               <FormControl.Caption>
                 The Cloudflare Worker holds the key and only serves GitHub users you allow (ALLOWED_GITHUB_USERS).
                 {server && (server.anthropicProxy ? ' This deployment has a key configured.' : ' This deployment has no ANTHROPIC_API_KEY set.')}
@@ -198,7 +200,7 @@ function AgentSettingsPanel() {
         ) : (
           <FormControl>
             <FormControl.Label>Worker URL</FormControl.Label>
-            <TextInput block value={settings.proxyUrl} placeholder={isNative ? 'https://gi-ui.example.workers.dev' : 'Leave empty to use this site'} onChange={(e) => updateSettings({ proxyUrl: e.target.value })} />
+            <TextInput block value={settings.proxyUrl} placeholder={isNative ? 'https://gh-ui.example.workers.dev' : 'Leave empty to use this site'} onChange={(e) => updateSettings({ proxyUrl: e.target.value })} />
             <FormControl.Caption>Your GitHub token is sent to the Worker so it can confirm who you are.</FormControl.Caption>
           </FormControl>
         )}

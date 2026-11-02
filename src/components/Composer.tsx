@@ -39,6 +39,8 @@ export function Composer({ value, onChange, context, placeholder = 'Leave a comm
   }
   return (
     <div className="composer">
+      {/* Preview has no textarea, and a tab must not unload with text in it (src/lib/TabsProvider.tsx). */}
+      {value.trim() && <span hidden data-tab-draft />}
       <div className="composer-tabs">
         <div className="composer-tablist" role="tablist">
           <button type="button" role="tab" className="composer-tab" aria-selected={tab === 'write'} onClick={() => setTab('write')}>

@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import DOMPurify from 'dompurify'
 import { SkeletonText } from '@primer/react/experimental'
@@ -49,6 +49,7 @@ export function sanitizeAgent(html: string) {
 /** Intercepts clicks on links inside rendered HTML so GitHub links stay in-app. */
 export function useLinkInterceptor() {
   const navigate = useNavigate()
+  const { pathname, search } = useLocation()
   const { account } = useGitHub()
   return (e: MouseEvent<HTMLElement>) => {
     const anchor = (e.target as HTMLElement).closest('a')
@@ -58,10 +59,10 @@ export function useLinkInterceptor() {
     if (e.metaKey || e.ctrlKey) return
     e.preventDefault()
     // App routes mirror GitHub paths, so resolve relative hrefs against the GitHub page for this route
-    // rather than the app's own origin (app://gi-ui in Electron), which appPathFromUrl never matches.
+    // rather than the app's own origin (app://gh-ui in Electron), which appPathFromUrl never matches.
     let url: string
     try {
-      url = new URL(href, webBaseFor(account.host) + window.location.pathname + window.location.search).toString()
+      url = new URL(href, webBaseFor(account.host) + pathname + search).toString()
     } catch {
       return
     }

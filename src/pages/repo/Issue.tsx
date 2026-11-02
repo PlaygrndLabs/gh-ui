@@ -90,6 +90,7 @@ export function IssuePage() {
     i
       ? {
           label: `issue ${fullName}#${number} “${i.title}”`,
+          tabTitle: `#${number} ${i.title}`,
           owner,
           repo,
           details: { state: i.state, author: i.user?.login, labels: i.labels.map((l) => (typeof l === 'string' ? l : l.name)).join(', ') },
@@ -323,7 +324,7 @@ export function NewIssuePage() {
           <UserAvatar login={account.login} src={account.avatarUrl} size={40} />
         </div>
         <div className="flex-1" style={{ minWidth: 0 }}>
-          <TextInput block size="large" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Title" autoFocus className="mb-3" />
+          <TextInput data-tab-draft block size="large" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Title" autoFocus className="mb-3" />
           <Composer
             value={body}
             onChange={setBody}
