@@ -24,7 +24,7 @@
 
 ## Install
 
-Download the macOS installer from [Releases](https://github.com/PlaygrndLabs/gh-ui/releases): `arm64` for Apple Silicon, `x64` for Intel. The desktop app is named **GitHub UI**.
+On macOS, install with Homebrew: `brew tap PlaygrndLabs/tap && brew install --cask github-ui`. You can also download `GitHub-UI-arm64.dmg` (Apple Silicon) or `GitHub-UI-x64.dmg` (Intel) from [Releases](https://github.com/PlaygrndLabs/gh-ui/releases). The desktop app is named **GitHub UI**.
 
 ## Run from source
 

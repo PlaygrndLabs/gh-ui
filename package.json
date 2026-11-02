@@ -28,7 +28,6 @@
   "build": {
     "appId": "dev.gh-ui.app",
     "productName": "gh-ui",
-    "afterSign": "scripts/notarize.cjs",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -46,13 +45,12 @@
         "dmg",
         "zip"
       ],
-      "hardenedRuntime": true,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist",
       "extendInfo": {
         "CFBundleDisplayName": "GitHub UI"
       },
-      "artifactName": "GitHub UI-${version}-${arch}.${ext}"
+      "identity": "-",
+      "hardenedRuntime": false,
+      "artifactName": "GitHub-UI-${arch}.${ext}"
     },
     "win": {
       "target": [
@@ -68,7 +66,6 @@
     }
   },
   "devDependencies": {
-    "@electron/notarize": "^2.5.0",
     "@anthropic-ai/sdk": "^1.3.0",
     "@cloudflare/workers-types": "^5.20261030.1",
     "@octokit/rest": "^22.0.1",
