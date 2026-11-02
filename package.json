@@ -1,6 +1,6 @@
 {
   "name": "gh-ui",
-  "productName": "GitHub UI",
+  "productName": "gh-ui",
   "license": "MIT",
   "homepage": "https://github.com/PlaygrndLabs/gh-ui",
   "repository": {
@@ -27,7 +27,7 @@
   },
   "build": {
     "appId": "dev.gh-ui.app",
-    "productName": "GitHub UI",
+    "productName": "gh-ui",
     "afterSign": "scripts/notarize.cjs",
     "directories": {
       "output": "release",
@@ -49,7 +49,10 @@
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "extendInfo": {
+        "CFBundleDisplayName": "GitHub UI"
+      },
+      "artifactName": "GitHub UI-${version}-${arch}.${ext}"
     },
     "win": {
       "target": [
