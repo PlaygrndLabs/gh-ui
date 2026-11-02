@@ -106,7 +106,7 @@ jobs:
           app='release/mac-arm64/GitHub UI.app'
           codesign --verify --deep --strict "$app"
           test "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "$VERSION"
-          GH_UI_SMOKE_TEST=1 perl -e 'alarm 120; exec @ARGV' "$app/Contents/MacOS/GitHub UI" | tee smoke.json
+          GH_UI_SMOKE_TEST=1 perl -e 'alarm 120; exec @ARGV' "$app/Contents/MacOS/GitHub UI" 2>&1 | tee smoke.json
           grep -q '"ok":true' smoke.json
       - uses: actions/upload-artifact@v4
         with:
