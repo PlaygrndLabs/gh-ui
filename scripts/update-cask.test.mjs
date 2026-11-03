@@ -13,6 +13,8 @@ describe('renderCask', () => {
     expect(cask).toContain('/releases/download/v#{version}/GitHub-UI-#{arch}.dmg')
     // Homebrew refuses to tap a cask with no Linux checksum unless it says it's macOS-only.
     expect(cask).toContain('depends_on :macos')
+    expect(cask).toContain('target: "GitHub UI.app"')
+    expect(cask).toContain('#{appdir}/GitHub UI.app')
     expect(cask).not.toContain(':no_check')
     expect(cask).not.toContain(':latest')
   })

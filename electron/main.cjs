@@ -375,8 +375,8 @@ function smokeTest(win) {
         `({ styled: (document.querySelector('button[class*="prc-Button"]') || {}).offsetHeight >= 24, url: location.href, bridge: typeof window.ghUi === 'object' && typeof window.ghUi.git === 'function', platform: window.ghUi && window.ghUi.platform, rendered: (document.getElementById('root') || {}).childElementCount > 0, title: document.title, heading: (document.querySelector('h1') || {}).textContent || null })`,
       )
       const ok = report.bridge && report.rendered && report.styled && errors.length === 0
-      process.stdout.write(JSON.stringify({ ok, ...report, errors }) + '\n')
-      app.exit(ok ? 0 : 1)
+      // Exiting right after the write can lose the text when stdout is a file or a pipe.
+      process.stdout.write(JSON.stringify({ ok, ...report, errors }) + '\n', () => app.exit(ok ? 0 : 1))
     }, 2500)
   })
 }
