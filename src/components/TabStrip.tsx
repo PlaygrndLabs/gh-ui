@@ -19,6 +19,7 @@ import {
   XIcon,
   type Icon,
 } from '@primer/octicons-react'
+import { UpdateNotice } from './UpdateNotice'
 import { tabButtonId, tabPanelId, useTabs } from '../lib/TabsProvider'
 import { iconFromPath, tabTitle, type Tab, type TabIcon } from '../lib/tabs'
 
@@ -105,15 +106,18 @@ export function TabStrip() {
         ))}
       </div>
       <IconButton className="tab-new" icon={PlusIcon} aria-label="New tab" size="small" variant="invisible" onClick={newTab} />
-      <IconButton
-        className="tab-split"
-        icon={ColumnsIcon}
-        aria-label={state.split ? 'Close split view' : 'Split view'}
-        aria-pressed={!!state.split}
-        size="small"
-        variant="invisible"
-        onClick={toggleSplit}
-      />
+      <div className="tab-strip-end">
+        <UpdateNotice />
+        <IconButton
+          className="tab-split"
+          icon={ColumnsIcon}
+          aria-label={state.split ? 'Close split view' : 'Split view'}
+          aria-pressed={!!state.split}
+          size="small"
+          variant="invisible"
+          onClick={toggleSplit}
+        />
+      </div>
       {/* In the body: the strip keeps one size at any zoom, which would throw this out of place. */}
       {dropSide && createPortal(<div className={`split-drop is-${dropSide}`} aria-hidden="true" />, document.body)}
       {menu && (

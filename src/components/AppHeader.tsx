@@ -528,7 +528,6 @@ function GlobalNav({ onClose }: { onClose(): void }) {
           </NavList.LeadingVisual>
           Settings
         </NavList.Item>
-        <NavList.Divider />
         <NavList.Group title="Repositories">
           {(repos.data ?? []).map((r) => (
             <NavList.Item key={r.id} as={Link} to={`/${r.full_name}`} onClick={onClose}>

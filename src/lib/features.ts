@@ -12,9 +12,11 @@ export const FEATURES = {
   security: { label: 'Security and quality', description: 'Dependabot, code scanning and secret scanning alerts, and advisories.', group: 'Repository tabs', default: false },
   insights: { label: 'Insights', description: 'Pulse, commit activity and contributors.', group: 'Repository tabs', default: false },
   repoSettings: { label: 'Repository settings', description: 'Settings for repositories you administer, including the Danger Zone.', group: 'Repository tabs', default: false },
+  homeActions: { label: 'Actions', description: 'Failing and running workflows across your recent repositories, on Home.', group: 'Home', default: true },
   activityFeed: { label: 'Recent activity', description: 'The activity feed on Home.', group: 'Home', default: false },
   assignedIssues: { label: 'Assigned issues', description: 'Issues assigned to you, on Home.', group: 'Home', default: false },
   headerShortcuts: { label: 'Issues and pull requests buttons', description: 'Your issues and Your pull requests buttons in the header.', group: 'Header', default: false },
+  updateNotice: { label: 'Update notice', description: 'Say in the tab strip when a new version is available. The app checks GitHub every 6 hours.', group: 'App', default: true },
   sidebarDetails: { label: 'Empty sidebar sections', description: 'Show Projects and Development on pull requests and issues even when they have nothing in them.', group: 'Pull requests', default: false },
 } as const
 

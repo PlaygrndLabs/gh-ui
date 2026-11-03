@@ -50,6 +50,9 @@ export interface NativeBridge {
   /** Requests to github.com / GHES hosts that browsers block with CORS (device flow, log blobs, release uploads). */
   http(req: HttpRequest): Promise<HttpResponse>
   openExternal(url: string): Promise<void>
+  /** How this copy was installed, which decides how it updates. */
+  installKind(): Promise<'homebrew' | 'direct'>
+  openTerminal(): Promise<void>
   pickDirectory(title?: string): Promise<string | null>
   repos: {
     list(): Promise<LocalRepo[]>
