@@ -73,6 +73,8 @@ gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and u
 The app is built for repositories, pull requests and Actions. Home is a work queue: pull requests waiting on you, your own, and failing or running Actions. A pull request shows its checks, reviews and conflicts on one line, with Re-run failed, copy link and Check out, which uses your local clone. Discussions, Projects, Wiki, Security and quality, Insights, repository settings, the Home activity feed and a few smaller parts start switched off; turn them on in Settings → Features.
 
 - **Tabs (desktop)** — browser-style tabs, each with its own page and back/forward history. Cmd-click or middle-click any in-app link to open it in the background, Cmd+Shift-click to open it in front; other links go to your browser. Drag to reorder, middle-click to close. Tabs come back after a restart, per account and device. Recent tabs stay alive, so half-written comments, scroll position and expanded logs survive switching; beyond 8 live tabs the least recently used hidden ones unload and reload from their URL when shown. A tab with unsent text, or something still running, is never unloaded, and closing it or switching account asks first. The tab strip stays the same size when the page is zoomed. The agent panel is shared and follows the active tab.
+- **Comment and description editor** — GitHub's formatting toolbar and shortcuts (Cmd-B, Cmd-I, Cmd-E, Cmd-K, Cmd-Shift-. for a quote, Cmd-Shift-7, 8 and L for lists), lists that continue on Enter, and pasting a URL over selected text to link it.
+- **Mermaid diagrams** — drawn in the app, in its light or dark theme, wherever Markdown appears.
 - **Dashboard** — review requests, your PRs (with CI + review state), assigned issues, activity feed, top repositories.
 - **Code** — file tree, README, About/languages/releases, branch & tag picker, go-to-file, syntax-highlighted file view with line links, in-place edit & commit, commits and commit diffs, branches (ahead/behind, PR links, create/delete).
 - **Pull requests** — list with GitHub search filters; conversation timeline with review threads (reply, resolve/unresolve, edit, delete), merge box (checks, reviews, update branch, ready for review, merge/squash/rebase, delete branch), reviewers/assignees/labels editing, Commits, Checks (annotations, re-run), Files changed (file tree, unified/split diff, “viewed” tracking, approve / request changes), compare & create PR.
@@ -142,6 +144,7 @@ Worker routes: `/api/config`, `/api/gh-login/*` (device-flow proxy; github.com s
 
 - The UI is served from a custom `app://gh-ui` origin with a CSP. Nothing navigates that document or opens another window: links outside the app go to your browser, and in-app links become validated paths in a tab's own router.
 - Rendered markdown comes from GitHub's own HTML and is sanitized again with DOMPurify.
+- Mermaid diagrams are written by whoever wrote the pull request, so they render in a sandboxed frame with no origin and no network access, and only the sanitized SVG reaches the app.
 - The renderer can only run allow-listed git subcommands inside repositories you added, and never with options that execute programs, write arbitrary files or force-overwrite (`electron/git-policy.cjs`, tested in `electron/git-policy.test.ts`). Your token is given to git only for HTTPS fetch/pull/push/clone to the signed-in host, through an environment-scoped credential helper.
 - Main-process HTTP (device flow, logs) is limited to public HTTPS hosts and drops the token on redirects.
 
@@ -164,5 +167,7 @@ Layout: `src/` React app (`pages/`, `components/`, `lib/` incl. `lib/agent/`), `
 - electron-builder's default NSIS and AppImage tools are x86_64 only: install Rosetta 2 or build on Windows/Linux CI. Without `xz`/`gtar` on macOS, the deb also needs `-c.deb.compression=gz`.
 
 ## Not covered yet
+
+The editor can't attach files, because GitHub has no public API for comment uploads, and it doesn't autocomplete @mentions or #references yet.
 
 Not checked against real accounts: the web OAuth flow in the Cloudflare build, and project editing (mocked data only). Logged-in screens follow GitHub's docs and weren't compared side by side with github.com. Mixed-side comment ranges (from a deleted line to an added line); editing rulesets, environment and organization secrets, and settings pages without an API (Pages, Actions permissions, social preview, …); multi-select fields, labels/assignees and the item side panel in Projects; signed/notarized builds. The Windows package builds but hasn't been launched. Actions logs are split into steps from GitHub's second-precision step times (the API no longer exposes per-step logs), so a composite action's last inner step can occasionally show at the top of the next step.

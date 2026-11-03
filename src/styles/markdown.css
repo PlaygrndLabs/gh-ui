@@ -1123,3 +1123,20 @@
 
 
 .markdown-body { background-color: transparent; font-size: 14px; }
+
+.markdown-body .mermaid-diagram {
+  overflow-x: auto;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.markdown-body .mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.markdown-body .mermaid-error {
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--fgColor-muted);
+}

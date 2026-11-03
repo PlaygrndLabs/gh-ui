@@ -31,13 +31,13 @@ This is the recommended option. Install [Homebrew](https://brew.sh/) first, then
 ```bash
 brew tap PlaygrndLabs/tap
 brew trust PlaygrndLabs/tap
-brew install --cask github-ui
+brew install --cask gh-ui
 ```
 
 Open **GitHub UI** from Applications or Spotlight. To update it later:
 
 ```bash
-brew upgrade --cask github-ui
+brew upgrade --cask gh-ui
 ```
 
 ### macOS direct download
