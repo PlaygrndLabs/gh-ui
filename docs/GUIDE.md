@@ -35,7 +35,7 @@ Versions are `vX.Y.Z` git tags, and a published version is never replaced. `scri
 
 `package.json`'s version is a floor: set it higher to choose a version yourself, such as `1.0.0`. It isn't updated on each release; the installers get the tag's version at build time.
 
-macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electron-builder docs), so macOS blocks the first launch: open the app, then choose **Open Anyway** in System Settings → Privacy & Security. Smoke test a build: `GH_UI_SMOKE_TEST=1 release/mac-arm64/gh-ui.app/Contents/MacOS/gh-ui`.
+macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electron-builder docs). The Homebrew cask in [PlaygrndLabs/homebrew-tap](https://github.com/PlaygrndLabs/homebrew-tap) clears macOS's quarantine flag on install, and each release pins it to its version and installer checksums; that needs a `HOMEBREW_TAP_TOKEN` repository secret that can write to the tap. For a direct download, see the README. Smoke test a build: `GH_UI_SMOKE_TEST=1 release/mac-arm64/gh-ui.app/Contents/MacOS/gh-ui`.
 
 ## Sign in
 
