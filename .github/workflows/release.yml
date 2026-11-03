@@ -149,9 +149,9 @@ jobs:
           git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/PlaygrndLabs/homebrew-tap.git" tap
           arm64=$(sha256sum installers/GitHub-UI-arm64.dmg | cut -d' ' -f1)
           x64=$(sha256sum installers/GitHub-UI-x64.dmg | cut -d' ' -f1)
-          node scripts/update-cask.mjs tap/Casks/github-ui.rb "$VERSION" "$arm64" "$x64"
+          node scripts/update-cask.mjs tap/Casks/gh-ui.rb "$VERSION" "$arm64" "$x64"
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/github-ui.rb
-          git diff --cached --quiet || { git commit -m "feat(cask): update github-ui to $VERSION" && git push; }
+          git add Casks/gh-ui.rb
+          git diff --cached --quiet || { git commit -m "feat(cask): update gh-ui to $VERSION" && git push; }

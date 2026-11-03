@@ -3,7 +3,7 @@
 
 const REPO = 'PlaygrndLabs/gh-ui'
 export const LATEST_RELEASE_API = `https://api.github.com/repos/${REPO}/releases/latest`
-export const BREW_UPGRADE_COMMAND = 'brew update && brew upgrade --cask github-ui'
+export const BREW_UPGRADE_COMMAND = 'brew update && brew upgrade --cask gh-ui'
 
 export const releasePage = (version: string) => `https://github.com/${REPO}/releases/tag/v${version}`
 

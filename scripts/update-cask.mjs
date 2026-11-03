@@ -7,7 +7,7 @@ import { compareVersions } from './next-version.mjs'
 export function renderCask({ version, arm64, x64 }) {
   compareVersions(version, version) // throws unless it's X.Y.Z
   for (const sha of [arm64, x64]) if (!/^[0-9a-f]{64}$/.test(sha)) throw new Error(`Not a sha256: ${sha}`)
-  return `cask "github-ui" do
+  return `cask "gh-ui" do
   arch arm: "arm64", intel: "x64"
 
   version "${version}"
