@@ -19,6 +19,8 @@ export function renderCask({ version, arm64, x64 }) {
   desc "GitHub client with a built-in code review agent"
   homepage "https://github.com/PlaygrndLabs/gh-ui"
 
+  depends_on :macos
+
   app "gh-ui.app"
 
   # GitHub UI is distributed outside Apple's notarization service.
