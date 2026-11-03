@@ -41,6 +41,7 @@ import { WebhooksSettings, WebhookPage } from './pages/repo/settings/Webhooks'
 import { DeployKeysSettings, NewDeployKeyPage } from './pages/repo/settings/DeployKeys'
 import { SecretsSettings, SecretFormPage, VariableFormPage } from './pages/repo/settings/Secrets'
 import { AlertIcon } from '@primer/octicons-react'
+import { FeatureGate } from './components/FeatureGate'
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { ready, active } = useAuth()
@@ -236,9 +237,9 @@ export function pageRoutes(shell: ReactElement) {
         <Route path="pulls" element={<PullsPage />} />
         <Route path="pull/:number/*" element={<PullRequestPage />} />
         <Route path="compare/*" element={<ComparePage />} />
-        <Route path="issues" element={<IssuesPage />} />
-        <Route path="issues/new" element={<NewIssuePage />} />
-        <Route path="issues/:number" element={<IssuePage />} />
+        <Route path="issues" element={<FeatureGate feature="issues"><IssuesPage /></FeatureGate>} />
+        <Route path="issues/new" element={<FeatureGate feature="issues"><NewIssuePage /></FeatureGate>} />
+        <Route path="issues/:number" element={<FeatureGate feature="issues"><IssuePage /></FeatureGate>} />
         <Route path="actions" element={<ActionsPage />} />
         <Route path="actions/workflows/:workflow" element={<ActionsPage />} />
         <Route path="actions/runs/:runId" element={<RunPage />} />
@@ -249,17 +250,17 @@ export function pageRoutes(shell: ReactElement) {
         <Route path="releases/new" element={<NewReleasePage />} />
         <Route path="releases/edit/*" element={<EditReleasePage />} />
         <Route path="tags" element={<ReleasesPage />} />
-        <Route path="discussions" element={<DiscussionsPage />} />
-        <Route path="discussions/:number" element={<DiscussionPage />} />
-        <Route path="discussions/categories/:slug" element={<DiscussionsPage />} />
-        <Route path="projects" element={<ProjectsPage />} />
-        <Route path="projects/:number" element={<ProjectPage />} />
-        <Route path="security/*" element={<SecurityPage />} />
-        <Route path="pulse" element={<InsightsPage />} />
-        <Route path="graphs/*" element={<InsightsPage />} />
-        <Route path="wiki/*" element={<WikiPage />} />
+        <Route path="discussions" element={<FeatureGate feature="discussions"><DiscussionsPage /></FeatureGate>} />
+        <Route path="discussions/:number" element={<FeatureGate feature="discussions"><DiscussionPage /></FeatureGate>} />
+        <Route path="discussions/categories/:slug" element={<FeatureGate feature="discussions"><DiscussionsPage /></FeatureGate>} />
+        <Route path="projects" element={<FeatureGate feature="projects"><ProjectsPage /></FeatureGate>} />
+        <Route path="projects/:number" element={<FeatureGate feature="projects"><ProjectPage /></FeatureGate>} />
+        <Route path="security/*" element={<FeatureGate feature="security"><SecurityPage /></FeatureGate>} />
+        <Route path="pulse" element={<FeatureGate feature="insights"><InsightsPage /></FeatureGate>} />
+        <Route path="graphs/*" element={<FeatureGate feature="insights"><InsightsPage /></FeatureGate>} />
+        <Route path="wiki/*" element={<FeatureGate feature="wiki"><WikiPage /></FeatureGate>} />
         {/* github.com's settings paths; the layout shows a 404 to anyone without admin access. */}
-        <Route path="settings" element={<RepoSettingsLayout />}>
+        <Route path="settings" element={<FeatureGate feature="repoSettings"><RepoSettingsLayout /></FeatureGate>}>
           <Route index element={<GeneralSettings />} />
           <Route path="access" element={<CollaboratorsSettings />} />
           <Route path="branches" element={<BranchProtectionSettings />} />

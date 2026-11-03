@@ -41,6 +41,7 @@ import { useAgent } from '../lib/agent/AgentProvider'
 import { isNative, openExternal } from '../lib/platform'
 import { useRepoAdvisoryCount, useRepoCounts, useRepoQuery } from '../lib/repo'
 import { webUrl } from '../lib/links'
+import { useFeature, useFeatures } from '../lib/features'
 
 // 'orgs' is github.com's /orgs/<org> alias, which OrgRedirect sends to /<org>; it is never a repo owner.
 const TOP_LEVEL = new Set(['', 'notifications', 'pulls', 'issues', 'settings', 'local', 'search', 'login', 'orgs'])
@@ -83,6 +84,7 @@ export function AppHeader() {
   const account = useAccount()
   const { octokit, key } = useGitHub()
   const [navOpen, setNavOpen] = useState(false)
+  const headerShortcuts = useFeature('headerShortcuts')
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
 
@@ -219,8 +221,12 @@ export function AppHeader() {
               </ActionList>
             </ActionMenu.Overlay>
           </ActionMenu>
-          <IconButton description="Your issues" as={Link} to="/issues" icon={IssueOpenedIcon} aria-label="Your issues" />
-          <IconButton description="Your pull requests" as={Link} to="/pulls" icon={GitPullRequestIcon} aria-label="Your pull requests" />
+          {headerShortcuts && (
+            <>
+              <IconButton description="Your issues" as={Link} to="/issues" icon={IssueOpenedIcon} aria-label="Your issues" />
+              <IconButton description="Your pull requests" as={Link} to="/pulls" icon={GitPullRequestIcon} aria-label="Your pull requests" />
+            </>
+          )}
           <IconButton description={unread.data ? 'You have unread notifications' : 'Notifications'} as={Link} to="/notifications" icon={InboxIcon} aria-label="Notifications" className={unread.data ? 'header-dot' : ''} />
           <AccountMenu />
         </div>
@@ -235,7 +241,8 @@ function RepoNav({ owner, repo, section }: { owner: string; repo: string; sectio
   const counts = useRepoCounts(owner, repo)
   const info = useRepoQuery(owner, repo)
   // Only public repositories have published advisories; the endpoint answers 404 for private ones.
-  const advisories = useRepoAdvisoryCount(owner, repo, info.data?.private === false)
+  const { isOn } = useFeatures()
+  const advisories = useRepoAdvisoryCount(owner, repo, isOn('security') && info.data?.private === false)
   const base = `/${owner}/${repo}`
   const current = (names: string[]) => (names.includes(section) ? 'page' : undefined)
   return (
@@ -244,13 +251,15 @@ function RepoNav({ owner, repo, section }: { owner: string; repo: string; sectio
         <UnderlineNav.Item as={Link} to={base} icon={CodeIcon} aria-current={current(['', 'tree', 'blob', 'blame', 'commits', 'commit', 'branches', 'releases', 'tags'])}>
           Code
         </UnderlineNav.Item>
-        <UnderlineNav.Item as={Link} to={`${base}/issues`} icon={IssueOpenedIcon} counter={counts.data?.issues} aria-current={current(['issues'])}>
-          Issues
-        </UnderlineNav.Item>
+        {isOn('issues') && (
+  <UnderlineNav.Item as={Link} to={`${base}/issues`} icon={IssueOpenedIcon} counter={counts.data?.issues} aria-current={current(['issues'])}>
+            Issues
+          </UnderlineNav.Item>
+        )}
         <UnderlineNav.Item as={Link} to={`${base}/pulls`} icon={GitPullRequestIcon} counter={counts.data?.pulls} aria-current={current(['pulls', 'pull', 'compare'])}>
           Pull requests
         </UnderlineNav.Item>
-        {info.data?.has_discussions && (
+        {isOn('discussions') && info.data?.has_discussions && (
           <UnderlineNav.Item as={Link} to={`${base}/discussions`} icon={CommentDiscussionIcon} aria-current={current(['discussions'])}>
             Discussions
           </UnderlineNav.Item>
@@ -258,21 +267,27 @@ function RepoNav({ owner, repo, section }: { owner: string; repo: string; sectio
         <UnderlineNav.Item as={Link} to={`${base}/actions`} icon={PlayIcon} aria-current={current(['actions'])}>
           Actions
         </UnderlineNav.Item>
-        <UnderlineNav.Item as={Link} to={`${base}/projects`} icon={TableIcon} aria-current={current(['projects'])}>
-          Projects
-        </UnderlineNav.Item>
-        {info.data?.has_wiki && (
+        {isOn('projects') && (
+  <UnderlineNav.Item as={Link} to={`${base}/projects`} icon={TableIcon} aria-current={current(['projects'])}>
+            Projects
+          </UnderlineNav.Item>
+        )}
+        {isOn('wiki') && info.data?.has_wiki && (
           <UnderlineNav.Item as={Link} to={`${base}/wiki`} icon={BookIcon} aria-current={current(['wiki'])}>
             Wiki
           </UnderlineNav.Item>
         )}
-        <UnderlineNav.Item as={Link} to={`${base}/security`} icon={ShieldIcon} counter={advisories.data || undefined} aria-current={current(['security'])}>
-          Security and quality
-        </UnderlineNav.Item>
-        <UnderlineNav.Item as={Link} to={`${base}/pulse`} icon={GraphIcon} aria-current={current(['pulse', 'graphs'])}>
-          Insights
-        </UnderlineNav.Item>
-        {info.data?.permissions?.admin && (
+        {isOn('security') && (
+  <UnderlineNav.Item as={Link} to={`${base}/security`} icon={ShieldIcon} counter={advisories.data || undefined} aria-current={current(['security'])}>
+            Security and quality
+          </UnderlineNav.Item>
+        )}
+        {isOn('insights') && (
+  <UnderlineNav.Item as={Link} to={`${base}/pulse`} icon={GraphIcon} aria-current={current(['pulse', 'graphs'])}>
+            Insights
+          </UnderlineNav.Item>
+        )}
+        {isOn('repoSettings') && info.data?.permissions?.admin && (
           <UnderlineNav.Item as={Link} to={`${base}/settings`} icon={GearIcon} aria-current={current(['settings'])}>
             Settings
           </UnderlineNav.Item>

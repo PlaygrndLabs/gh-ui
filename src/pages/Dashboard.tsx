@@ -7,6 +7,7 @@ import { useGitHub } from '../lib/github'
 import { useAgent, useAgentPageContext } from '../lib/agent/AgentProvider'
 import { CommitStatusMark, IssueStateIcon, PullStateIcon } from '../components/Status'
 import { Blankslate, Loading } from '../components/Bits'
+import { useFeature } from '../lib/features'
 
 interface Item {
   __typename: 'PullRequest' | 'Issue'
@@ -26,6 +27,8 @@ const ITEM = `__typename
   ... on Issue { number title state updatedAt repository{nameWithOwner} author{login} }`
 
 export function Dashboard() {
+  const activity = useFeature('activityFeed')
+  const assigned = useFeature('assignedIssues')
   const { octokit, key, account } = useGitHub()
   const agent = useAgent()
   const [filter, setFilter] = useState('')
@@ -97,20 +100,24 @@ export function Dashboard() {
         <div className="flex wrap" style={{ gap: 16, alignItems: 'flex-start' }}>
           <FocusCard title="Review requests" icon={<EyeIcon />} items={focus.data?.reviews.nodes} total={focus.data?.reviews.issueCount} loading={focus.isLoading} to="/pulls?f=3" empty="No pull requests are waiting on your review." />
           <FocusCard title="Your pull requests" icon={<GitPullRequestIcon />} items={focus.data?.mine.nodes} total={focus.data?.mine.issueCount} loading={focus.isLoading} to="/pulls" empty="You have no open pull requests." />
-          <FocusCard title="Assigned issues" icon={<IssueOpenedIcon />} items={focus.data?.assigned.nodes} total={focus.data?.assigned.issueCount} loading={focus.isLoading} to="/issues?f=1" empty="No open issues are assigned to you." />
+          {assigned && <FocusCard title="Assigned issues" icon={<IssueOpenedIcon />} items={focus.data?.assigned.nodes} total={focus.data?.assigned.issueCount} loading={focus.isLoading} to="/issues?f=1" empty="No open issues are assigned to you." />}
         </div>
-        <h3 className="text-bold mt-4 mb-2" style={{ fontSize: 16 }}>
-          Recent activity
-        </h3>
-        <div className="Box">
-          {events.isLoading ? (
-            <Loading />
-          ) : events.data?.length ? (
-            events.data.map((e) => <EventLine key={e.id} e={e} />)
-          ) : (
-            <Blankslate title="No recent activity">Follow people and star repositories to fill your feed.</Blankslate>
-          )}
-        </div>
+        {activity && (
+          <>
+            <h3 className="text-bold mt-4 mb-2" style={{ fontSize: 16 }}>
+              Recent activity
+            </h3>
+            <div className="Box">
+              {events.isLoading ? (
+                <Loading />
+              ) : events.data?.length ? (
+                events.data.map((e) => <EventLine key={e.id} e={e} />)
+              ) : (
+                <Blankslate title="No recent activity">Follow people and star repositories to fill your feed.</Blankslate>
+              )}
+            </div>
+          </>
+        )}
       </main>
     </div>
   )

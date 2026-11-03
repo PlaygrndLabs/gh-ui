@@ -66,6 +66,8 @@ gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and u
 
 ## What's in it
 
+The app is built for repositories, pull requests and Actions. Discussions, Projects, Wiki, Security and quality, Insights, repository settings, the Home activity feed and a few smaller parts start switched off; turn them on in Settings → Features.
+
 - **Tabs (desktop)** — browser-style tabs, each with its own page and back/forward history. Cmd-click or middle-click any in-app link to open it in the background, Cmd+Shift-click to open it in front; other links go to your browser. Drag to reorder, middle-click to close. Tabs come back after a restart, per account and device. Recent tabs stay alive, so half-written comments, scroll position and expanded logs survive switching; beyond 8 live tabs the least recently used hidden ones unload and reload from their URL when shown. A tab with unsent text, or something still running, is never unloaded, and closing it or switching account asks first. The tab strip stays the same size when the page is zoomed. The agent panel is shared and follows the active tab.
 - **Dashboard** — review requests, your PRs (with CI + review state), assigned issues, activity feed, top repositories.
 - **Code** — file tree, README, About/languages/releases, branch & tag picker, go-to-file, syntax-highlighted file view with line links, in-place edit & commit, commits and commit diffs, branches (ahead/behind, PR links, create/delete).

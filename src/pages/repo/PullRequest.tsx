@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Button, IconButton, TextInput, UnderlineNav } from '@primer/react'
-import { CommentDiscussionIcon, GitCommitIcon, ChecklistIcon, FileDiffIcon, SparkleFillIcon, TriangleDownIcon, LinkExternalIcon, CodeIcon } from '@primer/octicons-react'
+import { CommentDiscussionIcon, GitCommitIcon, ChecklistIcon, FileDiffIcon, SparkleFillIcon, TriangleDownIcon, LinkExternalIcon, CodeIcon, LinkIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage } from '../../lib/github'
 import { useRepo } from '../../lib/repo'
 import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
@@ -123,6 +123,9 @@ function PullRequestView() {
             <h1 className="page-title flex-1">
               <InlineTitle text={pr.title} /> <span className="num">#{pr.number}</span>
             </h1>
+            <span className="shrink-0" style={{ marginTop: 6 }}>
+              <CopyButton text={pr.html_url} label="Copy pull request link" size="medium" icon={LinkIcon} />
+            </span>
             <span className="flex-center gap-2 shrink-0" style={{ marginTop: 6 }}>
               {canEdit && (
                 <Button size="small" onClick={() => (setTitle(pr.title), setEditingTitle(true))}>
