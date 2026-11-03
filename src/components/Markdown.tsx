@@ -1,8 +1,9 @@
-import { useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import DOMPurify from 'dompurify'
+import { useTheme } from '@primer/react'
 import { SkeletonText } from '@primer/react/experimental'
 import { useGitHub, renderMarkdown } from '../lib/github'
 import { appPathFromUrl, mapSrcset } from '../lib/links'
@@ -10,6 +11,7 @@ import { webBaseFor } from '../lib/hosts'
 import { openExternal } from '../lib/platform'
 import { encodePath } from '../lib/repo'
 import { highlightLine, languageFor } from '../lib/highlight'
+import { dropRenderLoaders, renderDiagrams } from '../lib/mermaid'
 
 const PURIFY_CONFIG = {
   ADD_TAGS: ['g-emoji', 'details', 'summary'],
@@ -195,7 +197,7 @@ export function Markdown({ html, text, context, className, emptyText = 'No descr
   const suggestionKey = suggestions ? `${suggestions.path}\n${suggestions.startLine}\n${suggestions.base?.join('\n') ?? ''}` : null
   const clean = useMemo(() => {
     if (!source) return ''
-    const safe = sanitize(source)
+    const safe = dropRenderLoaders(sanitize(source))
     const rebased = base ? rebaseRelativeUrls(safe, base, webBase) : safe
     return suggestions ? renderSuggestionBoxes(rebased, suggestions) : rebased
   }, [source, base?.owner, base?.repo, base?.ref, base?.path, webBase, suggestionKey]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -210,6 +212,12 @@ export function Markdown({ html, text, context, className, emptyText = 'No descr
     const boxes = [...ref.current.querySelectorAll('.js-suggested-changes-blob')]
     setSlots(boxes.map((box) => box.querySelector('.js-apply-changes') ?? box.appendChild(document.createElement('div'))))
   }, [clean, withActions])
+
+  const { resolvedColorMode } = useTheme()
+  const dark = resolvedColorMode === 'night'
+  useEffect(() => {
+    if (ref.current && clean.includes('lang="mermaid"')) return renderDiagrams(ref.current, dark)
+  }, [clean, dark])
 
   if (needsRender && rendered.isLoading) return <SkeletonText lines={3} />
   if (!clean) {

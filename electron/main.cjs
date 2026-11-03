@@ -186,7 +186,7 @@ function registerIpc() {
 
   // A Homebrew install keeps its record in the Caskroom. Nothing outside these fixed paths is touched.
   ipcMain.handle('app:installKind', () =>
-    process.platform === 'darwin' && ['/opt/homebrew/Caskroom/github-ui', '/usr/local/Caskroom/github-ui'].some((dir) => fs.existsSync(dir)) ? 'homebrew' : 'direct',
+    process.platform === 'darwin' && ['/opt/homebrew/Caskroom/gh-ui', '/usr/local/Caskroom/gh-ui', '/opt/homebrew/Caskroom/github-ui', '/usr/local/Caskroom/github-ui'].some((dir) => fs.existsSync(dir)) ? 'homebrew' : 'direct',
   )
   ipcMain.handle('app:openTerminal', async () => {
     if (process.platform === 'darwin') await shell.openPath('/System/Applications/Utilities/Terminal.app')
