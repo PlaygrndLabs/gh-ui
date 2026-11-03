@@ -679,7 +679,7 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 
 /* ---------- Comment composer ---------- */
 .composer { border: 1px solid var(--borderColor-default); border-radius: 6px; background: var(--bgColor-default); }
-.composer-tabs { display: flex; align-items: flex-end; gap: 0; padding: 8px 8px 0; background: var(--bgColor-muted); border-bottom: 1px solid var(--borderColor-default); border-radius: 6px 6px 0 0; }
+.composer-tabs { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0; padding: 8px 8px 0; background: var(--bgColor-muted); border-bottom: 1px solid var(--borderColor-default); border-radius: 6px 6px 0 0; }
 .composer-tab {
   appearance: none;
   border: 1px solid transparent;
@@ -1794,7 +1794,8 @@ a.project-table-title-text:hover { color: var(--fgColor-accent); }
 .suggestion-footer { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 8px; border-top: 1px solid var(--borderColor-default); background: var(--bgColor-muted); font-family: var(--fontStack-sansSerif); font-size: 12px; }
 .suggestion-footer-note { margin-right: auto; color: var(--fgColor-muted); }
 
-.composer-toolbar { margin-left: auto; display: flex; align-items: center; gap: 4px; padding-bottom: 4px; }
+.composer-toolbar { margin-left: auto; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding-bottom: 4px; min-width: 0; }
+.composer-toolbar-group { display: inline-flex; align-items: center; gap: 2px; }
 /* ---------- release form (new / edit) ---------- */
 .release-title-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .release-form-refs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
