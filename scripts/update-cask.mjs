@@ -21,11 +21,12 @@ export function renderCask({ version, arm64, x64 }) {
 
   depends_on :macos
 
-  app "gh-ui.app"
+  # The bundle keeps its build name inside; this is the name people see in Applications and Spotlight.
+  app "gh-ui.app", target: "GitHub UI.app"
 
   # GitHub UI is distributed outside Apple's notarization service.
   postflight do
-    system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{appdir}/gh-ui.app"]
+    system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{appdir}/GitHub UI.app"]
   end
 end
 `
