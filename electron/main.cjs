@@ -253,6 +253,8 @@ function buildMenu() {
       label: 'View',
       submenu: [
         { label: 'Toggle Agent', accelerator: 'CmdOrCtrl+Shift+A', click: () => sendMenu('toggle-agent') },
+        { label: 'Split View', accelerator: 'CmdOrCtrl+\\', click: () => sendMenu('toggle-split') },
+        { label: 'Focus Other Pane', accelerator: 'CmdOrCtrl+Alt+\\', click: () => sendMenu('focus-other-pane') },
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },
@@ -302,6 +304,8 @@ function createWindow() {
     title: 'gh-ui',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d1117' : '#ffffff',
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
+    // People move between this and their editor or terminal; a click shouldn't only bring the window forward.
+    acceptFirstMouse: true,
     // Centered on the tab strip (src/styles/app.css): 36px tall, and the buttons are 14px.
     trafficLightPosition: { x: 16, y: 11 },
     webPreferences: {

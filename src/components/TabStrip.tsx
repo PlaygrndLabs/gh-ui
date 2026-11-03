@@ -1,8 +1,9 @@
-import { useEffect, useRef, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent } from 'react'
-import { flushSync } from 'react-dom'
-import { IconButton } from '@primer/react'
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent } from 'react'
+import { createPortal, flushSync } from 'react-dom'
+import { ActionList, ActionMenu, IconButton } from '@primer/react'
 import {
   CodeIcon,
+  ColumnsIcon,
   CommentDiscussionIcon,
   DeviceDesktopIcon,
   GearIcon,
@@ -40,11 +41,17 @@ const ICONS: Record<TabIcon, Icon> = {
 const DRAG_THRESHOLD = 4
 const AUTO_SCROLL_EDGE = 24
 const AUTO_SCROLL_MAX = 8
+// Dragged this far below the strip, a tab is on its way to a pane rather than a new place in the row.
+const DROP_DISTANCE = 16
+
+type Side = 'left' | 'right'
 
 /** The row of tabs at the very top of the window, sharing it with the macOS window buttons. */
 export function TabStrip() {
-  const { state, active, select, newTab, close } = useTabs()
+  const { state, active, select, newTab, close, split, toggleSplit } = useTabs()
   const list = useRef<HTMLDivElement>(null)
+  const [dropSide, setDropSide] = useState<Side | null>(null)
+  const [menu, setMenu] = useState<{ tab: Tab; anchor: HTMLElement } | null>(null)
 
   useEffect(() => {
     document.getElementById(tabButtonId(active.id))?.parentElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -85,16 +92,68 @@ export function TabStrip() {
     <div className="tab-strip" onMouseDown={(e) => e.preventDefault()}>
       <div className="tab-list" role="tablist" aria-label="Open tabs" ref={list} onKeyDown={onKeyDown} onWheel={onWheel}>
         {state.tabs.map((tab) => (
-          <TabItem key={tab.id} tab={tab} active={tab.id === active.id} live={state.live.includes(tab.id)} list={list} />
+          <TabItem
+            key={tab.id}
+            tab={tab}
+            active={tab.id === active.id}
+            inSplit={!!state.split?.includes(tab.id)}
+            live={state.live.includes(tab.id)}
+            list={list}
+            onDropSide={setDropSide}
+            onMenu={(anchor) => setMenu({ tab, anchor })}
+          />
         ))}
       </div>
       <IconButton className="tab-new" icon={PlusIcon} aria-label="New tab" size="small" variant="invisible" onClick={newTab} />
+      <IconButton
+        className="tab-split"
+        icon={ColumnsIcon}
+        aria-label={state.split ? 'Close split view' : 'Split view'}
+        aria-pressed={!!state.split}
+        size="small"
+        variant="invisible"
+        onClick={toggleSplit}
+      />
+      {/* In the body: the strip keeps one size at any zoom, which would throw this out of place. */}
+      {dropSide && createPortal(<div className={`split-drop is-${dropSide}`} aria-hidden="true" />, document.body)}
+      {menu && (
+        <ActionMenu open anchorRef={{ current: menu.anchor }} onOpenChange={(open) => !open && setMenu(null)}>
+          <ActionMenu.Overlay>
+            <ActionList>
+              {state.tabs.length > 1 && !state.split?.includes(menu.tab.id) && (
+                <ActionList.Item onSelect={() => split(menu.tab.id)}>Open to the side</ActionList.Item>
+              )}
+              {state.split && <ActionList.Item onSelect={toggleSplit}>Close split view</ActionList.Item>}
+              {(state.tabs.length > 1 || state.split) && <ActionList.Divider />}
+              <ActionList.Item variant="danger" onSelect={() => close(menu.tab.id)}>
+                Close tab
+              </ActionList.Item>
+            </ActionList>
+          </ActionMenu.Overlay>
+        </ActionMenu>
+      )}
     </div>
   )
 }
 
-function TabItem({ tab, active, live, list }: { tab: Tab; active: boolean; live: boolean; list: React.RefObject<HTMLDivElement | null> }) {
-  const { state, select, close, move } = useTabs()
+function TabItem({
+  tab,
+  active,
+  inSplit,
+  live,
+  list,
+  onDropSide,
+  onMenu,
+}: {
+  tab: Tab
+  active: boolean
+  inSplit: boolean
+  live: boolean
+  list: React.RefObject<HTMLDivElement | null>
+  onDropSide(side: Side | null): void
+  onMenu(anchor: HTMLElement): void
+}) {
+  const { state, select, close, move, split } = useTabs()
   const title = tabTitle(tab)
   const Icon = ICONS[iconFromPath(tab.url)]
   const stateRef = useRef(state)
@@ -113,6 +172,7 @@ function TabItem({ tab, active, live, list }: { tab: Tab; active: boolean; live:
     let pointerX = e.clientX
     let dragging = false
     let frame = 0
+    let dropSide: Side | null = null
 
     const place = () => {
       el.style.transform = ''
@@ -150,7 +210,14 @@ function TabItem({ tab, active, live, list }: { tab: Tab; active: boolean; live:
     }
     const onMove = (ev: PointerEvent) => {
       pointerX = ev.clientX
-      if (!dragging && Math.abs(pointerX - e.clientX) < DRAG_THRESHOLD) return
+      // Below the strip, the tab can go into a pane: whichever half of the window it's over.
+      const below = stateRef.current.tabs.length > 1 && ev.clientY > strip.getBoundingClientRect().bottom + DROP_DISTANCE
+      const side = !below ? null : ev.clientX < window.innerWidth / 2 ? 'left' : 'right'
+      if (side !== dropSide) {
+        dropSide = side
+        onDropSide(side)
+      }
+      if (!dragging && Math.abs(pointerX - e.clientX) < DRAG_THRESHOLD && !below) return
       if (!dragging) {
         dragging = true
         el.classList.add('is-dragging')
@@ -165,6 +232,10 @@ function TabItem({ tab, active, live, list }: { tab: Tab; active: boolean; live:
       cancelAnimationFrame(frame)
       el.classList.remove('is-dragging')
       el.style.transform = ''
+      if (dropSide) {
+        onDropSide(null)
+        split(tab.id, dropSide)
+      }
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
@@ -173,10 +244,14 @@ function TabItem({ tab, active, live, list }: { tab: Tab; active: boolean; live:
 
   return (
     <div
-      className={`tab-item${active ? ' is-active' : ''}`}
+      className={`tab-item${active ? ' is-active' : ''}${inSplit ? ' in-split' : ''}`}
       role="presentation"
       title={title}
       onPointerDown={onPointerDown}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onMenu(e.currentTarget)
+      }}
       onAuxClick={(e) => {
         if (e.button === 1) close(tab.id)
       }}

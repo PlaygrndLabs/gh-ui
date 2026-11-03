@@ -34,7 +34,7 @@ import {
   PeopleIcon,
 } from '@primer/octicons-react'
 import { useAuth, useAccount } from '../lib/auth'
-import { useSwitchAccount } from '../lib/TabsProvider'
+import { useSwitchAccount, useIsFocusedPane } from '../lib/TabsProvider'
 import { canReadNotifications } from '../lib/hosts'
 import { useGitHub } from '../lib/github'
 import { useAgent } from '../lib/agent/AgentProvider'
@@ -95,7 +95,10 @@ export function AppHeader() {
     staleTime: 30_000,
   })
 
+  // In split view each pane has a header, and only the pane with focus answers the shortcut.
+  const focusedPane = useIsFocusedPane()
   useEffect(() => {
+    if (!focusedPane) return
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
       if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) && !target.isContentEditable) {
@@ -105,7 +108,7 @@ export function AppHeader() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [focusedPane])
 
   const submitSearch = () => {
     const q = query.trim()

@@ -90,6 +90,9 @@ gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and u
 | ⌘T | New tab (dashboard) |
 | ⌘W | Close tab; closing the last one leaves a fresh dashboard. ⌘⇧W closes the window. |
 | ⌘⇧T | Reopen the last closed tab |
+| ⌥-click a link | Open it in the other pane, starting split view if needed |
+| ⌘\\ | Split view on or off |
+| ⌘⌥\\ | Move focus to the other pane |
 | ⌘1…⌘8, ⌘9 | Go to that tab; ⌘9 is the last one |
 | ⌃Tab, ⌃⇧Tab | Next, previous tab |
 | ⌘[, ⌘] | Back, forward in the active tab |
