@@ -287,7 +287,14 @@ exports.steps = [
   },
   {
     name: 'open the Wiki tab of jqlang/jq',
-    js: `${helpers} clickLink('/jqlang/jq/wiki'); return true`,
+    js: `${helpers}
+      // The wiki starts switched off; a change made elsewhere arrives as a storage event.
+      localStorage.setItem('gh-ui:features', JSON.stringify({ wiki: true }))
+      window.dispatchEvent(new StorageEvent('storage', { key: 'gh-ui:features' }))
+      await sleep(500)
+      clickLink('/jqlang/jq/wiki')
+      return true
+    `,
     waitMs: 1500,
   },
   {

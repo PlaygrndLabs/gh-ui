@@ -8,10 +8,12 @@ import { readPref, writePref } from './storage'
 import {
   closeTab,
   cycleTab,
+  focusOtherPane,
   isLoginPath,
   moveTab,
   openNewTab,
   openTabNext,
+  openTabToSide,
   parseSavedTabs,
   recordNavigation,
   reopenClosedTab,
@@ -19,11 +21,15 @@ import {
   selectTab,
   selectTabNumber,
   serializeTabs,
+  setSplitRatio,
   setTabTitle,
   setTabUrl,
+  splitTab,
   tabsToUnload,
   tabTitle,
+  toggleSplit,
   unloadTabs,
+  visibleTabs,
   type HistoryEntry,
   type Tab,
   type TabHistory,
@@ -43,6 +49,13 @@ interface TabsApi {
   newTab(): void
   /** Opens a validated in-app path next to the current tab. */
   open(url: string, options?: { background?: boolean; title?: string | null }): void
+  /** Opens a validated in-app path in the other pane, starting split view if needed. */
+  openToSide(url: string, options?: { title?: string | null }): void
+  /** Shows an open tab in split view, on the given side. */
+  split(id: string, side?: 'left' | 'right'): void
+  toggleSplit(): void
+  focusOtherPane(): void
+  setSplitRatio(ratio: number): void
   /** Asks first if the tab holds text that hasn't been sent. */
   close(id: string): void
   /** Whether a tab (or any tab) holds text that hasn't been sent. */
@@ -201,6 +214,18 @@ export function TabsProvider({
     const id = newId()
     setState((s) => openTabNext(s, { id, url, ...options }))
   }, [])
+  const openToSide = useCallback((url: string, options: { title?: string | null } = {}) => {
+    if (isLoginPath(url)) return onLoginRef.current(url)
+    const id = newId()
+    setState((s) => openTabToSide(s, { id, url, ...options }))
+  }, [])
+  const split = useCallback((id: string, side?: 'left' | 'right') => setState((s) => splitTab(s, id, side)), [])
+  const toggleSplitView = useCallback(() => {
+    const id = newId()
+    setState((s) => toggleSplit(s, id))
+  }, [])
+  const focusOther = useCallback(() => setState(focusOtherPane), [])
+  const setRatio = useCallback((ratio: number) => setState((s) => setSplitRatio(s, ratio)), [])
   const activeTabId = useCallback(() => stateRef.current.activeId, [])
   const activeRouter = useCallback(() => {
     const s = stateRef.current
@@ -262,14 +287,15 @@ export function TabsProvider({
     let retry = 0
     const mustStay = (id: string) => hasUnsentText(id) || !!document.getElementById(tabPanelId(id))?.querySelector('[data-loading="true"]')
     const trim = () => {
-      const drop = tabsToUnload(state.live, state.activeId, mustStay)
+      const visible = visibleTabs(state)
+      const drop = tabsToUnload(state.live, state.activeId, (id) => visible.includes(id) || mustStay(id))
       if (!drop.length) return
       if (client.isMutating() > 0 || writesInFlight() > 0) retry = window.setTimeout(trim, 1000)
       else setState((s) => unloadTabs(s, drop))
     }
     trim()
     return () => window.clearTimeout(retry)
-  }, [client, hasUnsentText, state.live, state.activeId])
+  }, [client, hasUnsentText, state])
 
   // Routers and pins of tabs that closed or unloaded. An unloaded tab's history stays, for when it comes back.
   useEffect(() => {
@@ -296,8 +322,8 @@ export function TabsProvider({
 
   const active = state.tabs.find((t) => t.id === state.activeId)!
   const value = useMemo<TabsApi>(
-    () => ({ state, active, activeTabId, select, selectNumber, cycle, newTab, open, close, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, pinQueries, unpinQueries }),
-    [state, active, activeTabId, select, selectNumber, cycle, newTab, open, close, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, pinQueries, unpinQueries],
+    () => ({ state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplit: toggleSplitView, focusOtherPane: focusOther, setSplitRatio: setRatio, close, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, pinQueries, unpinQueries }),
+    [state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplitView, focusOther, setRatio, close, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, pinQueries, unpinQueries],
   )
   return <TabsContext.Provider value={value}>{children}</TabsContext.Provider>
 }
@@ -309,6 +335,13 @@ export function useTabs() {
 }
 
 export const useCurrentTabId = () => useContext(CurrentTabContext)
+
+/** Whether the page asking has focus: in split view two tabs are on screen, and only one gets the keyboard and the agent. */
+export function useIsFocusedPane() {
+  const tabs = useContext(TabsContext)
+  const id = useContext(CurrentTabContext)
+  return !tabs || !id || tabs.state.activeId === id
+}
 
 /** Each account has its own tabs, so switching unmounts this one's: ask first if that would throw away unsent text. */
 export function useSwitchAccount() {

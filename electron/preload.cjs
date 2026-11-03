@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('ghUi', {
   ghCliToken: (host) => ipcRenderer.invoke('gh:token', host),
   http: (req) => ipcRenderer.invoke('http', req),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
+  installKind: () => ipcRenderer.invoke('app:installKind'),
+  openTerminal: () => ipcRenderer.invoke('app:openTerminal'),
   pickDirectory: (title) => ipcRenderer.invoke('dialog:pickDirectory', title),
   repos: {
     list: () => ipcRenderer.invoke('repos:list'),

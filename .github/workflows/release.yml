@@ -27,7 +27,7 @@ jobs:
     outputs:
       version: ${{ steps.next.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -60,10 +60,10 @@ jobs:
             flags: --mac dmg zip --arm64 --x64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 'lts/*'
           cache: npm
       - run: npm ci
       - run: npm test
@@ -86,7 +86,7 @@ jobs:
           test "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "$VERSION"
           GH_UI_SMOKE_TEST=1 perl -e 'alarm 120; exec @ARGV' "$app/Contents/MacOS/gh-ui" | tee smoke.json
           grep -q '"ok":true' smoke.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           if-no-files-found: error
@@ -104,7 +104,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: installers
           merge-multiple: true
@@ -126,3 +126,32 @@ jobs:
             exit 1
           fi
           gh release create "$TAG" installers/* --title "GitHub UI $TAG" --target "$GITHUB_SHA" --generate-notes --latest
+
+  # Its own job, so re-running it can't collide with the release that's already published.
+  cask:
+    needs: [version, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          path: installers
+          merge-multiple: true
+      - name: Update the Homebrew cask
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN isn't set, so Homebrew users stay on the previous version"
+            exit 0
+          fi
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/PlaygrndLabs/homebrew-tap.git" tap
+          arm64=$(sha256sum installers/GitHub-UI-arm64.dmg | cut -d' ' -f1)
+          x64=$(sha256sum installers/GitHub-UI-x64.dmg | cut -d' ' -f1)
+          node scripts/update-cask.mjs tap/Casks/github-ui.rb "$VERSION" "$arm64" "$x64"
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/github-ui.rb
+          git diff --cached --quiet || { git commit -m "feat(cask): update github-ui to $VERSION" && git push; }

@@ -19,6 +19,10 @@ npm run electron:build      # unpacked app in release/ (fast, for testing)
 npm run electron:dist       # dmg/zip (mac), nsis (win), AppImage/deb (linux)
 ```
 
+### Updates
+
+The app checks GitHub for a newer release every 6 hours, without sending any token, and says so in the tab strip. It doesn't update itself, because automatic updates on macOS need an Apple Developer ID. Homebrew installs get the upgrade command copied and Terminal opened; other installs get the release page. Settings → Updates checks on demand, and Settings → Features turns the notice off.
+
 ### Releases
 
 Work lands on `main`. Merging `main` into the `release` branch builds the macOS installers in GitHub Actions and publishes them as a new GitHub Release (`.github/workflows/release.yml`). A pull request from `main` into `release` runs the same build without publishing and shows the version it would release in the run's summary. To add a platform, add a row to the workflow's matrix.
@@ -35,7 +39,7 @@ Versions are `vX.Y.Z` git tags, and a published version is never replaced. `scri
 
 `package.json`'s version is a floor: set it higher to choose a version yourself, such as `1.0.0`. It isn't updated on each release; the installers get the tag's version at build time.
 
-macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electron-builder docs), so macOS blocks the first launch: open the app, then choose **Open Anyway** in System Settings → Privacy & Security. Smoke test a build: `GH_UI_SMOKE_TEST=1 release/mac-arm64/gh-ui.app/Contents/MacOS/gh-ui`.
+macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electron-builder docs). The Homebrew cask in [PlaygrndLabs/homebrew-tap](https://github.com/PlaygrndLabs/homebrew-tap) clears macOS's quarantine flag on install, and each release pins it to its version and installer checksums; that needs a `HOMEBREW_TAP_TOKEN` repository secret that can write to the tap. For a direct download, see the README. Smoke test a build: `GH_UI_SMOKE_TEST=1 release/mac-arm64/gh-ui.app/Contents/MacOS/gh-ui`.
 
 ## Sign in
 
@@ -66,6 +70,8 @@ gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and u
 
 ## What's in it
 
+The app is built for repositories, pull requests and Actions. Home is a work queue: pull requests waiting on you, your own, and failing or running Actions. A pull request shows its checks, reviews and conflicts on one line, with Re-run failed, copy link and Check out, which uses your local clone. Discussions, Projects, Wiki, Security and quality, Insights, repository settings, the Home activity feed and a few smaller parts start switched off; turn them on in Settings → Features.
+
 - **Tabs (desktop)** — browser-style tabs, each with its own page and back/forward history. Cmd-click or middle-click any in-app link to open it in the background, Cmd+Shift-click to open it in front; other links go to your browser. Drag to reorder, middle-click to close. Tabs come back after a restart, per account and device. Recent tabs stay alive, so half-written comments, scroll position and expanded logs survive switching; beyond 8 live tabs the least recently used hidden ones unload and reload from their URL when shown. A tab with unsent text, or something still running, is never unloaded, and closing it or switching account asks first. The tab strip stays the same size when the page is zoomed. The agent panel is shared and follows the active tab.
 - **Dashboard** — review requests, your PRs (with CI + review state), assigned issues, activity feed, top repositories.
 - **Code** — file tree, README, About/languages/releases, branch & tag picker, go-to-file, syntax-highlighted file view with line links, in-place edit & commit, commits and commit diffs, branches (ahead/behind, PR links, create/delete).
@@ -90,6 +96,9 @@ gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and u
 | ⌘T | New tab (dashboard) |
 | ⌘W | Close tab; closing the last one leaves a fresh dashboard. ⌘⇧W closes the window. |
 | ⌘⇧T | Reopen the last closed tab |
+| ⌥-click a link | Open it in the other pane, starting split view if needed |
+| ⌘\\ | Split view on or off |
+| ⌘⌥\\ | Move focus to the other pane |
 | ⌘1…⌘8, ⌘9 | Go to that tab; ⌘9 is the last one |
 | ⌃Tab, ⌃⇧Tab | Next, previous tab |
 | ⌘[, ⌘] | Back, forward in the active tab |

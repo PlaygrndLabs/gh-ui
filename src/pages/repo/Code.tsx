@@ -42,6 +42,7 @@ import { BranchPicker } from '../../components/BranchPicker'
 import { Markdown } from '../../components/Markdown'
 import { CommitHeadline, CopyButton, ErrorBox, Loading, UserAvatar } from '../../components/Bits'
 import { RepoDetailsDialog } from './settings/RepoDetailsDialog'
+import { useIsFocusedPane } from '../../lib/TabsProvider'
 
 function RepoTitle() {
   const { owner, repo, data } = useRepo()
@@ -573,7 +574,9 @@ function GoToFile({ owner, repo, refName }: { owner: string; repo: string; refNa
     const needle = q.toLowerCase()
     return tree.data.filter((p) => fuzzy(p.toLowerCase(), needle)).slice(0, 40)
   }, [tree.data, q])
+  const focusedPane = useIsFocusedPane()
   useEffect(() => {
+    if (!focusedPane) return
     // github.com's `t` shortcut opens the file finder.
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
@@ -584,7 +587,7 @@ function GoToFile({ owner, repo, refName }: { owner: string; repo: string; refNa
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [focusedPane])
   return (
     <ActionMenu open={open} onOpenChange={setOpen}>
       <ActionMenu.Anchor>

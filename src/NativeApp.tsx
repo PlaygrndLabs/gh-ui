@@ -12,7 +12,7 @@ import { linkTarget } from './lib/links'
 import { native, openExternal } from './lib/platform'
 import { confirmDialogOpen, contentElementById } from './lib/scroll'
 import { CurrentTabProvider, forgetSavedTabs, tabButtonId, tabPanelId, TabsProvider, useCurrentTabId, useTabQueryPins, useTabs } from './lib/TabsProvider'
-import { safeTabPath, titleFromLink, type Tab } from './lib/tabs'
+import { clampSplitRatio, safeTabPath, titleFromLink, visibleTabs, type Tab } from './lib/tabs'
 
 const decodeId = (id: string) => {
   try {
@@ -43,16 +43,68 @@ function TabContent({ children }: { children: ReactNode }) {
   )
 }
 
-function TabPane({ tab, shown }: { tab: Tab; shown: boolean }) {
-  const { routerFor } = useTabs()
+function TabPane({ tab, shown, side, focused }: { tab: Tab; shown: boolean; side: 'left' | 'right' | null; focused: boolean }) {
+  const { routerFor, select } = useTabs()
+  const takeFocus = () => {
+    if (side && !focused) select(tab.id)
+  }
+  const className = `tab-pane${side ? ` in-split is-${side}` : ''}${shown && focused ? ' is-focused' : ''}`
   return (
     <CurrentTabProvider value={tab.id}>
       <TabShownContext.Provider value={shown}>
-        <div className="tab-pane" id={tabPanelId(tab.id)} role="tabpanel" aria-labelledby={tabButtonId(tab.id)}>
+        <div className={className} id={tabPanelId(tab.id)} role="tabpanel" aria-labelledby={tabButtonId(tab.id)} onPointerDownCapture={takeFocus} onFocusCapture={takeFocus}>
           <RouterProvider router={routerFor(tab)} />
         </div>
       </TabShownContext.Provider>
     </CurrentTabProvider>
+  )
+}
+
+const splitColumns = (ratio: number) => `minmax(0, ${ratio}fr) 1px minmax(0, ${1 - ratio}fr) auto`
+
+/** Between the panes: drag or use the arrow keys to resize, double-click to even them up. */
+function SplitDivider() {
+  const { state, setSplitRatio } = useTabs()
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    e.preventDefault()
+    const shell = e.currentTarget.parentElement!
+    const left = shell.querySelector('.tab-pane.is-left')!.getBoundingClientRect()
+    const right = shell.querySelector('.tab-pane.is-right')!.getBoundingClientRect()
+    let ratio = state.splitRatio
+    shell.classList.add('is-resizing')
+    const onMove = (ev: PointerEvent) => {
+      ratio = clampSplitRatio((ev.clientX - left.left) / (right.right - left.left))
+      shell.style.gridTemplateColumns = splitColumns(ratio)
+    }
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+      shell.classList.remove('is-resizing')
+      setSplitRatio(ratio)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+  }
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    setSplitRatio(state.splitRatio + (e.key === 'ArrowLeft' ? -0.02 : 0.02))
+  }
+  return (
+    <div
+      className="split-divider"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize panes"
+      aria-valuenow={Math.round(state.splitRatio * 100)}
+      tabIndex={0}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+      onDoubleClick={() => setSplitRatio(0.5)}
+    />
   )
 }
 
@@ -87,7 +139,7 @@ function AgentDock() {
 /** Tab shortcuts live in the app menu (electron/main.cjs); so do the Go menu's and Back and Forward, which act on the active tab. */
 function useTabMenu() {
   const { toggle } = useAgent()
-  const { activeRouter, activeTabId, newTab, close, reopen, cycle, selectNumber, open } = useTabs()
+  const { activeRouter, activeTabId, newTab, close, reopen, cycle, selectNumber, open, toggleSplit, focusOtherPane } = useTabs()
   useEffect(() => {
     if (!native) return
     return native.onMenu((action) => {
@@ -99,6 +151,8 @@ function useTabMenu() {
       // Applied at once, so a quick second press closes the next tab and not the one just closed.
       else if (action === 'close-tab') flushSync(() => void close(activeTabId()))
       else if (action === 'reopen-tab') reopen()
+      else if (action === 'toggle-split') toggleSplit()
+      else if (action === 'focus-other-pane') focusOtherPane()
       else if (action === 'next-tab') cycle(1)
       else if (action === 'previous-tab') cycle(-1)
       else if (action === 'back') void activeRouter().navigate(-1)
@@ -110,12 +164,12 @@ function useTabMenu() {
         if (path) open(safeTabPath(path), { background: disposition === 'background' })
       }
     })
-  }, [toggle, activeRouter, activeTabId, newTab, close, reopen, cycle, selectNumber, open])
+  }, [toggle, activeRouter, activeTabId, newTab, close, reopen, cycle, selectNumber, open, toggleSplit, focusOtherPane])
 }
 
 /**
  * Links are decided here, for the whole window. Cmd-click and middle-click open a tab: in-app links in the background
- * (Cmd+Shift-click in front), anything else in the system browser. A plain click on a same-origin link that the router
+ * (Cmd+Shift-click in front), anything else in the system browser. Option-click opens an in-app link in the other pane. A plain click on a same-origin link that the router
  * didn't handle stays in the active tab, so nothing on a page can navigate the app shell.
  */
 function useTabLinks() {
@@ -137,6 +191,7 @@ function useTabLinks() {
       e.preventDefault()
       e.stopPropagation()
       if ('external' in target) openExternal(target.external)
+      else if (e.altKey) tabs.openToSide(target.app, { title: titleFromLink(target.app, a.textContent ?? '') })
       else tabs.open(target.app, { background: !e.shiftKey, title: titleFromLink(target.app, a.textContent ?? '') })
     }
 
@@ -145,7 +200,7 @@ function useTabLinks() {
     // In the capture phase, before Link and the markdown interceptor decide it's the browser's job.
     const onClickCapture = (e: MouseEvent) => {
       const a = anchorOf(e)
-      if (a && newTabKey(e)) openLink(e, a)
+      if (a && (newTabKey(e) || e.altKey)) openLink(e, a)
     }
     const onAuxClick = (e: MouseEvent) => {
       const a = anchorOf(e)
@@ -197,15 +252,24 @@ function TabShell({ covered }: { covered: boolean }) {
   const mode = covered ? 'hidden' : 'visible'
   // Sorted, not in strip order: reordering tabs must not move the panes in the DOM, which would reset their scroll.
   const live = state.tabs.filter((t) => state.live.includes(t.id)).sort((a, b) => (a.id < b.id ? -1 : 1))
+  const visible = visibleTabs(state)
+  const style = { ...(covered ? { display: 'none' } : {}), ...(state.split ? { gridTemplateColumns: splitColumns(state.splitRatio) } : {}) }
   return (
-    <div className="app-shell tabbed" style={covered ? { display: 'none' } : undefined}>
+    <div className={`app-shell tabbed${state.split ? ' is-split' : ''}`} style={style}>
       <Activity mode={mode}>
         <TabCommands />
         <TabStrip />
       </Activity>
       {live.map((tab) => (
-        <TabPane key={tab.id} tab={tab} shown={!covered && tab.id === state.activeId} />
+        <TabPane
+          key={tab.id}
+          tab={tab}
+          shown={!covered && visible.includes(tab.id)}
+          side={state.split?.[0] === tab.id ? 'left' : state.split?.[1] === tab.id ? 'right' : null}
+          focused={tab.id === state.activeId}
+        />
       ))}
+      {state.split && <SplitDivider />}
       <Activity mode={mode}>
         <AgentDock />
       </Activity>

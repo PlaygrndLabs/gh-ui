@@ -8,6 +8,7 @@ import { useTabTitle } from '../TabsProvider'
 import { BASE_SYSTEM_PROMPT } from './prompt'
 import { createClient, describeAgentError, runAgent, type AgentEvent } from './runner'
 import { getAnthropicKey, loadAgentSettings, proxyBaseUrl, saveAgentSettings, type AgentSettings } from './settings'
+import { useIsFocusedPane } from '../TabsProvider'
 
 export interface PageContext {
   /** e.g. "pull request acme/web#42 “Fix login”" */
@@ -299,11 +300,13 @@ export function useAgent() {
 /** Pages call this to tell the agent what the user is looking at. */
 export function useAgentPageContext(ctx: PageContext | null) {
   const { setPageContext } = useAgent()
+  const focused = useIsFocusedPane()
   const serialized = JSON.stringify(ctx)
   useEffect(() => {
+    if (!focused) return
     setPageContext(ctx)
     return () => setPageContext(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serialized, setPageContext])
+  }, [serialized, setPageContext, focused])
   useTabTitle(ctx?.tabTitle)
 }
