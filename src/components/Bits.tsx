@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Avatar, IconButton, Spinner } from '@primer/react'
-import { CopyIcon, CheckIcon, AlertIcon } from '@primer/octicons-react'
+import { CopyIcon, CheckIcon, AlertIcon, type Icon } from '@primer/octicons-react'
 import { useState } from 'react'
 import { copyText } from '../lib/format'
 import { errorMessage } from '../lib/github'
@@ -83,14 +83,14 @@ export function ErrorBox({ error, title = 'Something went wrong' }: { error: unk
   )
 }
 
-export function CopyButton({ text, label = 'Copy', size = 'small' }: { text: string; label?: string; size?: 'small' | 'medium' }) {
+export function CopyButton({ text, label = 'Copy', size = 'small', icon = CopyIcon }: { text: string; label?: string; icon?: Icon; size?: 'small' | 'medium' }) {
   const [copied, setCopied] = useState(false)
   return (
     <IconButton
       size={size}
       variant="invisible"
       aria-label={copied ? 'Copied!' : label}
-      icon={copied ? CheckIcon : CopyIcon}
+      icon={copied ? CheckIcon : icon}
       onClick={async () => {
         if (await copyText(text)) {
           setCopied(true)

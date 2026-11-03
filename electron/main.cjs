@@ -184,6 +184,14 @@ function registerIpc() {
     if (['https:', 'http:', 'mailto:'].includes(u.protocol)) await shell.openExternal(u.toString())
   })
 
+  // A Homebrew install keeps its record in the Caskroom. Nothing outside these fixed paths is touched.
+  ipcMain.handle('app:installKind', () =>
+    process.platform === 'darwin' && ['/opt/homebrew/Caskroom/github-ui', '/usr/local/Caskroom/github-ui'].some((dir) => fs.existsSync(dir)) ? 'homebrew' : 'direct',
+  )
+  ipcMain.handle('app:openTerminal', async () => {
+    if (process.platform === 'darwin') await shell.openPath('/System/Applications/Utilities/Terminal.app')
+  })
+
   ipcMain.handle('dialog:pickDirectory', async (e, title) => {
     const win = BrowserWindow.fromWebContents(e.sender)
     const res = await dialog.showOpenDialog(win, { title: title || 'Choose a folder', properties: ['openDirectory', 'createDirectory'] })
@@ -253,6 +261,8 @@ function buildMenu() {
       label: 'View',
       submenu: [
         { label: 'Toggle Agent', accelerator: 'CmdOrCtrl+Shift+A', click: () => sendMenu('toggle-agent') },
+        { label: 'Split View', accelerator: 'CmdOrCtrl+\\', click: () => sendMenu('toggle-split') },
+        { label: 'Focus Other Pane', accelerator: 'CmdOrCtrl+Alt+\\', click: () => sendMenu('focus-other-pane') },
         { type: 'separator' },
         { role: 'reload' },
         { role: 'toggleDevTools' },
@@ -302,6 +312,8 @@ function createWindow() {
     title: 'gh-ui',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0d1117' : '#ffffff',
     titleBarStyle: isMac ? 'hiddenInset' : 'default',
+    // People move between this and their editor or terminal; a click shouldn't only bring the window forward.
+    acceptFirstMouse: true,
     // Centered on the tab strip (src/styles/app.css): 36px tall, and the buttons are 14px.
     trafficLightPosition: { x: 16, y: 11 },
     webPreferences: {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createRequire } from 'node:module'
+import { checkoutPlan } from '../src/lib/checkout'
 
 const require = createRequire(import.meta.url)
 const { validateGitArgs, gitAuthEnv } = require('./git-policy.cjs') as {
@@ -47,5 +48,15 @@ describe('gitAuthEnv', () => {
   })
   it('ignores malformed hosts', () => {
     expect(gitAuthEnv({ token: 'x', host: 'evil.com; rm -rf /' })).toEqual({})
+  })
+})
+
+describe('checking out a pull request', () => {
+  it.each([
+    [{ number: 7, headRef: 'fix/x', fromFork: false }, 'main'],
+    [{ number: 7, headRef: 'p', fromFork: true }, 'main'],
+    [{ number: 7, headRef: 'p', fromFork: true }, 'pr-7'],
+  ])('stays within what the policy allows (%#)', (target, current) => {
+    for (const step of checkoutPlan(target, current).steps) expect(() => validateGitArgs(step)).not.toThrow()
   })
 })

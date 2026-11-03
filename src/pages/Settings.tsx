@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { Avatar, Button, FormControl, Label, NavList, Radio, RadioGroup, Select, TextInput, Textarea, ToggleSwitch, Banner } from '@primer/react'
-import { PersonIcon, PaintbrushIcon, SparkleFillIcon, KeyIcon, PersonAddIcon, ShieldLockIcon } from '@primer/octicons-react'
+import { PersonIcon, PaintbrushIcon, ChecklistIcon, DownloadIcon, SparkleFillIcon, KeyIcon, PersonAddIcon, ShieldLockIcon } from '@primer/octicons-react'
 import { useAuth, AUTH_METHOD_LABEL, reauthPath } from '../lib/auth'
 import { useSwitchAccount } from '../lib/TabsProvider'
 import { TOKEN_KIND_LABEL } from '../lib/hosts'
@@ -10,7 +10,9 @@ import { useAgent } from '../lib/agent/AgentProvider'
 import { MODELS, getAnthropicKey, setAnthropicKey, type Effort } from '../lib/agent/settings'
 import { isNative, native } from '../lib/platform'
 import { readPref, writePref } from '../lib/storage'
+import { FEATURES, useFeatures, type Feature } from '../lib/features'
 import { fetchServerConfig, type ServerConfig } from '../lib/oauth'
+import { useStartUpdate, useUpdateCheck } from '../components/UpdateNotice'
 
 export function SettingsPage() {
   const { pathname } = useLocation()
@@ -29,11 +31,13 @@ export function SettingsPage() {
         <NavList aria-label="Settings">
           {item('/settings', 'Accounts', PersonIcon)}
           {item('/settings/appearance', 'Appearance', PaintbrushIcon)}
+          {item('/settings/features', 'Features', ChecklistIcon)}
           {item('/settings/agent', 'Agent', SparkleFillIcon)}
           {item('/settings/oauth', 'OAuth app', ShieldLockIcon)}
+          {isNative && item('/settings/updates', 'Updates', DownloadIcon)}
         </NavList>
         <div>
-          {section === 'appearance' ? <AppearanceSettings /> : section === 'agent' ? <AgentSettingsPanel /> : section === 'oauth' ? <OAuthSettings /> : <AccountsSettings />}
+          {section === 'appearance' ? <AppearanceSettings /> : section === 'features' ? <FeatureSettings /> : section === 'updates' ? <UpdateSettings /> : section === 'agent' ? <AgentSettingsPanel /> : section === 'oauth' ? <OAuthSettings /> : <AccountsSettings />}
         </div>
       </div>
     </div>
@@ -111,6 +115,69 @@ function AppearanceSettings() {
           </FormControl>
         ))}
       </RadioGroup>
+    </>
+  )
+}
+
+function UpdateSettings() {
+  const { current, latest, available, homebrew, query } = useUpdateCheck()
+  const { copied, start } = useStartUpdate(latest, homebrew)
+  const status = query.isFetching ? 'Checking…' : query.isError ? 'Could not reach GitHub.' : available ? `Version ${latest} is available.` : latest ? 'You have the latest version.' : 'No release found.'
+  return (
+    <>
+      <div className="subhead">
+        <h2>Updates</h2>
+      </div>
+      <p className="mb-1">
+        Version <span className="text-bold">{current}</span>, installed {homebrew ? 'with Homebrew' : 'from a download'}.
+      </p>
+      <p className="fg-muted mb-3" role="status">
+        {copied ? 'Command copied. Paste it in Terminal, then restart the app.' : status}
+      </p>
+      <div className="flex-center gap-2">
+        {available && (
+          <Button variant="primary" onClick={() => void start()}>
+            {homebrew ? 'Update with Homebrew' : 'Download'}
+          </Button>
+        )}
+        <Button loading={query.isFetching} onClick={() => void query.refetch()}>
+          Check now
+        </Button>
+      </div>
+    </>
+  )
+}
+
+function FeatureSettings() {
+  const { isOn, setFeature } = useFeatures()
+  const keys = Object.keys(FEATURES) as Feature[]
+  const groups = [...new Set(keys.map((k) => FEATURES[k].group))]
+  return (
+    <>
+      <div className="subhead">
+        <h2>Features</h2>
+      </div>
+      <p className="fg-muted mb-3">Choose what the app shows. Anything switched off is one click away here, and its data is kept.</p>
+      {groups.map((group) => (
+        <section key={group} className="mb-4">
+          <h3 className="feature-group">{group}</h3>
+          <div className="Box">
+            {keys
+              .filter((k) => FEATURES[k].group === group)
+              .map((k) => (
+                <div key={k} className="Box-row feature-row">
+                  <div className="flex-1">
+                    <div className="text-bold" id={`feature-${k}`}>
+                      {FEATURES[k].label}
+                    </div>
+                    <div className="fg-muted text-small">{FEATURES[k].description}</div>
+                  </div>
+                  <ToggleSwitch size="small" aria-labelledby={`feature-${k}`} checked={isOn(k)} onClick={() => setFeature(k, !isOn(k))} />
+                </div>
+              ))}
+          </div>
+        </section>
+      ))}
     </>
   )
 }

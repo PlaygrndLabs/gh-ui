@@ -2,14 +2,14 @@ import { useMemo, useState } from 'react'
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Button, ButtonGroup, IconButton, TextInput } from '@primer/react'
-import { SparkleFillIcon, LinkExternalIcon, TriangleDownIcon, IssueClosedIcon, SkipIcon, CopyIcon } from '@primer/octicons-react'
+import { SparkleFillIcon, LinkExternalIcon, LinkIcon, TriangleDownIcon, IssueClosedIcon, SkipIcon, CopyIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage, FULL_BODY, type Issue } from '../../lib/github'
 import { useRepo } from '../../lib/repo'
 import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { webUrl } from '../../lib/links'
 import { openExternal } from '../../lib/platform'
 import { copyText } from '../../lib/format'
-import { ErrorBox, InlineTitle, Loading, UserAvatar, isBot } from '../../components/Bits'
+import { CopyButton, ErrorBox, InlineTitle, Loading, UserAvatar, isBot } from '../../components/Bits'
 import { IssueStateLabel, PullStateIcon } from '../../components/Status'
 import { Composer } from '../../components/Composer'
 import { CommentCard, SimpleEvent, rollupEvents, type LooseEvent } from '../../components/Timeline'
@@ -140,6 +140,9 @@ export function IssuePage() {
             <h1 className="page-title flex-1">
               <InlineTitle text={i.title} /> <span className="num">#{i.number}</span>
             </h1>
+            <span className="shrink-0" style={{ marginTop: 6 }}>
+              <CopyButton text={i.html_url} label="Copy issue link" size="medium" icon={LinkIcon} />
+            </span>
             <span className="flex-center gap-2 shrink-0 issue-header-actions">
               {canEditIssue && <Button onClick={() => (setTitle(i.title), setEditingTitle(true))}>Edit</Button>}
               <Button as={Link} to={`/${owner}/${repo}/issues/new`} variant="primary">
