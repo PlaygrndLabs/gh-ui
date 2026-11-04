@@ -27,6 +27,12 @@ import {
   titleFromPath,
   unloadTabs,
   type TabsState,
+  focusOtherPane,
+  openTabToSide,
+  setSplitRatio,
+  splitTab,
+  toggleSplit,
+  visibleTabs,
 } from './tabs'
 
 const ids = (s: TabsState) => s.tabs.map((t) => t.id)
@@ -40,7 +46,7 @@ function three(): TabsState {
 
 describe('opening tabs', () => {
   it('starts with one live dashboard tab', () => {
-    expect(initialTabs('a')).toEqual({ tabs: [{ id: 'a', url: '/', title: null }], activeId: 'a', closed: [], live: ['a'] })
+    expect(initialTabs('a')).toEqual({ tabs: [{ id: 'a', url: '/', title: null }], activeId: 'a', closed: [], live: ['a'], split: null, splitRatio: 0.5 })
   })
 
   it('a new tab goes last and becomes active', () => {
@@ -337,7 +343,7 @@ describe('links opened in a new tab', () => {
 })
 
 describe('one tab per repository', () => {
-  const state = (...urls: string[]): TabsState => ({ tabs: urls.map((url, i) => ({ id: `t${i}`, url, title: null })), activeId: 't0', closed: [], live: ['t0'] })
+  const state = (...urls: string[]): TabsState => ({ tabs: urls.map((url, i) => ({ id: `t${i}`, url, title: null })), activeId: 't0', closed: [], live: ['t0'], split: null, splitRatio: 0.5 })
 
   it('names the repository a page belongs to', () => {
     expect(repoKeyFromUrl('/Acme/Web/pull/2?x=1')).toBe('acme/web')
@@ -389,5 +395,123 @@ describe('one tab per repository', () => {
     expect(ids(next)).toEqual(['t0', 't1'])
     expect(next.activeId).toBe('t1')
     expect(next.closed).toEqual([])
+  })
+})
+
+describe('split view', () => {
+  const three = () => {
+    let s = initialTabs('a', '/one')
+    s = openTabNext(s, { id: 'b', url: '/two', background: true })
+    return openTabNext(s, { id: 'c', url: '/three', background: true })
+  }
+
+  it('opens a link beside the focused tab and focuses it', () => {
+    const s = openTabToSide(initialTabs('a', '/one'), { id: 'b', url: '/two' })
+    expect(s.split).toEqual(['a', 'b'])
+    expect(s.activeId).toBe('b')
+    expect(visibleTabs(s)).toEqual(['a', 'b'])
+    expect(s.live).toEqual(expect.arrayContaining(['a', 'b']))
+  })
+
+  it('replaces the other pane, not the focused one, when already split', () => {
+    const left = openTabToSide(selectTab(openTabToSide(initialTabs('a', '/one'), { id: 'b', url: '/two' }), 'a'), { id: 'c', url: '/three' })
+    expect(left.split).toEqual(['a', 'c'])
+    const right = openTabToSide(openTabToSide(initialTabs('a', '/one'), { id: 'b', url: '/two' }), { id: 'c', url: '/three' })
+    expect(right.split).toEqual(['c', 'b'])
+  })
+
+  it('only moves focus for a tab on screen, and swaps the focused pane for one that is not', () => {
+    const s = splitTab(three(), 'b')
+    expect(s.split).toEqual(['a', 'b'])
+    const focus = selectTab(s, 'a')
+    expect(focus.split).toEqual(['a', 'b'])
+    expect(focus.activeId).toBe('a')
+    const swapped = selectTab(focus, 'c')
+    expect(swapped.split).toEqual(['c', 'b'])
+    expect(swapped.activeId).toBe('c')
+  })
+
+  it('puts a dragged tab on the side it was dropped', () => {
+    expect(splitTab(three(), 'b', 'left').split).toEqual(['b', 'a'])
+    expect(splitTab(three(), 'b', 'right').split).toEqual(['a', 'b'])
+  })
+
+  it('has nothing to split a lone tab with, unless the toggle makes a new one', () => {
+    const lone = initialTabs('a', '/one')
+    expect(splitTab(lone, 'a')).toBe(lone)
+    const toggled = toggleSplit(lone, 'fresh')
+    expect(toggled.split).toEqual(['a', 'fresh'])
+    expect(toggled.tabs.find((t) => t.id === 'fresh')?.url).toBe('/')
+  })
+
+  it('toggles off keeping the focused tab, and back on with the last one used', () => {
+    const on = toggleSplit(selectTab(selectTab(three(), 'c'), 'a'), 'x')
+    expect(on.split).toEqual(['a', 'c'])
+    expect(on.tabs).toHaveLength(3)
+    const off = toggleSplit(on, 'x')
+    expect(off.split).toBeNull()
+    expect(off.activeId).toBe(on.activeId)
+  })
+
+  it('moves focus between panes', () => {
+    const s = splitTab(three(), 'b')
+    expect(focusOtherPane(s).activeId).toBe('a')
+    expect(focusOtherPane(focusOtherPane(s)).activeId).toBe('b')
+    const single = three()
+    expect(focusOtherPane(single)).toBe(single)
+  })
+
+  it('closing a pane leaves the other filling the window', () => {
+    const s = splitTab(three(), 'b')
+    const closedFocused = closeTab(s, 'b', 'fresh')
+    expect(closedFocused.split).toBeNull()
+    expect(closedFocused.activeId).toBe('a')
+    const closedOther = closeTab(s, 'a', 'fresh')
+    expect(closedOther.split).toBeNull()
+    expect(closedOther.activeId).toBe('b')
+    const closedElsewhere = closeTab(s, 'c', 'fresh')
+    expect(closedElsewhere.split).toEqual(['a', 'b'])
+  })
+
+  it('never unloads a tab on screen', () => {
+    const s = splitTab(three(), 'b')
+    expect(unloadTabs(s, ['a', 'b']).live).toEqual(expect.arrayContaining(['a', 'b']))
+  })
+
+  it('keeps the ratio within limits', () => {
+    const s = initialTabs('a')
+    expect(setSplitRatio(s, 0.01).splitRatio).toBe(0.25)
+    expect(setSplitRatio(s, 0.99).splitRatio).toBe(0.75)
+    expect(setSplitRatio(s, Number.NaN).splitRatio).toBe(0.5)
+  })
+
+  it('restores a saved split and mounts both panes', () => {
+    const s = setSplitRatio(splitTab(three(), 'b'), 0.6)
+    const restored = parseSavedTabs(JSON.parse(JSON.stringify(serializeTabs(s))), 'fresh')
+    expect(restored.split).toEqual(['a', 'b'])
+    expect(restored.splitRatio).toBe(0.6)
+    expect(restored.live.sort()).toEqual(['a', 'b'])
+  })
+
+  it.each([
+    ['a tab that no longer exists', ['a', 'gone']],
+    ['the same tab twice', ['b', 'b']],
+    ['a pair without the active tab', ['a', 'c']],
+    ['the wrong shape', 'a,b'],
+    ['too many', ['a', 'b', 'c']],
+  ])('ignores a saved split with %s', (_name, split) => {
+    const saved = { ...serializeTabs(three()), activeId: 'b', split }
+    const restored = parseSavedTabs(JSON.parse(JSON.stringify(saved)), 'fresh')
+    expect(restored.split).toBeNull()
+    expect(restored.activeId).toBe('b')
+  })
+
+  it('state saved before split view existed still loads', () => {
+    const { split, splitRatio, ...old } = serializeTabs(three())
+    void split
+    void splitRatio
+    const restored = parseSavedTabs(JSON.parse(JSON.stringify(old)), 'fresh')
+    expect(restored.split).toBeNull()
+    expect(restored.splitRatio).toBe(0.5)
   })
 })

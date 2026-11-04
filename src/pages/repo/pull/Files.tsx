@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ActionList, ActionMenu, Banner, Button, Checkbox, CounterLabel, Dialog, FormControl, IconButton, Label, ProgressBar, Radio, RadioGroup, TextInput, Textarea, TreeView, useConfirm } from '@primer/react'
 import {
@@ -37,6 +37,7 @@ import { useAgent } from '../../../lib/agent/AgentProvider'
 import { readPref, useSharedPref, writePref } from '../../../lib/storage'
 import { plural } from '../../../lib/format'
 import { contentElementById, cssId } from '../../../lib/scroll'
+import { currentIndex } from '../../../lib/scrollspy'
 import type { DiffLine, LineSelection } from '../../../lib/diff'
 import { parseSuggestions } from '../../../lib/suggestions'
 import { FileDiffBox, lineAnchor, anchorKey, type DiffSide } from '../../../components/DiffView'
@@ -93,6 +94,9 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
 
   const [split, setSplit] = useState(() => readPref('diffSplit', false))
   const [showTree, setShowTree] = useState(() => readPref('diffFileTree', true))
+  const treeBox = useRef<HTMLDivElement>(null)
+  const pinnedFile = useRef(false)
+  const [currentFile, setCurrentFile] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
   const [viewed, setViewed] = useSharedPref<Record<string, string>>(`viewed:${storeKey}`, {})
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
@@ -149,6 +153,56 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
 
   const all = files.data ?? []
   const shown = all.filter((f) => f.filename.toLowerCase().includes(filter.toLowerCase()))
+  const shownPaths = shown.map((f) => f.filename).join('\n')
+
+  // The tree follows the page: the file being read is the one that's reached the sticky bars. Picking a file in the tree
+  // keeps it marked through the scroll there, and even if it's too short to reach them, until the user next scrolls.
+  useEffect(() => {
+    const main = treeBox.current?.closest('.app-main')
+    if (!main || !shownPaths) return
+    const paths = shownPaths.split('\n')
+    let frame = 0
+    const update = () => {
+      frame = 0
+      if (pinnedFile.current) return
+      const toolbar = main.querySelector('.files-toolbar')
+      const bar = toolbar && getComputedStyle(toolbar).position === 'sticky' ? toolbar : main.querySelector('.tabnav-sticky')
+      const line = (bar?.getBoundingClientRect().bottom ?? main.getBoundingClientRect().top) + 1
+      const top = (i: number) => main.querySelector(`[id="diff-${cssId(paths[i])}"]`)?.getBoundingClientRect().top ?? Infinity
+      const atEnd = main.scrollTop > 0 && main.scrollTop + main.clientHeight >= main.scrollHeight - 1
+      setCurrentFile(paths[currentIndex(paths.length, top, line, atEnd)] ?? null)
+    }
+    const schedule = () => {
+      frame ||= requestAnimationFrame(update)
+    }
+    const release = () => {
+      if (pinnedFile.current) pinnedFile.current = false
+    }
+    main.addEventListener('scroll', schedule, { passive: true })
+    main.addEventListener('wheel', release, { passive: true })
+    main.addEventListener('keydown', release)
+    main.addEventListener('pointerdown', release)
+    schedule()
+    return () => {
+      cancelAnimationFrame(frame)
+      main.removeEventListener('scroll', schedule)
+      main.removeEventListener('wheel', release)
+      main.removeEventListener('keydown', release)
+      main.removeEventListener('pointerdown', release)
+    }
+  }, [shownPaths])
+
+  // Keep the marked file in view in the tree, moving only the tree and not the page.
+  useEffect(() => {
+    const box = treeBox.current
+    const row = currentFile && box?.querySelector(`[id="${CSS.escape(currentFile)}"]`)
+    if (!box || !row) return
+    const b = box.getBoundingClientRect()
+    const r = row.getBoundingClientRect()
+    const margin = 32
+    if (r.top < b.top + margin) box.scrollTop += r.top - b.top - margin
+    else if (r.bottom > b.bottom - margin) box.scrollTop += r.bottom - b.bottom + margin
+  }, [currentFile])
   const viewedCount = all.filter((f) => viewed[f.filename] === f.sha).length
   const isAuthor = pr.user?.login === account.login
 
@@ -393,11 +447,14 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
         />
       )}
       <div className={`files-layout ${showTree ? '' : 'no-tree'}`}>
-        <div className="files-tree">
+        <div className="files-tree" ref={treeBox}>
           <TextInput block leadingVisual={SearchIcon} placeholder="Filter changed files" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter changed files" className="mb-2" />
           <FileTree
             files={shown}
+            current={currentFile}
             onSelect={(path) => {
+              pinnedFile.current = true
+              setCurrentFile(path)
               setCollapsed((c) => ({ ...c, [path]: false }))
               requestAnimationFrame(() => contentElementById(`diff-${cssId(path)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
             }}
@@ -507,7 +564,7 @@ interface TreeNode {
   file?: PullFile
 }
 
-function FileTree({ files, onSelect, viewed }: { files: PullFile[]; onSelect(path: string): void; viewed: Record<string, string> }) {
+function FileTree({ files, current, onSelect, viewed }: { files: PullFile[]; current: string | null; onSelect(path: string): void; viewed: Record<string, string> }) {
   const root = useMemo(() => {
     const r: TreeNode = { name: '', path: '', children: new Map() }
     for (const f of files) {
@@ -536,7 +593,7 @@ function FileTree({ files, onSelect, viewed }: { files: PullFile[]; onSelect(pat
     const kids = [...n.children.values()].sort((a, b) => (!!a.file === !!b.file ? a.name.localeCompare(b.name) : a.file ? 1 : -1))
     return kids.map((c) =>
       c.file ? (
-        <TreeView.Item key={c.path} id={c.path} onSelect={() => onSelect(c.path)}>
+        <TreeView.Item key={c.path} id={c.path} current={c.path === current} onSelect={() => onSelect(c.path)}>
           <TreeView.LeadingVisual>
             <FileIcon />
           </TreeView.LeadingVisual>

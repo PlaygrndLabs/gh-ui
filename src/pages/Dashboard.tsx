@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Avatar, Button, RelativeTime, TextInput } from '@primer/react'
-import { RepoIcon, SparkleFillIcon, EyeIcon, GitPullRequestIcon, IssueOpenedIcon, StarIcon, RepoForkedIcon, GitBranchIcon, TagIcon, CommentIcon, RepoPushIcon, LockIcon } from '@primer/octicons-react'
+import { PlayIcon, RepoIcon, SparkleFillIcon, EyeIcon, GitPullRequestIcon, IssueOpenedIcon, StarIcon, RepoForkedIcon, GitBranchIcon, TagIcon, CommentIcon, RepoPushIcon, LockIcon } from '@primer/octicons-react'
 import { useGitHub } from '../lib/github'
 import { useAgent, useAgentPageContext } from '../lib/agent/AgentProvider'
-import { CommitStatusMark, IssueStateIcon, PullStateIcon } from '../components/Status'
+import { CheckStatusIcon, CommitStatusMark, IssueStateIcon, PullStateIcon } from '../components/Status'
 import { Blankslate, Loading } from '../components/Bits'
+import { useFeature } from '../lib/features'
+import { actionsQueue } from '../lib/actionsQueue'
 
 interface Item {
   __typename: 'PullRequest' | 'Issue'
@@ -26,6 +28,9 @@ const ITEM = `__typename
   ... on Issue { number title state updatedAt repository{nameWithOwner} author{login} }`
 
 export function Dashboard() {
+  const activity = useFeature('activityFeed')
+  const assigned = useFeature('assignedIssues')
+  const actionsOn = useFeature('homeActions')
   const { octokit, key, account } = useGitHub()
   const agent = useAgent()
   const [filter, setFilter] = useState('')
@@ -97,21 +102,76 @@ export function Dashboard() {
         <div className="flex wrap" style={{ gap: 16, alignItems: 'flex-start' }}>
           <FocusCard title="Review requests" icon={<EyeIcon />} items={focus.data?.reviews.nodes} total={focus.data?.reviews.issueCount} loading={focus.isLoading} to="/pulls?f=3" empty="No pull requests are waiting on your review." />
           <FocusCard title="Your pull requests" icon={<GitPullRequestIcon />} items={focus.data?.mine.nodes} total={focus.data?.mine.issueCount} loading={focus.isLoading} to="/pulls" empty="You have no open pull requests." />
-          <FocusCard title="Assigned issues" icon={<IssueOpenedIcon />} items={focus.data?.assigned.nodes} total={focus.data?.assigned.issueCount} loading={focus.isLoading} to="/issues?f=1" empty="No open issues are assigned to you." />
+          {assigned && <FocusCard title="Assigned issues" icon={<IssueOpenedIcon />} items={focus.data?.assigned.nodes} total={focus.data?.assigned.issueCount} loading={focus.isLoading} to="/issues?f=1" empty="No open issues are assigned to you." />}
+          {actionsOn && <ActionsCard repos={repos.data} />}
         </div>
-        <h3 className="text-bold mt-4 mb-2" style={{ fontSize: 16 }}>
-          Recent activity
-        </h3>
-        <div className="Box">
-          {events.isLoading ? (
-            <Loading />
-          ) : events.data?.length ? (
-            events.data.map((e) => <EventLine key={e.id} e={e} />)
-          ) : (
-            <Blankslate title="No recent activity">Follow people and star repositories to fill your feed.</Blankslate>
-          )}
-        </div>
+        {activity && (
+          <>
+            <h3 className="text-bold mt-4 mb-2" style={{ fontSize: 16 }}>
+              Recent activity
+            </h3>
+            <div className="Box">
+              {events.isLoading ? (
+                <Loading />
+              ) : events.data?.length ? (
+                events.data.map((e) => <EventLine key={e.id} e={e} />)
+              ) : (
+                <Blankslate title="No recent activity">Follow people and star repositories to fill your feed.</Blankslate>
+              )}
+            </div>
+          </>
+        )}
       </main>
+    </div>
+  )
+}
+
+const ACTIONS_REPOS = 8
+const ACTIONS_RECENT_DAYS = 14
+
+/** GitHub has no list of runs across repositories, so this asks the repositories pushed to most recently, a page each. */
+function ActionsCard({ repos }: { repos?: Array<{ full_name: string; owner: { login: string }; name: string; archived?: boolean; pushed_at?: string | null }> }) {
+  const { octokit, key } = useGitHub()
+  const recent = (repos ?? []).filter((r) => !r.archived && r.pushed_at && Date.now() - Date.parse(r.pushed_at) < ACTIONS_RECENT_DAYS * 86_400_000).slice(0, ACTIONS_REPOS)
+  const runs = useQuery({
+    queryKey: [key, 'dashboard-actions', recent.map((r) => r.full_name)],
+    enabled: !!repos,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    queryFn: async () => {
+      const pages = await Promise.allSettled(recent.map((r) => octokit.rest.actions.listWorkflowRunsForRepo({ owner: r.owner.login, repo: r.name, per_page: 20 })))
+      return pages.flatMap((p) => (p.status === 'fulfilled' ? p.value.data.workflow_runs : []))
+    },
+  })
+  const queue = actionsQueue(runs.data ?? [], Date.now()).slice(0, 8)
+  return (
+    <div className="feed-card" style={{ flex: '1 1 320px', minWidth: 0 }}>
+      <div className="Box-header compact">
+        <PlayIcon />
+        <span className="text-bold flex-1">Actions</span>
+        <span className="counter">{queue.length}</span>
+      </div>
+      {runs.isLoading || !repos ? (
+        <Loading />
+      ) : queue.length ? (
+        queue.map((run) => (
+          <div key={run.id} className="Box-row hoverable">
+            <span style={{ paddingTop: 2 }}>
+              <CheckStatusIcon status={run.status} conclusion={run.conclusion} />
+            </span>
+            <div className="flex-1">
+              <Link to={`/${run.repository.full_name}/actions/runs/${run.id}`} className="text-bold fg-default">
+                {run.display_title || run.name}
+              </Link>
+              <div className="text-small fg-muted">
+                {run.repository.full_name} · {run.head_branch} · <RelativeTime date={new Date(run.updated_at)} />
+              </div>
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="Box-row fg-muted text-small">Nothing failing or running in your recent repositories.</div>
+      )}
     </div>
   )
 }

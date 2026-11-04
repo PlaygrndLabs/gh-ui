@@ -1,5 +1,7 @@
-/** The visible tab's scrolling area; the window itself doesn't scroll, and the desktop app keeps hidden tabs in the DOM. */
+/** The scrolling area of the tab with focus; the window itself doesn't scroll, and the desktop app keeps hidden tabs in the DOM. */
 export function contentArea(): Element | null {
+  const focused = document.querySelector('.tab-pane.is-focused .app-main')
+  if (focused?.getClientRects().length) return focused
   for (const el of document.querySelectorAll('.app-main')) if (el.getClientRects().length) return el
   return null
 }

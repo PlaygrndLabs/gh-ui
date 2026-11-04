@@ -191,6 +191,7 @@ export function CommentCard(p: CommentCardProps) {
         <div className="timeline-comment-body">
           {editing ? (
             <Composer
+              rows={12}
               value={draft}
               onChange={setDraft}
               context={p.context}

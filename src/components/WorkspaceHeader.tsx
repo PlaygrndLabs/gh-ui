@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, TextInput } from '@primer/react'
 import { GitBranchIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { useAgent } from '../lib/agent/AgentProvider'
+import { useFeatures } from '../lib/features'
 import { errorMessage, useGitHub } from '../lib/github'
 import { webUrl } from '../lib/links'
 import { native, openExternal } from '../lib/platform'
@@ -254,6 +255,7 @@ function Search({ repo }: { repo: WorkspaceRepo | null }) {
 function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const { pathname } = useLocation()
   const { account, octokit, key } = useGitHub()
+  const { isOn } = useFeatures()
   const github = repo.github
   const path = workspacePath(repo, account.host)
   // A second clone has its own page, but its pull requests and runs are the repository's.
@@ -278,14 +280,14 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const more: Array<{ label: string; to: string; show: boolean; current: string[] }> = base
     ? [
         { label: 'Code', to: `${base}/tree/${info.data?.default_branch ?? 'HEAD'}`, show: true, current: ['tree', 'blob', 'blame', 'commits', 'commit', 'branches', 'tags'] },
-        { label: 'Issues', to: `${base}/issues`, show: true, current: ['issues'] },
+        { label: 'Issues', to: `${base}/issues`, show: isOn('issues'), current: ['issues'] },
         { label: 'Releases', to: `${base}/releases`, show: true, current: ['releases'] },
-        { label: 'Discussions', to: `${base}/discussions`, show: !!info.data?.has_discussions, current: ['discussions'] },
-        { label: 'Projects', to: `${base}/projects`, show: true, current: ['projects'] },
-        { label: 'Wiki', to: `${base}/wiki`, show: !!info.data?.has_wiki, current: ['wiki'] },
-        { label: 'Security', to: `${base}/security`, show: true, current: ['security'] },
-        { label: 'Insights', to: `${base}/pulse`, show: true, current: ['pulse', 'graphs'] },
-        { label: 'Repository settings', to: `${base}/settings`, show: !!info.data?.permissions?.admin, current: ['settings'] },
+        { label: 'Discussions', to: `${base}/discussions`, show: isOn('discussions') && !!info.data?.has_discussions, current: ['discussions'] },
+        { label: 'Projects', to: `${base}/projects`, show: isOn('projects'), current: ['projects'] },
+        { label: 'Wiki', to: `${base}/wiki`, show: isOn('wiki') && !!info.data?.has_wiki, current: ['wiki'] },
+        { label: 'Security', to: `${base}/security`, show: isOn('security'), current: ['security'] },
+        { label: 'Insights', to: `${base}/pulse`, show: isOn('insights'), current: ['pulse', 'graphs'] },
+        { label: 'Repository settings', to: `${base}/settings`, show: isOn('repoSettings') && !!info.data?.permissions?.admin, current: ['settings'] },
       ]
     : []
   const inMore = more.find((m) => m.current.includes(section))

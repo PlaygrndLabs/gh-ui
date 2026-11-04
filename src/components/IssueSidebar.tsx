@@ -8,6 +8,7 @@ import { useRepo, encodePath } from '../lib/repo'
 import { openExternal } from '../lib/platform'
 import { IssueLabel, UserAvatar, isBot, botName } from './Bits'
 import { IssueStateIcon, PullStateIcon } from './Status'
+import { useFeature } from '../lib/features'
 
 /** An issue or pull request another issue points at (Relationships, Development). */
 export interface IssueRef {
@@ -276,6 +277,7 @@ export function IssueSidebar({ number, isPull, pull, labels, assignees, mileston
   const extra = useIssueExtra(owner, repo, number, !isPull)
   const relations = useIssueRelations(owner, repo, number, !isPull)
   const projects = useIssueProjects(owner, repo, number, isPull ? 'pullRequest' : 'issue')
+  const details = useFeature('sidebarDetails')
   const pullExtra = usePullExtra(owner, repo, number, !!isPull)
   const participants = isPull ? pullExtra.data?.participants : extra.data?.participants
   const subscribed = extra.data?.viewerSubscription === 'SUBSCRIBED'
@@ -445,41 +447,45 @@ export function IssueSidebar({ number, isPull, pull, labels, assignees, mileston
           )}
         </Section>
       )}
-      <Section title="Projects">
-        {projects.isError ? (
-          <span className="fg-muted">{/scope|INSUFFICIENT/i.test(errorMessage(projects.error)) ? 'Projects need the read:project scope' : 'Projects are currently unavailable'}</span>
-        ) : projects.data?.length ? (
-          <div className="flex" style={{ flexDirection: 'column', gap: 6 }}>
-            {projects.data.map((p) => (
-              <div key={p.project.url}>
-                <a
-                  href={p.project.url}
-                  className="fg-default text-bold flex-center gap-1"
-                  onClick={(ev) => {
-                    ev.preventDefault()
-                    openExternal(p.project.url)
-                  }}
-                >
-                  <TableIcon className="fg-muted" /> {p.project.title}
-                </a>
-                {p.status?.name && <div className="fg-muted mt-1">Status: {p.status.name}</div>}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <span className="fg-muted">{projects.isLoading ? '…' : 'No projects'}</span>
-        )}
-      </Section>
-      <div className="sidebar-section">
-        <div className="sidebar-heading">Milestone</div>
-        {milestone ? (
-          <Link to={`/${owner}/${repo}/${isPull ? 'pulls' : 'issues'}?q=${encodeURIComponent(`${isPull ? 'is:pr ' : ''}milestone:"${milestone.title}"`)}`} className="fg-default text-bold">
-            {milestone.title}
-          </Link>
-        ) : (
-          <span className="fg-muted">No milestone</span>
-        )}
-      </div>
+      {(details || projects.isLoading === false && !!projects.data?.length) && (
+        <Section title="Projects">
+          {projects.isError ? (
+            <span className="fg-muted">{/scope|INSUFFICIENT/i.test(errorMessage(projects.error)) ? 'Projects need the read:project scope' : 'Projects are currently unavailable'}</span>
+          ) : projects.data?.length ? (
+            <div className="flex" style={{ flexDirection: 'column', gap: 6 }}>
+              {projects.data.map((p) => (
+                <div key={p.project.url}>
+                  <a
+                    href={p.project.url}
+                    className="fg-default text-bold flex-center gap-1"
+                    onClick={(ev) => {
+                      ev.preventDefault()
+                      openExternal(p.project.url)
+                    }}
+                  >
+                    <TableIcon className="fg-muted" /> {p.project.title}
+                  </a>
+                  {p.status?.name && <div className="fg-muted mt-1">Status: {p.status.name}</div>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="fg-muted">{projects.isLoading ? '…' : 'No projects'}</span>
+          )}
+        </Section>
+      )}
+      {(details || !!milestone) && (
+        <div className="sidebar-section">
+          <div className="sidebar-heading">Milestone</div>
+          {milestone ? (
+            <Link to={`/${owner}/${repo}/${isPull ? 'pulls' : 'issues'}?q=${encodeURIComponent(`${isPull ? 'is:pr ' : ''}milestone:"${milestone.title}"`)}`} className="fg-default text-bold">
+              {milestone.title}
+            </Link>
+          ) : (
+            <span className="fg-muted">No milestone</span>
+          )}
+        </div>
+      )}
       {!isPull && !relations.isError && (
         <Section title="Relationships">
           {relations.data?.parent || relations.data?.blockedBy?.nodes.length || relations.data?.blocking?.nodes.length ? (
@@ -506,7 +512,7 @@ export function IssueSidebar({ number, isPull, pull, labels, assignees, mileston
           )}
         </Section>
       )}
-      {isPull && !pullExtra.isError && (
+      {isPull && !pullExtra.isError && (details || !!pullExtra.data?.closingIssuesReferences?.nodes.length) && (
         <Section title="Development">
           {pullExtra.data?.closingIssuesReferences?.nodes.length ? (
             <>
@@ -522,7 +528,7 @@ export function IssueSidebar({ number, isPull, pull, labels, assignees, mileston
           )}
         </Section>
       )}
-      {!isPull && !extra.isError && (
+      {!isPull && !extra.isError && (details || !!extra.data?.closedByPullRequestsReferences?.nodes.length || !!extra.data?.linkedBranches?.nodes.length) && (
         <Section title="Development">
           {extra.data?.closedByPullRequestsReferences?.nodes.length || extra.data?.linkedBranches?.nodes.some((b) => b.ref) ? (
             <div className="flex" style={{ flexDirection: 'column', gap: 4 }}>

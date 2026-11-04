@@ -124,7 +124,7 @@ exports.steps = [
         tree: !!m.querySelector('.ws-pr-files .files-tree'),
         reviewButton: !!byText('button', 'Review changes') || !!byText('button', 'Finish your review'),
         status: m.querySelector('.ws-status-bar')?.innerText.replace(/\\s+/g, ' '),
-        copyLink: m.innerHTML.includes('Copy link to this pull request'),
+        copyLink: m.innerHTML.includes('Copy pull request link'),
       }
       r.fail = !(r.pulls > 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /files viewed/.test(r.status) && r.copyLink)
       return r
@@ -409,7 +409,14 @@ exports.steps = [
   },
   {
     name: 'open the Wiki tab of jqlang/jq',
-    js: `${helpers} clickLink('/jqlang/jq/wiki'); return true`,
+    js: `${helpers}
+      // The wiki starts switched off; a change made elsewhere arrives as a storage event.
+      localStorage.setItem('gh-ui:features', JSON.stringify({ wiki: true }))
+      window.dispatchEvent(new StorageEvent('storage', { key: 'gh-ui:features' }))
+      await sleep(500)
+      clickLink('/jqlang/jq/wiki')
+      return true
+    `,
     waitMs: 1500,
   },
   {

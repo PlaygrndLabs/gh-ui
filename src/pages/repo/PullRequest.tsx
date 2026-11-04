@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { useMutation } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Button, IconButton, TextInput, UnderlineNav } from '@primer/react'
-import { CommentDiscussionIcon, GitCommitIcon, ChecklistIcon, FileDiffIcon, SparkleFillIcon, TriangleDownIcon, LinkExternalIcon, CodeIcon } from '@primer/octicons-react'
+import { CommentDiscussionIcon, GitCommitIcon, ChecklistIcon, FileDiffIcon, SparkleFillIcon, TriangleDownIcon, LinkExternalIcon, PencilIcon, LinkIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage } from '../../lib/github'
 import { useRepo } from '../../lib/repo'
 import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
@@ -17,7 +17,8 @@ import { FilesChanged } from './pull/Files'
 import { PullCommits } from './pull/Commits'
 import { ChecksTab } from './pull/Checks'
 import { SplitPane } from '../../components/SplitPane'
-import { CheckoutButton, PullCommitsPane, PullStatusBar } from '../workspace/PullsWorkspace'
+import { PullCommitsPane, PullStatusBar } from '../workspace/PullsWorkspace'
+import { CheckoutMenu, PullStatusLine } from './pull/PullHeaderActions'
 
 /** Keyed per PR so every tab's local state (drafts, pending reviews, merge box) starts fresh. */
 export function PullRequestPage() {
@@ -125,12 +126,12 @@ function PullRequestView() {
             <h1 className="page-title flex-1">
               <InlineTitle text={pr.title} /> <span className="num">#{pr.number}</span>
             </h1>
-            <span className="flex-center gap-2 shrink-0" style={{ marginTop: 6 }}>
-              {canEdit && (
-                <Button size="small" onClick={() => (setTitle(pr.title), setEditingTitle(true))}>
-                  Edit
-                </Button>
-              )}
+            <span className="flex-center gap-1 shrink-0" style={{ marginTop: 6 }}>
+              {canEdit && <IconButton size="small" variant="invisible" icon={PencilIcon} aria-label="Edit title" onClick={() => (setTitle(pr.title), setEditingTitle(true))} />}
+              <CopyButton text={pr.html_url} label="Copy pull request link" icon={LinkIcon} />
+              <IconButton size="small" variant="invisible" icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/pull/${number}`))} />
+              <span style={{ width: 4 }} />
+              <CheckoutMenu pr={pr} owner={owner} repo={repo} />
               <ActionMenu>
                 <ActionMenu.Anchor>
                   <Button size="small" variant="primary" leadingVisual={SparkleFillIcon} trailingVisual={TriangleDownIcon}>
@@ -156,30 +157,11 @@ function PullRequestView() {
                   </ActionList>
                 </ActionMenu.Overlay>
               </ActionMenu>
-              <ActionMenu>
-                <ActionMenu.Anchor>
-                  <Button size="small" leadingVisual={CodeIcon} trailingVisual={TriangleDownIcon}>
-                    Code
-                  </Button>
-                </ActionMenu.Anchor>
-                <ActionMenu.Overlay width="medium" align="end">
-                  <div style={{ padding: 12 }}>
-                    <div className="text-small text-bold mb-1">Check out with GitHub CLI</div>
-                    <div className="flex-center gap-1">
-                      <TextInput block readOnly value={`gh pr checkout ${pr.number}`} className="text-mono" aria-label="gh command" />
-                      <CopyButton text={`gh pr checkout ${pr.number}`} label="Copy command" size="medium" />
-                    </div>
-                  </div>
-                </ActionMenu.Overlay>
-              </ActionMenu>
-              {isNative && <CheckoutButton pr={pr} />}
-              <CopyButton text={webUrl(account.host, `/${owner}/${repo}/pull/${number}`)} label="Copy link to this pull request" size="medium" />
-              <IconButton size="small" icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/pull/${number}`))} />
             </span>
           </div>
         )}
         {saveTitle.error && <div className="error-box mt-2">{errorMessage(saveTitle.error)}</div>}
-        <div className="flex-center gap-2 wrap mt-2" style={{ paddingBottom: 16, borderBottom: '1px solid var(--borderColor-muted)' }}>
+        <div className="flex-center gap-2 wrap mt-2">
           {!isNative && <PullStateLabel pull={pr} />}
           <span className="fg-muted">
             <UserLink login={pr.user?.login} type={pr.user?.type} className="text-bold fg-default" />{' '}
@@ -195,6 +177,9 @@ function PullRequestView() {
             <span className="branch-pill">{pr.head.repo && pr.head.repo.owner.login !== owner ? `${pr.head.repo.owner.login}:${pr.head.ref}` : pr.head.ref}</span>
           </span>
           <CopyButton text={pr.head.ref} label="Copy head branch name" />
+        </div>
+        <div style={{ marginTop: 8, paddingBottom: 16, borderBottom: '1px solid var(--borderColor-muted)' }}>
+          {!isNative && pr.state === 'open' && <PullStatusLine pr={pr} owner={owner} repo={repo} canAct={!!pr.base.repo.permissions?.push} />}
         </div>
       </div>
   )

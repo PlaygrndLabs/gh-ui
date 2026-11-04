@@ -268,8 +268,15 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .tabbed .ws-tab-add:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-hover); }
 
 /* ---------- A new tab, and the inbox ---------- */
-.ws-start { display: flex; flex-direction: column; align-items: center; gap: 16px; min-height: 100%; padding: 48px 16px; }
+.ws-start { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 32px 16px 8px; }
 .ws-start-title { margin: 0; font-size: 22px; font-weight: 600; }
 .ws-start-panel { width: min(560px, 100%); background: var(--ws-bg); border: 1px solid var(--ws-line); border-radius: 10px; overflow: hidden; }
-.ws-start-panel .ws-picker { max-height: calc(100vh - 260px); }
+.ws-start-panel .ws-picker { max-height: 320px; }
 .ws-inbox { display: flex; flex-direction: column; max-height: min(560px, 75vh); font-size: var(--ws-font-size); }
+
+/* Split view: a pane is narrower than the window, so the toolbar gives way. */
+.in-split .ws-search { display: none; }
+.in-split .ws-seg-branch, .in-split .ws-seg-sync { flex: 1 1 0; width: auto; }
+.tabbed .tab-split { color: var(--ws-chrome-muted); }
+.tabbed .tab-split:hover, .tabbed .tab-split[aria-pressed='true'] { color: var(--ws-chrome-text); }
+.is-native-mac .ws-tab-add { -webkit-app-region: no-drag; }

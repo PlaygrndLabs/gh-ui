@@ -18,6 +18,10 @@ npm run electron:build      # unpacked app in release/ (fast, for testing)
 npm run electron:dist       # dmg/zip (mac), nsis (win), AppImage/deb (linux)
 ```
 
+### Updates
+
+The app checks GitHub for a newer release every 6 hours, without sending any token, and says so in the tab strip. It doesn't update itself, because automatic updates on macOS need an Apple Developer ID. Homebrew installs get the upgrade command copied and Terminal opened; other installs get the release page. Settings → Updates checks on demand, and Settings → Features turns the notice off.
+
 ### Releases
 
 Work lands on `main`. Merging `main` into the `release` branch builds the macOS installers in GitHub Actions and publishes them as a new GitHub Release (`.github/workflows/release.yml`). A pull request from `main` into `release` runs the same build without publishing and shows the version it would release in the run's summary. To add a platform, add a row to the workflow's matrix.
@@ -34,7 +38,7 @@ Versions are `vX.Y.Z` git tags, and a published version is never replaced. `scri
 
 `package.json`'s version is a floor: set it higher to choose a version yourself, such as `1.0.0`. It isn't updated on each release; the installers get the tag's version at build time.
 
-macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electron-builder docs), so macOS blocks the first launch: open the app, then choose **Open Anyway** in System Settings → Privacy & Security. Smoke test a build: `GH_UI_SMOKE_TEST=1 release/mac-arm64/gh-ui.app/Contents/MacOS/gh-ui`.
+macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electron-builder docs). The Homebrew cask in [PlaygrndLabs/homebrew-tap](https://github.com/PlaygrndLabs/homebrew-tap) clears macOS's quarantine flag on install, and each release pins it to its version and installer checksums; that needs a `HOMEBREW_TAP_TOKEN` repository secret that can write to the tap. For a direct download, see the README. Smoke test a build: `GH_UI_SMOKE_TEST=1 release/mac-arm64/gh-ui.app/Contents/MacOS/gh-ui`.
 
 ## Sign in
 
@@ -64,10 +68,15 @@ gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and u
 
 ## What's in it
 
+The app is built for repositories, pull requests and Actions. Home is a work queue: pull requests waiting on you, your own, and failing or running Actions. A pull request shows its checks, reviews and conflicts on one line, with Re-run failed, copy link and Check out, which uses your local clone. Discussions, Projects, Wiki, Security and quality, Insights, repository settings, the Home activity feed and a few smaller parts start switched off; turn them on in Settings → Features.
+
 - **Repository tabs** — one Chrome-style tab per repository, each with its own view and Claude chat. A link to another repository moves to its tab, and pages outside a repository (search, profiles, settings) get their own. **+** opens the repository list: folders on your Mac, repositories on GitHub, Add local folder, Clone, New.
 - **Toolbar** — the current branch, and one sync button that becomes Clone, Publish repository, Publish branch, Pull, Push or Fetch as the repository needs. Then Branches, Pull requests, Actions and More (Code, Issues, Releases, Discussions, Projects, Wiki, Security, Insights, Repository settings).
 - **Panes** — every list and detail can be resized by dragging or with the arrow keys, and collapsed from its divider. Double-click a divider to reset it. Layouts are remembered, and shared by all tabs.
 - **Inbox** — reviews you were asked for and your pull requests with failing checks, across all repositories.
+- **Split view** — two tabs side by side: drag a tab to an edge, use its menu, or the button at the end of the strip.
+- **Comment and description editor** — GitHub's formatting toolbar and shortcuts (Cmd-B, Cmd-I, Cmd-E, Cmd-K, Cmd-Shift-. for a quote, Cmd-Shift-7, 8 and L for lists), lists that continue on Enter, and pasting a URL over selected text to link it.
+- **Mermaid diagrams** — drawn in the app, in its light or dark theme, wherever Markdown appears.
 - **Code** — file tree, README, About/languages/releases, branch & tag picker, go-to-file, syntax-highlighted file view with line links, in-place edit & commit, commits and commit diffs, branches (ahead/behind, PR links, create/delete).
 - **Pull requests** — a list (All, To review, Mine; the checked-out branch's pull request first) beside the chosen one: chat next to its files or commits, per-commit diffs, a status bar with state, review, checks, conflicts, open threads and files viewed, check out and copy link. Search and filter all under the list; conversation timeline with review threads (reply, resolve/unresolve, edit, delete), merge box (checks, reviews, update branch, ready for review, merge/squash/rebase, delete branch), reviewers/assignees/labels editing, Commits, Checks (annotations, re-run), Files changed (file tree, unified/split diff, “viewed” tracking, approve / request changes), compare & create PR.
 - **Code review** — select lines by dragging a line's “+” or shift-clicking line numbers (one side, one hunk) for multi-line comments; “Add a suggestion” (⌘G) in the comment editor; **Commit suggestion** / **Add suggestion to batch** on suggested changes (from reviewers, CodeRabbit or Greptile) when you can push, refused if the branch moved, with Co-authored-by credit. A pending review started anywhere (github.com, `gh`, another client) is picked up over GraphQL: new comments and replies go into it, its comments can be edited or deleted, and **Finish your review** submits or abandons it.
@@ -90,6 +99,9 @@ gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and u
 | ⌘T | New tab, which offers repositories to open |
 | ⌘W | Close tab; closing the last one leaves a new tab. ⌘⇧W closes the window. |
 | ⌘⇧T | Reopen the last closed tab |
+| ⌥-click a link | Open it in the other pane, starting split view if needed |
+| ⌘\\ | Split view on or off |
+| ⌘⌥\\ | Move focus to the other pane |
 | ⌘1…⌘8, ⌘9 | Go to that tab; ⌘9 is the last one |
 | ⌃Tab, ⌃⇧Tab | Next, previous tab |
 | ⌘[, ⌘] | Back, forward in the active tab |
@@ -112,6 +124,7 @@ It works through GitHub tools: reading PRs, diffs, files, review threads, checks
 
 - The UI is served from a custom `app://gh-ui` origin with a CSP. Nothing navigates that document or opens another window: links outside the app go to your browser, and in-app links become validated paths in a tab's own router.
 - Rendered markdown comes from GitHub's own HTML and is sanitized again with DOMPurify.
+- Mermaid diagrams are written by whoever wrote the pull request, so they render in a sandboxed frame with no origin and no network access, and only the sanitized SVG reaches the app.
 - The renderer can only run allow-listed git subcommands inside repositories you added, and never with options that execute programs, write arbitrary files or force-overwrite (`electron/git-policy.cjs`, tested in `electron/git-policy.test.ts`). Your token is given to git only for HTTPS fetch/pull/push/clone to the signed-in host, through an environment-scoped credential helper.
 - Main-process HTTP (device flow, logs) is limited to public HTTPS hosts and drops the token on redirects.
 
@@ -134,5 +147,7 @@ Layout: `src/` React app (`pages/`, `components/`, `lib/` incl. `lib/agent/`), `
 - electron-builder's default NSIS and AppImage tools are x86_64 only: install Rosetta 2 or build on Windows/Linux CI. Without `xz`/`gtar` on macOS, the deb also needs `-c.deb.compression=gz`.
 
 ## Not covered yet
+
+The editor can't attach files, because GitHub has no public API for comment uploads, and it doesn't autocomplete @mentions or #references yet.
 
 Not checked against real accounts: project editing (mocked data only). Logged-in screens follow GitHub's docs and weren't compared side by side with github.com. Mixed-side comment ranges (from a deleted line to an added line); editing rulesets, environment and organization secrets, and settings pages without an API (Pages, Actions permissions, social preview, …); multi-select fields, labels/assignees and the item side panel in Projects; signed/notarized builds. The Windows package builds but hasn't been launched. Actions logs are split into steps from GitHub's second-precision step times (the API no longer exposes per-step logs), so a composite action's last inner step can occasionally show at the top of the next step.

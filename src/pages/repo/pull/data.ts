@@ -145,11 +145,6 @@ export function summarizeChecks(data: { runs: Array<{ status: string; conclusion
   return { state, total, failed, pending, passed, skipped }
 }
 
-/** "…/actions/runs/123/job/456" → run and job ids, for check runs created by GitHub Actions. */
-export function actionsIds(detailsUrl: string | null | undefined): { runId: number; jobId: number | null } | null {
-  const m = detailsUrl?.match(/\/actions\/runs\/(\d+)(?:\/job\/(\d+))?/)
-  return m ? { runId: Number(m[1]), jobId: m[2] ? Number(m[2]) : null } : null
-}
 
 export function botThreadsSummary(comments: ReviewComment[] | undefined, threads: Map<number, { isResolved: boolean }> | undefined) {
   const bots = new Map<string, number>()
@@ -174,3 +169,5 @@ export function prPrompts(owner: string, repo: string, pr: PullRequest) {
     description: `Draft a clear pull request description for ${ref} from its diff and commits (summary, motivation, notable changes, testing notes). Show me the draft; don't update the PR.`,
   }
 }
+
+export { actionsIds, reviewStanding, rerunTargets } from './status'

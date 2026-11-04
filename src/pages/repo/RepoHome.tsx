@@ -8,16 +8,19 @@ import { Dashboard } from '../Dashboard'
 import { BranchesWorkspace } from '../workspace/BranchesWorkspace'
 import { CodePage } from './Code'
 
-/** A new tab in the desktop app: where to go next. The web build, which has no tabs, keeps its dashboard. */
+/** A new tab in the desktop app: where to go next, above Home's work queue. */
 export function HomePage() {
   if (!isNative) return <Dashboard />
   return (
-    <div className="ws-start">
-      <h1 className="ws-start-title">Open a repository</h1>
-      <div className="ws-start-panel">
-        <RepoPickerPanel onDone={() => {}} />
+    <>
+      <div className="ws-start">
+        <h1 className="ws-start-title">Open a repository</h1>
+        <div className="ws-start-panel">
+          <RepoPickerPanel onDone={() => {}} />
+        </div>
       </div>
-    </div>
+      <Dashboard />
+    </>
   )
 }
 

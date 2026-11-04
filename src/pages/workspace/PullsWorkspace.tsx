@@ -14,9 +14,9 @@ import { FileDiffBox } from '../../components/DiffView'
 import { SplitPane } from '../../components/SplitPane'
 import { firstLine, shortSha } from '../../lib/format'
 import { contentElementById } from '../../lib/scroll'
-import { summarizeChecks, useChecks, usePullFiles, useReviews, useReviewComments, useReviewThreads } from '../repo/pull/data'
+import { usePullFiles, useReviewComments, useReviewThreads } from '../repo/pull/data'
+import { PullStatusLine } from '../repo/pull/PullHeaderActions'
 import { PullsPage } from '../repo/Pulls'
-import { CloneDialog } from '../Local'
 import { useCheckedOutBranch } from './ActionsWorkspace'
 
 type PullFilter = 'all' | 'review' | 'mine'
@@ -134,21 +134,11 @@ export function PullsHome() {
 /** Everything that decides whether this can merge, always in view. */
 export function PullStatusBar({ pr }: { pr: PullRequest }) {
   const { owner, repo } = useRepo()
-  const checks = useChecks(owner, repo, pr.head.sha)
-  const summary = summarizeChecks(checks.data)
-  const reviews = useReviews(owner, repo, pr.number)
   const comments = useReviewComments(owner, repo, pr.number)
   const threadInfo = useReviewThreads(owner, repo, pr.number)
   const files = usePullFiles(owner, repo, pr.number)
   const [viewed] = useSharedPref<Record<string, string>>(`viewed:${owner}/${repo}#${pr.number}`, {})
-
-  const latest = new Map<string, string>()
-  for (const r of reviews.data ?? []) if (r.user && (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED' || r.state === 'DISMISSED')) latest.set(r.user.login, r.state)
-  const states = [...latest.values()]
-  const review = states.includes('CHANGES_REQUESTED') ? { text: 'Changes requested', cls: 'ws-bad', mark: '✕' } : states.includes('APPROVED') ? { text: 'Approved', cls: 'ws-ok', mark: '✓' } : { text: 'No review yet', cls: '', mark: '○' }
-  const check = checks.isLoading ? { text: 'Loading checks', cls: '', mark: '○' } : summary.failed ? { text: `${summary.failed} failing`, cls: 'ws-bad', mark: '✕' } : summary.pending ? { text: `${summary.pending} running`, cls: 'ws-run', mark: '●' } : summary.total ? { text: 'Checks passed', cls: 'ws-ok', mark: '✓' } : { text: 'No checks', cls: '', mark: '○' }
   const live = pr.state === 'open' && !pr.merged
-  const conflicts = pr.mergeable_state === 'dirty'
   const unresolved = buildThreads(comments.data ?? [], threadInfo.data).filter((t) => !t.info?.isResolved).length
   const viewedCount = (files.data ?? []).filter((f) => viewed[f.filename] === f.sha).length
   const toMerge = () => contentElementById('pr-merge')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -156,17 +146,7 @@ export function PullStatusBar({ pr }: { pr: PullRequest }) {
   return (
     <div className="ws-status-bar">
       <PullStateLabel pull={pr} />
-      <span className="ws-status-item">
-        <span className={`ws-mark ${review.cls}`}>{review.mark}</span> {review.text}
-      </span>
-      <span className="ws-status-item">
-        <span className={`ws-mark ${check.cls}`}>{check.mark}</span> {check.text}
-      </span>
-      {live && (
-        <span className="ws-status-item">
-          <span className={`ws-mark ${conflicts ? 'ws-bad' : pr.mergeable_state === 'unknown' ? '' : 'ws-ok'}`}>{conflicts ? '✕' : pr.mergeable_state === 'unknown' ? '○' : '✓'}</span> {conflicts ? 'Has conflicts' : pr.mergeable_state === 'unknown' ? 'Checking conflicts' : 'No conflicts'}
-        </span>
-      )}
+      {live && <PullStatusLine pr={pr} owner={owner} repo={repo} canAct={!!pr.base.repo.permissions?.push} />}
       <span className="ws-status-item">
         {unresolved} open thread{unresolved === 1 ? '' : 's'}
       </span>
@@ -181,38 +161,6 @@ export function PullStatusBar({ pr }: { pr: PullRequest }) {
         </span>
       )}
     </div>
-  )
-}
-
-/** Checks out the pull request's branch, fetching it first; a repository with no folder here offers to clone. */
-export function CheckoutButton({ pr }: { pr: PullRequest }) {
-  const { owner, repo } = useRepo()
-  const { folder, local, branch } = useCheckedOutBranch(owner, repo)
-  const [cloning, setCloning] = useState(false)
-  const fromFork = pr.head.repo?.full_name.toLowerCase() !== pr.base.repo.full_name.toLowerCase()
-  if (fromFork || pr.state !== 'open' || (folder && branch === pr.head.ref)) return null
-  if (!folder)
-    return (
-      <>
-        <Button size="small" onClick={() => setCloning(true)}>
-          Clone to check out
-        </Button>
-        {cloning && <CloneDialog initial={`${owner}/${repo}`} onClose={() => setCloning(false)} onCloned={() => setCloning(false)} />}
-      </>
-    )
-  return (
-    <Button
-      size="small"
-      loading={local.op.isPending}
-      onClick={() =>
-        local.op.mutate(async () => {
-          await local.git!.fetch()
-          local.switchBranch(pr.head.ref)
-        })
-      }
-    >
-      Check out branch
-    </Button>
   )
 }
 

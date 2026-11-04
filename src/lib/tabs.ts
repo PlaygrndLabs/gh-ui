@@ -26,6 +26,10 @@ export interface TabsState {
   closed: ClosedTab[]
   /** Mounted tabs, most recently used first. A tab that isn't here mounts from its URL when it's next shown. */
   live: string[]
+  /** Split view: the tabs on screen, left then right. activeId is whichever pane has focus. */
+  split: [string, string] | null
+  /** The left pane's share of the width. */
+  splitRatio: number
 }
 
 export const DASHBOARD = '/'
@@ -33,6 +37,8 @@ export const DASHBOARD = '/'
 export const MAX_LIVE_TABS = 8
 export const MAX_CLOSED_TABS = 20
 export const MAX_HISTORY = 50
+const MIN_SPLIT_RATIO = 0.25
+const DEFAULT_SPLIT_RATIO = 0.5
 const MAX_TITLE = 200
 
 /** A restored or requested tab URL as a path on this origin. Sign-in lives outside the tabs, so it's never a tab's page. */
@@ -46,15 +52,67 @@ export function isLoginPath(path: string) {
 }
 
 export function initialTabs(id: string, url = DASHBOARD): TabsState {
-  return { tabs: [{ id, url: safeTabPath(url), title: null }], activeId: id, closed: [], live: [id] }
+  return { tabs: [{ id, url: safeTabPath(url), title: null }], activeId: id, closed: [], live: [id], split: null, splitRatio: DEFAULT_SPLIT_RATIO }
 }
 
 const touch = (live: string[], id: string) => [id, ...live.filter((x) => x !== id)]
 
+/** The tabs on screen. */
+export function visibleTabs(state: Pick<TabsState, 'activeId' | 'split'>): string[] {
+  return state.split ?? [state.activeId]
+}
+
+/** In split view, a tab already on screen only takes focus; any other replaces the pane that has focus. */
 export function selectTab(state: TabsState, id: string): TabsState {
   if (!state.tabs.some((t) => t.id === id)) return state
   if (state.activeId === id && state.live[0] === id) return state
-  return { ...state, activeId: id, live: touch(state.live, id) }
+  const split = state.split && !state.split.includes(id) ? (state.split.map((x) => (x === state.activeId ? id : x)) as [string, string]) : state.split
+  return { ...state, activeId: id, live: touch(state.live, id), split }
+}
+
+/** Shows a tab beside another, focused. It's on the right unless asked otherwise, or kept on the side it's already on. */
+export function showSplit(state: TabsState, id: string, other: string, side: 'left' | 'right' = 'right'): TabsState {
+  if (id === other || ![id, other].every((x) => state.tabs.some((t) => t.id === x))) return state
+  const split: [string, string] = side === 'left' ? [id, other] : [other, id]
+  return { ...state, activeId: id, split, live: touch(touch(state.live, other), id) }
+}
+
+/** The tab to keep beside `id`: what's in the other pane, or else the last one used. */
+function splitPartner(state: TabsState, id: string): string | undefined {
+  return state.split?.find((x) => x !== id) ?? (state.activeId !== id ? state.activeId : (state.live.find((x) => x !== id) ?? state.tabs.find((t) => t.id !== id)?.id))
+}
+
+/** Puts a tab that's already open beside another. A window with only that tab has nothing to split with. */
+export function splitTab(state: TabsState, id: string, side: 'left' | 'right' = 'right'): TabsState {
+  const other = splitPartner(state, id)
+  return other ? showSplit(state, id, other, side) : state
+}
+
+/** Opens a link in the other pane, in a new tab, leaving the pane with focus where it is. */
+export function openTabToSide(state: TabsState, options: Omit<OpenTabOptions, 'background'>): TabsState {
+  const focused = state.activeId
+  const side = state.split?.[0] === focused || !state.split ? 'right' : 'left'
+  return showSplit(openTabNext(state, { ...options, background: true }), options.id, focused, side)
+}
+
+/** Cmd+\\: closes split view, or opens it with the last used tab, or a new dashboard if this is the only one. */
+export function toggleSplit(state: TabsState, freshId: string): TabsState {
+  if (state.split) return { ...state, split: null }
+  const other = splitPartner(state, state.activeId)
+  return other ? showSplit(state, other, state.activeId) : openTabToSide(state, { id: freshId, url: DASHBOARD })
+}
+
+export function focusOtherPane(state: TabsState): TabsState {
+  const other = state.split?.find((x) => x !== state.activeId)
+  return other ? selectTab(state, other) : state
+}
+
+export function setSplitRatio(state: TabsState, ratio: number): TabsState {
+  return { ...state, splitRatio: clampSplitRatio(ratio) }
+}
+
+export function clampSplitRatio(ratio: number) {
+  return Number.isFinite(ratio) ? Math.max(MIN_SPLIT_RATIO, Math.min(1 - MIN_SPLIT_RATIO, ratio)) : DEFAULT_SPLIT_RATIO
 }
 
 /** Cmd+1…8 pick that tab; Cmd+9 is the last one, however many there are. */
@@ -90,7 +148,10 @@ export function openNewTab(state: TabsState, id: string, url = DASHBOARD): TabsS
   return selectTab({ ...state, tabs: [...state.tabs, { id, url: safeTabPath(url), title: null }] }, id)
 }
 
-/** Closing moves to the tab on the right, or else the left. The last tab leaves a fresh dashboard, never an empty window. */
+/**
+ * Closing moves to the tab on the right, or else the left. The last tab leaves a fresh dashboard, never an empty window.
+ * Closing one of two panes leaves the other filling the window.
+ */
 export function closeTab(state: TabsState, id: string, freshId: string): TabsState {
   const index = state.tabs.findIndex((t) => t.id === id)
   if (index < 0) return state
@@ -98,11 +159,13 @@ export function closeTab(state: TabsState, id: string, freshId: string): TabsSta
   // Closing a lone untouched dashboard changes nothing the user could want back.
   const lone = state.tabs.length === 1
   const closed = lone && tab.url === DASHBOARD ? state.closed : [{ id, url: tab.url, title: tab.title, index }, ...state.closed].slice(0, MAX_CLOSED_TABS)
-  if (lone) return { ...initialTabs(freshId), closed }
+  if (lone) return { ...initialTabs(freshId), closed, splitRatio: state.splitRatio }
   const tabs = state.tabs.filter((t) => t.id !== id)
   const live = state.live.filter((x) => x !== id)
-  if (state.activeId !== id) return { ...state, tabs, closed, live }
-  return selectTab({ ...state, tabs, closed, live }, tabs[Math.min(index, tabs.length - 1)].id)
+  const remaining = state.split?.includes(id) ? state.split.find((x) => x !== id)! : null
+  const split = remaining ? null : state.split
+  if (state.activeId !== id) return { ...state, tabs, closed, live, split }
+  return selectTab({ ...state, tabs, closed, live, split, activeId: remaining ?? state.activeId }, remaining ?? tabs[Math.min(index, tabs.length - 1)].id)
 }
 
 /** Brings back the last closed tab, where it was. If its repository has a tab again by now, it goes there instead. */
@@ -151,7 +214,8 @@ export function setTabTitle(state: TabsState, id: string, title: string): TabsSt
 }
 
 export function unloadTabs(state: TabsState, ids: string[]): TabsState {
-  return { ...state, live: state.live.filter((x) => !ids.includes(x) || x === state.activeId) }
+  const visible = visibleTabs(state)
+  return { ...state, live: state.live.filter((x) => !ids.includes(x) || visible.includes(x)) }
 }
 
 /**
@@ -204,6 +268,8 @@ export function serializeTabs(state: TabsState) {
     tabs: state.tabs.map((t) => ({ id: t.id, url: t.url, title: t.title })),
     activeId: state.activeId,
     closed: state.closed,
+    split: state.split,
+    splitRatio: state.splitRatio,
   }
 }
 
@@ -237,8 +303,13 @@ export function parseSavedTabs(saved: unknown, freshId: string): TabsState {
     closed.push({ id: c.id, url, title: validTitle(c.title), index: Number.isInteger(c.index) && (c.index as number) >= 0 ? (c.index as number) : 0 })
   }
   const activeId = tabs.some((t) => t.id === saved.activeId) ? (saved.activeId as string) : tabs[0].id
-  // Only the active tab mounts at startup; the others mount from their URLs when they're first shown.
-  return { tabs, activeId, closed: closed.slice(0, MAX_CLOSED_TABS), live: [activeId] }
+  const pair = saved.split
+  const split =
+    Array.isArray(pair) && pair.length === 2 && pair[0] !== pair[1] && pair.includes(activeId) && pair.every((x) => tabs.some((t) => t.id === x))
+      ? (pair as [string, string])
+      : null
+  // Only what's on screen mounts at startup; the others mount from their URLs when they're first shown.
+  return { tabs, activeId, closed: closed.slice(0, MAX_CLOSED_TABS), live: split ?? [activeId], split, splitRatio: clampSplitRatio(saved.splitRatio as number) }
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +439,7 @@ export function dedupeRepoTabs(state: TabsState): TabsState {
   if (tabs.length === state.tabs.length) return state
   const activeUrl = state.tabs.find((t) => t.id === state.activeId)?.url ?? ''
   const activeId = tabs.some((t) => t.id === state.activeId) ? state.activeId : (first.get(repoKeyFromUrl(activeUrl) ?? '')?.id ?? tabs[0].id)
-  return { ...state, tabs, activeId, live: [activeId] }
+  return { ...state, tabs, activeId, live: [activeId], split: null }
 }
 
 /** A pull request or issue link's text makes a real title before its tab has ever been shown. */
