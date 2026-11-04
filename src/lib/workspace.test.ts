@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addGitHubRepo, buildWorkspaceRepos, githubKey, removeGitHubRepo, workspacePath, type GitHubRepoRef } from './workspace'
+import { addGitHubRepo, buildWorkspaceRepos, githubKey, removeGitHubRepo, syncAction, workspacePath, type GitHubRepoRef } from './workspace'
 import type { LocalRepo } from './platform'
 
 const folder = (id: string, addedAt: number, remoteUrl = '') => ({ repo: { id, path: `/code/${id}`, name: id, addedAt } satisfies LocalRepo, remoteUrl })
@@ -62,5 +62,22 @@ describe('the GitHub-only list', () => {
     const list = addGitHubRepo(addGitHubRepo([], web), { ...web, owner: 'ACME' })
     expect(list).toEqual([web])
     expect(removeGitHubRepo(list, githubKey(web))).toEqual([])
+  })
+})
+
+describe('syncAction', () => {
+  const status = (upstream: string | null, ahead = 0, behind = 0) => ({ upstream, ahead, behind })
+
+  it('offers what the repository’s location calls for first', () => {
+    expect(syncAction('github', undefined)).toEqual({ kind: 'clone', count: 0 })
+    expect(syncAction('local', status(null))).toEqual({ kind: 'publish-repo', count: 0 })
+    expect(syncAction('both', undefined)).toBeNull()
+  })
+
+  it('then publishes, pulls before pushing, and otherwise fetches', () => {
+    expect(syncAction('both', status(null, 3))).toEqual({ kind: 'publish-branch', count: 0 })
+    expect(syncAction('both', status('origin/x', 1, 2))).toEqual({ kind: 'pull', count: 2 })
+    expect(syncAction('both', status('origin/x', 1))).toEqual({ kind: 'push', count: 1 })
+    expect(syncAction('both', status('origin/x'))).toEqual({ kind: 'fetch', count: 0 })
   })
 })

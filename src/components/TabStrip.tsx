@@ -1,6 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent } from 'react'
 import { flushSync } from 'react-dom'
-import { IconButton } from '@primer/react'
 import {
   CodeIcon,
   CommentDiscussionIcon,
@@ -12,14 +11,14 @@ import {
   IssueOpenedIcon,
   PersonIcon,
   PlayIcon,
-  PlusIcon,
   RepoIcon,
   SearchIcon,
   XIcon,
   type Icon,
 } from '@primer/octicons-react'
+import { RepoPicker } from './RepoPicker'
 import { tabButtonId, tabPanelId, useTabs } from '../lib/TabsProvider'
-import { iconFromPath, tabTitle, type Tab, type TabIcon } from '../lib/tabs'
+import { iconFromPath, repoKeyFromUrl, tabTitle, type Tab, type TabIcon } from '../lib/tabs'
 
 const ICONS: Record<TabIcon, Icon> = {
   home: HomeIcon,
@@ -43,7 +42,7 @@ const AUTO_SCROLL_MAX = 8
 
 /** The row of tabs at the very top of the window, sharing it with the macOS window buttons. */
 export function TabStrip() {
-  const { state, active, select, newTab, close } = useTabs()
+  const { state, active, select, close } = useTabs()
   const list = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -88,7 +87,7 @@ export function TabStrip() {
           <TabItem key={tab.id} tab={tab} active={tab.id === active.id} live={state.live.includes(tab.id)} list={list} />
         ))}
       </div>
-      <IconButton className="tab-new" icon={PlusIcon} aria-label="New tab" size="small" variant="invisible" onClick={newTab} />
+      <RepoPicker />
     </div>
   )
 }
@@ -96,7 +95,7 @@ export function TabStrip() {
 function TabItem({ tab, active, live, list }: { tab: Tab; active: boolean; live: boolean; list: React.RefObject<HTMLDivElement | null> }) {
   const { state, select, close, move } = useTabs()
   const title = tabTitle(tab)
-  const Icon = ICONS[iconFromPath(tab.url)]
+  const Icon = repoKeyFromUrl(tab.url) ? RepoIcon : ICONS[iconFromPath(tab.url)]
   const stateRef = useRef(state)
   stateRef.current = state
 

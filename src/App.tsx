@@ -4,6 +4,7 @@ import { Banner } from '@primer/react'
 import { reauthPath, useAuth } from './lib/auth'
 import { AgentProvider, useAgent } from './lib/agent/AgentProvider'
 import { AppHeader } from './components/AppHeader'
+import { WorkspaceHeader } from './components/WorkspaceHeader'
 import { AgentPanel } from './components/AgentPanel'
 import { Loading, Blankslate, ErrorBox } from './components/Bits'
 import { LoginPage } from './pages/Login'
@@ -15,6 +16,7 @@ import { ProfilePage } from './pages/Profile'
 import { SettingsPage } from './pages/Settings'
 import { LocalReposPage } from './pages/Local'
 import { RepoLayout } from './pages/repo/RepoLayout'
+import { RepoHome } from './pages/repo/RepoHome'
 import { CodePage, BlobPage } from './pages/repo/Code'
 import { CommitsPage, CommitPage } from './pages/repo/Commits'
 import { BranchesPage } from './pages/repo/Branches'
@@ -164,7 +166,7 @@ export function AppShell({ tabbed = false }: { tabbed?: boolean }) {
   if (tabbed) {
     return (
       <>
-        <AppHeader />
+        <WorkspaceHeader />
         <RejectedTokenBanner />
         {page}
       </>
@@ -225,7 +227,7 @@ export function pageRoutes(shell: ReactElement) {
       <Route path="orgs/:org/:tab" element={<OrgRedirect />} />
       <Route path=":owner" element={<ProfilePage />} />
       <Route path=":owner/:repo" element={<RepoLayout />}>
-        <Route index element={<CodePage />} />
+        <Route index element={<RepoHome />} />
         <Route path="tree/*" element={<CodePage />} />
         <Route path="blob/*" element={<BlobPage />} />
         <Route path="blame/*" element={<BlobPage />} />

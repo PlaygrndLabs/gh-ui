@@ -1,5 +1,5 @@
 import { flushSync } from 'react-dom'
-import { Activity, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Activity, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPath, createRoutesFromElements, MemoryRouter, parsePath, Route, Router, RouterProvider, Routes, useLocation, type Navigator } from 'react-router-dom'
 import { AppShell, ErrorBoundary, pageRoutes } from './App'
 import { AgentPanel } from './components/AgentPanel'
@@ -12,7 +12,7 @@ import { linkTarget } from './lib/links'
 import { native, openExternal } from './lib/platform'
 import { confirmDialogOpen, contentElementById } from './lib/scroll'
 import { CurrentTabProvider, forgetSavedTabs, tabButtonId, tabPanelId, TabsProvider, useCurrentTabId, useTabQueryPins, useTabs } from './lib/TabsProvider'
-import { safeTabPath, titleFromLink, type Tab } from './lib/tabs'
+import { repoKeyFromUrl, safeTabPath, titleFromLink, type Tab } from './lib/tabs'
 
 const decodeId = (id: string) => {
   try {
@@ -61,8 +61,11 @@ function TabPane({ tab, shown }: { tab: Tab; shown: boolean }) {
  * get router context from the active tab: they read that tab's location and navigate that tab.
  */
 function AgentDock() {
-  const { open } = useAgent()
+  const { open, setChat } = useAgent()
   const { active, activeRouter } = useTabs()
+  // Before paint and before the page's own effects run, so a question asked from a page lands in its repository's chat.
+  const chat = repoKeyFromUrl(active.url)
+  useLayoutEffect(() => setChat(chat), [chat, setChat])
   const navigator = useMemo<Navigator>(
     () => ({
       createHref: (to) => (typeof to === 'string' ? to : createPath(to)),

@@ -3,6 +3,9 @@ import { linkTarget, safeNextPath } from './links'
 import {
   closeTab,
   cycleTab,
+  dedupeRepoTabs,
+  navigationTarget,
+  repoKeyFromUrl,
   iconFromPath,
   initialTabs,
   MAX_CLOSED_TABS,
@@ -31,7 +34,7 @@ const ids = (s: TabsState) => s.tabs.map((t) => t.id)
 function three(): TabsState {
   let s = initialTabs('a')
   s = openNewTab(s, 'b', '/o/r')
-  s = openNewTab(s, 'c', '/o/r/pulls')
+  s = openNewTab(s, 'c', '/o/other/pulls')
   return s
 }
 
@@ -246,7 +249,7 @@ describe('saved state', () => {
   it('round-trips through JSON, mounting only the active tab', () => {
     const s = setTabTitle(closeTab(three(), 'b', 'f'), 'a', 'Home')
     const back = parseSavedTabs(JSON.parse(JSON.stringify(serializeTabs(s))), 'fresh')
-    expect(back.tabs).toEqual([{ id: 'a', url: '/', title: 'Home' }, { id: 'c', url: '/o/r/pulls', title: null }])
+    expect(back.tabs).toEqual([{ id: 'a', url: '/', title: 'Home' }, { id: 'c', url: '/o/other/pulls', title: null }])
     expect(back.activeId).toBe('c')
     expect(back.live).toEqual(['c'])
     expect(back.closed).toEqual([{ id: 'b', url: '/o/r', title: null, index: 1 }])
@@ -330,5 +333,61 @@ describe('links opened in a new tab', () => {
   it('an unsafe path resolves to the dashboard', () => {
     expect(linkTarget('/..//evil.example/x', host, route)).toEqual({ app: '/' })
     expect(safeNextPath('/..//evil.example/x')).toBe('/')
+  })
+})
+
+describe('one tab per repository', () => {
+  const state = (...urls: string[]): TabsState => ({ tabs: urls.map((url, i) => ({ id: `t${i}`, url, title: null })), activeId: 't0', closed: [], live: ['t0'] })
+
+  it('names the repository a page belongs to', () => {
+    expect(repoKeyFromUrl('/Acme/Web/pull/2?x=1')).toBe('acme/web')
+    expect(repoKeyFromUrl('/local/abc')).toBe('local/abc')
+    for (const url of ['/', '/local', '/search?q=x', '/settings/agent', '/lena', '/orgs/acme/people', '/pulls']) expect(repoKeyFromUrl(url)).toBeNull()
+  })
+
+  it('titles a repository tab after the repository on every page', () => {
+    expect(tabTitle({ url: '/acme/web/pull/2', title: '#2 Fix' })).toBe('web')
+    expect(tabTitle({ url: '/local/abc', title: 'notes' })).toBe('notes')
+    expect(tabTitle({ url: '/settings', title: null })).toBe('Settings')
+  })
+
+  it('keeps a repository’s pages in its tab', () => {
+    expect(navigationTarget(state('/acme/web'), 't0', '/acme/web/pulls')).toEqual({ kind: 'stay' })
+    expect(navigationTarget(state('/acme/web'), 't0', '/ACME/web/actions')).toEqual({ kind: 'stay' })
+  })
+
+  it('moves to another repository’s tab, or opens one', () => {
+    const s = state('/acme/web', '/acme/api/pulls', '/search?q=a')
+    expect(navigationTarget(s, 't0', '/acme/api')).toEqual({ kind: 'focus', id: 't1' })
+    expect(navigationTarget(s, 't0', '/acme/docs')).toEqual({ kind: 'open' })
+  })
+
+  it('lets a tab on no repository become one, unless that repository has a tab', () => {
+    expect(navigationTarget(state('/', '/acme/api'), 't0', '/acme/docs')).toEqual({ kind: 'stay' })
+    expect(navigationTarget(state('/', '/acme/api'), 't0', '/acme/api/pulls')).toEqual({ kind: 'focus', id: 't1' })
+    expect(navigationTarget(state('/search?q=a'), 't0', '/settings')).toEqual({ kind: 'stay' })
+  })
+
+  it('opens pages outside a repository in their own tab, reusing one on that page', () => {
+    expect(navigationTarget(state('/acme/web'), 't0', '/settings')).toEqual({ kind: 'open' })
+    expect(navigationTarget(state('/acme/web', '/settings'), 't0', '/settings/agent')).toEqual({ kind: 'open' })
+    expect(navigationTarget(state('/acme/web', '/settings'), 't0', '/settings')).toEqual({ kind: 'focus', id: 't1' })
+  })
+
+  it('merges tabs saved before this rule, keeping the active repository active', () => {
+    const s = { ...state('/acme/web', '/acme/web/pulls', '/', '/acme/api'), activeId: 't1', live: ['t1'] }
+    const next = dedupeRepoTabs(s)
+    expect(ids(next)).toEqual(['t0', 't2', 't3'])
+    expect(next.activeId).toBe('t0')
+    expect(next.live).toEqual(['t0'])
+    expect(dedupeRepoTabs(state('/', '/acme/web'))).toEqual(state('/', '/acme/web'))
+  })
+
+  it('reopens to the repository’s tab when it has one again', () => {
+    const s: TabsState = { ...state('/acme/web', '/acme/api'), closed: [{ id: 'old', url: '/acme/api/pulls', title: null, index: 0 }] }
+    const next = reopenClosedTab(s)
+    expect(ids(next)).toEqual(['t0', 't1'])
+    expect(next.activeId).toBe('t1')
+    expect(next.closed).toEqual([])
   })
 })

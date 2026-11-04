@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Button, Checkbox, Dialog, FormControl, IconButton, NavList, RelativeTime, SegmentedControl, TextInput, Textarea, UnderlineNav, useConfirm } from '@primer/react'
 import {
@@ -26,6 +26,7 @@ import { useGitHub, errorMessage } from '../lib/github'
 import { native, type LocalRepo } from '../lib/platform'
 import { parseRemote } from '../lib/links'
 import { changePaths, isStaged, isUnmerged, localGit, type StatusEntry } from '../lib/git'
+import { useWorkspaceRepos, workspacePath } from '../lib/workspace'
 import type { FileDiff } from '../lib/diff'
 import { firstLine, shortSha } from '../lib/format'
 import { readPref, writePref } from '../lib/storage'
@@ -35,7 +36,20 @@ import { useEffectOnChange } from '../lib/activity'
 import { FileDiffBox } from '../components/DiffView'
 import { Blankslate, ErrorBox, Loading } from '../components/Bits'
 
+/** A folder's own page, when it has no GitHub path: one with a GitHub repository lives at that repository's path. */
+function LocalWorkspace({ id }: { id: string }) {
+  const { repos, isLoading } = useWorkspaceRepos()
+  const { account } = useGitHub()
+  const repo = repos.find((r) => r.local?.id === id)
+  if (isLoading) return <Loading />
+  if (!repo?.local) return <LocalShell />
+  const path = workspacePath(repo, account.host)
+  if (path && path !== `/local/${id}`) return <Navigate to={path} replace />
+  return <LocalRepoView key={id} repo={repo.local} embedded />
+}
+
 export function LocalReposPage() {
+  const { id } = useParams()
   if (!native) {
     return (
       <div className="container-lg">
@@ -45,7 +59,7 @@ export function LocalReposPage() {
       </div>
     )
   }
-  return <LocalShell />
+  return id ? <LocalWorkspace id={id} /> : <LocalShell />
 }
 
 function useLocalRepos() {
@@ -235,7 +249,8 @@ function CloneDialog({ initial, onClose, onCloned }: { initial: string; onClose(
   )
 }
 
-function LocalRepoView({ repo }: { repo: LocalRepo }) {
+/** `embedded`: inside the desktop workspace, whose toolbar has the branch and sync controls. */
+export function LocalRepoView({ repo, embedded = false }: { repo: LocalRepo; embedded?: boolean }) {
   const { account } = useGitHub()
   const qc = useQueryClient()
   const confirm = useConfirm()
@@ -308,6 +323,7 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
   })
 
   useAgentPageContext({
+    tabTitle: repo.name,
     label: `local repository ${repo.name} at ${repo.path}${remote.data ? ` (GitHub: ${remote.data.owner}/${remote.data.repo})` : ''}`,
     owner: remote.data?.owner,
     repo: remote.data?.repo,
@@ -343,7 +359,7 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
 
   return (
     <>
-      <div className="desktop-toolbar">
+      {!embedded && <div className="desktop-toolbar">
         <div className="desktop-toolbar-item" style={{ minWidth: 220 }}>
           <RepoIcon />
           <div style={{ minWidth: 0 }}>
@@ -378,7 +394,7 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
               }}
             />
         </div>
-      </div>
+      </div>}
       {error && <div className="error-box" style={{ margin: 8, whiteSpace: 'pre-wrap' }}>{error}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: '320px minmax(0,1fr)', flex: 1, minHeight: 0 }}>
         <div className="desktop-sidebar">

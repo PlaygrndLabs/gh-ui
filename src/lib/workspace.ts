@@ -64,6 +64,19 @@ export function workspacePath(repo: WorkspaceRepo, accountHost: string): string 
   return repo.local ? `/local/${repo.local.id}` : null
 }
 
+export type SyncKind = 'clone' | 'publish-repo' | 'publish-branch' | 'pull' | 'push' | 'fetch'
+
+/** The one network action the toolbar offers, the way GitHub Desktop picks it. */
+export function syncAction(location: RepoLocation, status: { upstream: string | null; ahead: number; behind: number } | undefined): { kind: SyncKind; count: number } | null {
+  if (location === 'github') return { kind: 'clone', count: 0 }
+  if (location === 'local') return { kind: 'publish-repo', count: 0 }
+  if (!status) return null
+  if (!status.upstream) return { kind: 'publish-branch', count: 0 }
+  if (status.behind > 0) return { kind: 'pull', count: status.behind }
+  if (status.ahead > 0) return { kind: 'push', count: status.ahead }
+  return { kind: 'fetch', count: 0 }
+}
+
 export function addGitHubRepo(list: GitHubRepoRef[], ref: GitHubRepoRef): GitHubRepoRef[] {
   return list.some((r) => githubKey(r) === githubKey(ref)) ? list : [...list, ref]
 }

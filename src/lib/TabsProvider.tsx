@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { createMemoryRouter, parsePath, useLocation, type RouteObject } from 'react-router-dom'
+import { createMemoryRouter, createPath, parsePath, useLocation, type RouteObject, type To } from 'react-router-dom'
 import { useConfirm } from '@primer/react'
 import { QueryObserver, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from './auth'
@@ -8,13 +8,17 @@ import { readPref, writePref } from './storage'
 import {
   closeTab,
   cycleTab,
+  dedupeRepoTabs,
+  findRepoTab,
   isLoginPath,
   moveTab,
+  navigationTarget,
   openNewTab,
   openTabNext,
   parseSavedTabs,
   recordNavigation,
   reopenClosedTab,
+  repoKeyFromUrl,
   safeTabPath,
   selectTab,
   selectTabNumber,
@@ -74,6 +78,14 @@ export function forgetSavedTabs(accountId: string) {
   }
 }
 
+/** The absolute path a navigation goes to, or null for a relative one, which stays in the tab it started from. */
+function absolutePath(to: unknown): string | null {
+  if (typeof to === 'string') return to.startsWith('/') ? to : null
+  if (typeof to !== 'object' || to === null) return null
+  const path = to as Exclude<To, string>
+  return path.pathname?.startsWith('/') ? createPath(path) : null
+}
+
 const historyEntry = (location: { pathname: string; search: string; hash: string; key: string }): HistoryEntry => ({
   path: location.pathname + location.search + location.hash,
   key: location.key,
@@ -111,7 +123,7 @@ export function TabsProvider({
 }) {
   const client = useQueryClient()
   const confirm = useConfirm()
-  const [state, setState] = useState<TabsState>(() => parseSavedTabs(readPref<unknown>(prefKey(accountId), null), newId()))
+  const [state, setState] = useState<TabsState>(() => dedupeRepoTabs(parseSavedTabs(readPref<unknown>(prefKey(accountId), null), newId())))
   const routers = useRef(new Map<string, TabRouter>())
   const histories = useRef(new Map<string, TabHistory>())
   const pins = useRef(new Map<string, Array<() => void>>())
@@ -121,6 +133,8 @@ export function TabsProvider({
   const stateRef = useRef(state)
   stateRef.current = state
   const dialogFields = useRef(new Map<string, Set<TextField>>())
+  // Set below: a tab's router needs these, and they need the routers.
+  const elsewhere = useRef<{ show(id: string, url: string): void; open(url: string): void }>(null)
 
   // Primer takes a hidden tab's portals out of the document, with their text still in them. So a field that's gone only
   // means its dialog closed while the tab is on screen, and here in render is the last look before a switch hides it.
@@ -150,6 +164,19 @@ export function TabsProvider({
         if (typeof to === 'string' && isLoginPath(to)) {
           onLoginRef.current(to)
           return Promise.resolve()
+        }
+        // A replace tidies the current page's URL, and going through history stays in the tab whatever it holds.
+        const path = absolutePath(to)
+        if (path && !(options as { replace?: boolean } | undefined)?.replace) {
+          const target = navigationTarget(stateRef.current, tab.id, safeTabPath(path))
+          if (target.kind === 'focus') {
+            elsewhere.current!.show(target.id, path)
+            return Promise.resolve()
+          }
+          if (target.kind === 'open') {
+            elsewhere.current!.open(path)
+            return Promise.resolve()
+          }
         }
         return navigate(to, options)
       }) as typeof router.navigate
@@ -196,11 +223,33 @@ export function TabsProvider({
     },
     [confirm, hasUnsentText],
   )
-  const open = useCallback((url: string, options: { background?: boolean; title?: string | null } = {}) => {
-    if (isLoginPath(url)) return onLoginRef.current(url)
-    const id = newId()
-    setState((s) => openTabNext(s, { id, url, ...options }))
-  }, [])
+  /** Takes an existing tab to a page. One that isn't mounted goes there when it next mounts. */
+  const show = useCallback(
+    (id: string, url: string, background = false) => {
+      const tab = stateRef.current.tabs.find((t) => t.id === id)
+      if (!tab) return
+      if (safeTabPath(url) !== tab.url) {
+        if (stateRef.current.live.includes(id)) void routerFor(tab).navigate(url)
+        else {
+          histories.current.delete(id)
+          setState((s) => setTabUrl(s, id, url))
+        }
+      }
+      if (!background) setState((s) => selectTab(s, id))
+    },
+    [routerFor],
+  )
+  const open = useCallback(
+    (url: string, options: { background?: boolean; title?: string | null } = {}) => {
+      if (isLoginPath(url)) return onLoginRef.current(url)
+      const existing = findRepoTab(stateRef.current, repoKeyFromUrl(url))
+      if (existing) return show(existing.id, url, options.background)
+      const id = newId()
+      setState((s) => openTabNext(s, { id, url, ...options }))
+    },
+    [show],
+  )
+  elsewhere.current = { show, open }
   const activeTabId = useCallback(() => stateRef.current.activeId, [])
   const activeRouter = useCallback(() => {
     const s = stateRef.current

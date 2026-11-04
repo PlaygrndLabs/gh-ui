@@ -34,6 +34,11 @@ function validateGitArgs(args) {
   if (!Array.isArray(args) || args.length === 0 || !args.every((a) => typeof a === 'string')) throw new Error('Invalid git arguments')
   const [sub, ...rest] = args
   if (!ALLOWED_SUBCOMMANDS.has(sub)) throw new Error(`git ${sub} is not allowed`)
+  // Adding origin is how a folder gets published. An https URL can't run anything, unlike ext:: or a local path.
+  if (sub === 'remote' && rest[0] === 'add') {
+    if (!(rest.length === 3 && rest[1] === 'origin' && /^https:\/\/[^\s]+$/.test(rest[2]))) throw new Error('Only `git remote add origin <https URL>` is allowed')
+    return
+  }
   if (sub === 'remote' && !(rest[0] === 'get-url' || rest[0] === '-v')) throw new Error('Only `git remote get-url` and `git remote -v` are allowed')
   if (sub === 'diff' && rest.includes('--no-index')) {
     // Only "new file" previews: git diff --no-index -- /dev/null <repo-relative path>

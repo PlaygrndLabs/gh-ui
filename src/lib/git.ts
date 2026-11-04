@@ -160,6 +160,7 @@ export function createGitClient(run: GitRunner) {
       const [message, patch = ''] = res.stdout.split('\x1e')
       return { message: message.trim(), files: parseUnifiedDiff(patch) }
     },
+    addOrigin: (url: string) => git(['remote', 'add', 'origin', url]),
     publishBranch: () => git(['push', '-u', 'origin', 'HEAD'], true),
     pull: () => git(['pull', '--ff-only'], true),
     push: () => git(['push'], true),

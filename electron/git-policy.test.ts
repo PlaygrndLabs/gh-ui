@@ -22,10 +22,15 @@ describe('validateGitArgs', () => {
     [['branch', '--all', '--format=%(refname)%1f%(upstream:short)']],
     [['log', '-n', '200', '--pretty=format:%H', 'origin/release', '--']],
     [['reset', '--soft', 'HEAD~1']],
+    [['remote', 'add', 'origin', 'https://github.com/acme/web.git']],
   ])('allows %j', (args) => expect(() => validateGitArgs(args)).not.toThrow())
 
   it.each([
     [['config', 'core.sshCommand', 'evil']],
+    [['remote', 'add', 'origin', 'ext::sh -c evil']],
+    [['remote', 'add', 'evil', 'https://github.com/acme/web.git']],
+    [['remote', 'add', 'origin', '/etc']],
+    [['remote', 'set-url', 'origin', 'https://github.com/acme/web.git']],
     [['fetch', '--upload-pack=touch /tmp/x']],
     [['push', '--receive-pack', 'x']],
     [['push', '--force']],

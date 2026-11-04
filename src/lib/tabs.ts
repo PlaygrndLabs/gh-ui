@@ -105,10 +105,12 @@ export function closeTab(state: TabsState, id: string, freshId: string): TabsSta
   return selectTab({ ...state, tabs, closed, live }, tabs[Math.min(index, tabs.length - 1)].id)
 }
 
-/** Brings back the last closed tab, where it was. */
+/** Brings back the last closed tab, where it was. If its repository has a tab again by now, it goes there instead. */
 export function reopenClosedTab(state: TabsState): TabsState {
   const [last, ...closed] = state.closed
   if (!last) return state
+  const open = findRepoTab(state, repoKeyFromUrl(last.url))
+  if (open) return selectTab({ ...state, closed }, open.id)
   const at = Math.min(last.index, state.tabs.length)
   const tabs = [...state.tabs.slice(0, at), { id: last.id, url: last.url, title: last.title }, ...state.tabs.slice(at)]
   return selectTab({ ...state, tabs, closed }, last.id)
@@ -314,8 +316,59 @@ export function iconFromPath(url: string): TabIcon {
   return !section ? 'repo' : section === 'blob' || section === 'tree' || section === 'blame' || section === 'commit' || section === 'commits' ? 'code' : 'repo'
 }
 
+/** A tab on a repository's page goes by the repository, whichever of its pages is showing. */
 export function tabTitle(tab: Pick<Tab, 'url' | 'title'>) {
+  const [owner, repo] = pathParts(tab.url)
+  if (repoKeyFromUrl(tab.url) && owner !== 'local') return repo
   return tab.title ?? titleFromPath(tab.url)
+}
+
+// ---------------------------------------------------------------------------
+// One tab per repository.
+
+/** Which repository a page belongs to, or null for a page outside any repository. */
+export function repoKeyFromUrl(url: string): string | null {
+  const [first, second] = pathParts(url)
+  if (first === 'local') return second ? `local/${second}` : null
+  if (!first || !second || TOP_LEVEL[first] || first === 'orgs' || first === 'login') return null
+  return `${first}/${second}`.toLowerCase()
+}
+
+export function findRepoTab(state: TabsState, key: string | null): Tab | undefined {
+  return key ? state.tabs.find((t) => repoKeyFromUrl(t.url) === key) : undefined
+}
+
+export type NavigationTarget = { kind: 'stay' } | { kind: 'focus'; id: string } | { kind: 'open' }
+
+/**
+ * Where a link clicked in a tab should land. A repository's pages stay in its one tab, so going to another repository
+ * moves to that tab, and a page outside any repository gets its own. A tab on no repository can become one, as a browser's would.
+ */
+export function navigationTarget(state: TabsState, fromId: string, path: string): NavigationTarget {
+  const from = state.tabs.find((t) => t.id === fromId)
+  if (!from) return { kind: 'stay' }
+  const fromKey = repoKeyFromUrl(from.url)
+  const key = repoKeyFromUrl(path)
+  if (key && key === fromKey) return { kind: 'stay' }
+  const other = key ? findRepoTab(state, key) : state.tabs.find((t) => !repoKeyFromUrl(t.url) && pathnameOf(t.url) === pathnameOf(path))
+  if (other && other.id !== fromId) return { kind: 'focus', id: other.id }
+  return fromKey ? { kind: 'open' } : { kind: 'stay' }
+}
+
+/** Tabs saved before there was one per repository: the first of each stays, and the active one follows it. */
+export function dedupeRepoTabs(state: TabsState): TabsState {
+  const first = new Map<string, Tab>()
+  const tabs = state.tabs.filter((t) => {
+    const key = repoKeyFromUrl(t.url)
+    if (!key) return true
+    if (first.has(key)) return false
+    first.set(key, t)
+    return true
+  })
+  if (tabs.length === state.tabs.length) return state
+  const activeUrl = state.tabs.find((t) => t.id === state.activeId)?.url ?? ''
+  const activeId = tabs.some((t) => t.id === state.activeId) ? state.activeId : (first.get(repoKeyFromUrl(activeUrl) ?? '')?.id ?? tabs[0].id)
+  return { ...state, tabs, activeId, live: [activeId] }
 }
 
 /** A pull request or issue link's text makes a real title before its tab has ever been shown. */
