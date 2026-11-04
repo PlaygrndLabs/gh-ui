@@ -36,7 +36,7 @@ import { useRepo, encodePath } from '../../../lib/repo'
 import { useAgent } from '../../../lib/agent/AgentProvider'
 import { readPref, useSharedPref, writePref } from '../../../lib/storage'
 import { plural } from '../../../lib/format'
-import { contentElementById } from '../../../lib/scroll'
+import { contentElementById, cssId } from '../../../lib/scroll'
 import type { DiffLine, LineSelection } from '../../../lib/diff'
 import { parseSuggestions } from '../../../lib/suggestions'
 import { FileDiffBox, lineAnchor, anchorKey, type DiffSide } from '../../../components/DiffView'
@@ -499,9 +499,6 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
   )
 }
 
-function cssId(path: string) {
-  return path.replace(/[^a-zA-Z0-9_-]/g, '_')
-}
 
 interface TreeNode {
   name: string

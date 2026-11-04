@@ -107,7 +107,7 @@ body:has(.app-shell) { overflow: hidden; }
 /* Each tab renders the header and content of its own page, and the agent panel is shared by all of them, yet the header
    still has to span the panel. So the shell is a grid, and a tab's pane (display:contents) puts its parts straight in it. */
 /* The strip stays one size at any page zoom, so --tab-strip-h, in the page's pixels, shrinks as the page zooms in. */
-.is-native { --tab-strip-h: calc(37px / var(--page-zoom, 1)); --gd-header-h: 142px; }
+.is-native { --tab-strip-h: calc(44px / var(--page-zoom, 1)); --gd-header-h: 142px; }
 .app-shell.tabbed { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto minmax(0, 1fr); }
 .tab-pane { display: contents; }
 .tabbed > .tab-strip { grid-area: 1 / 1 / 2 / -1; }
@@ -120,12 +120,12 @@ body:has(.app-shell) { overflow: hidden; }
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 37px;
+  height: 44px;
   zoom: calc(1 / var(--page-zoom, 1));
   padding: 0 16px 0 max(16px, calc(var(--window-buttons-w, 0px) + 12px));
   background: var(--bgColor-inset);
   border-bottom: 1px solid var(--borderColor-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 .tab-list {
@@ -146,7 +146,7 @@ body:has(.app-shell) { overflow: hidden; }
   flex: 0 1 200px;
   width: 200px;
   min-width: 96px;
-  height: 28px;
+  height: 34px;
   border-radius: 6px;
   color: var(--fgColor-muted);
   user-select: none;

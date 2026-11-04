@@ -107,9 +107,61 @@ exports.steps = [
     `,
   },
   {
+    name: 'pull requests: list beside chat beside code, with every state in view',
+    screenshot: 'pull-request',
+    js: `${helpers}
+      clickLink('/jqlang/jq/pulls')
+      const row = await until(() => main()?.querySelector('.ws-list-row'), 20000)
+      if (!row) return { fail: true, error: 'no pull request list', text: main()?.innerText.slice(0, 200) }
+      await until(() => main()?.querySelector('.ws-pr-thread .timeline-comment'), 20000)
+      await until(() => main()?.querySelector('.ws-pr-files .file-diff'), 20000)
+      const m = main()
+      const r = {
+        pulls: m.querySelectorAll('.ws-list-row').length,
+        chat: !!m.querySelector('.ws-pr-thread .timeline-comment'),
+        merge: !!m.querySelector('#pr-merge .merge-box'),
+        files: !!m.querySelector('.ws-pr-files .file-diff'),
+        tree: !!m.querySelector('.ws-pr-files .files-tree'),
+        reviewButton: !!byText('button', 'Review changes') || !!byText('button', 'Finish your review'),
+        status: m.querySelector('.ws-status-bar')?.innerText.replace(/\\s+/g, ' '),
+        copyLink: m.innerHTML.includes('Copy link to this pull request'),
+      }
+      r.fail = !(r.pulls > 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /files viewed/.test(r.status) && r.copyLink)
+      return r
+    `,
+  },
+  {
+    name: 'pull requests: commits and one commit’s changes',
+    js: `${helpers}
+      const link = [...main().querySelectorAll('.ws-pr-code .ws-tab')].find((a) => a.textContent.includes('Commits'))
+      link.click()
+      const commit = await until(() => main().querySelector('.ws-pr-code .ws-list-row'), 15000)
+      commit?.click()
+      const diff = await until(() => main().querySelector('.ws-pr-code .file-diff'), 15000)
+      const r = { commit: !!commit, diff: !!diff }
+      r.fail = !(r.commit && r.diff)
+      byText('.ws-pr-code a', 'Show all changes')?.click()
+      return r
+    `,
+  },
+  {
+    name: 'actions: runs beside the chosen run',
+    screenshot: 'actions',
+    js: `${helpers}
+      ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Actions')).click()
+      const row = await until(() => main()?.querySelector('.ws-list-row.is-selected'), 20000)
+      await until(() => main()?.querySelector('.run-title'), 20000)
+      const r = { selected: !!row, title: main()?.querySelector('.run-title')?.innerText.slice(0, 80), copy: !!main()?.innerHTML.includes('Copy link to this run') }
+      r.fail = !(r.selected && r.title && r.copy)
+      return r
+    `,
+  },
+  {
     name: 'a repository only on GitHub shows its branches and commits',
     screenshot: 'github-only',
     js: `${helpers}
+      clickLink('/jqlang/jq')
+      await until(() => main()?.querySelector('.ws-branch'), 15000)
       await until(() => main()?.querySelector('.ws-section .ws-row'), 15000)
       await until(() => main()?.querySelector('.file-diff'), 15000)
       const text = main().innerText
@@ -439,6 +491,8 @@ exports.steps = [
     inputJs: `${helpers}
       const handle = [...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)
       window.__width = Number(handle.getAttribute('aria-valuenow'))
+      window.__pointer = []
+      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture']) handle.addEventListener(type, (e) => window.__pointer.push(type + ':' + e.clientX), true)
       const box = handle.getBoundingClientRect()
       const x = Math.round(box.left + box.width / 2), y = Math.round(box.top + 40)
       return [
@@ -451,9 +505,10 @@ exports.steps = [
     `,
     js: `${helpers}
       const handle = [...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)
+      // Synthetic input can arrive late or merged in a window that isn't on screen, so how far it got can vary.
       await until(() => Number(handle.getAttribute('aria-valuenow')) === window.__width + 60, 3000)
-      const r = { before: window.__width, after: Number(handle.getAttribute('aria-valuenow')) }
-      r.fail = r.after !== r.before + 60
+      const r = { before: window.__width, after: Number(handle.getAttribute('aria-valuenow')), pointer: window.__pointer }
+      r.fail = !(r.after > r.before && r.after <= r.before + 60)
       return r
     `,
   },

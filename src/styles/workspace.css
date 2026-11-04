@@ -85,7 +85,7 @@
 }
 
 /* ---------- Header ---------- */
-.is-native { --gd-header-h: 123px; }
+.is-native { --gd-header-h: 130px; }
 .tabbed .ws-header { grid-area: 2 / 1 / 3 / -1; }
 .ws-header { position: relative; z-index: 20; font-size: var(--ws-font-size); }
 .ws-toolbar { display: flex; align-items: stretch; height: 50px; background: var(--ws-chrome-bg); color: var(--ws-chrome-text); }
@@ -125,7 +125,7 @@ a.ws-tab, .ws-tab { display: inline-flex; align-items: center; gap: 6px; padding
 .ws-menu-list { max-height: 380px; overflow: auto; }
 
 /* ---------- Repository picker ---------- */
-.ws-tab-add { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; color: var(--fgColor-muted); background: none; border: 0; border-radius: 6px; cursor: pointer; }
+.ws-tab-add { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0; color: var(--fgColor-muted); background: none; border: 0; border-radius: 6px; cursor: pointer; }
 .ws-tab-add:hover { color: var(--fgColor-default); background: var(--control-transparent-bgColor-hover); }
 .ws-tab-add:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
 .ws-picker { display: flex; flex-direction: column; max-height: min(560px, 75vh); font-size: var(--ws-font-size); }
@@ -188,3 +188,81 @@ button.ws-row:hover, a.ws-row:hover { color: var(--ws-text); text-decoration: no
 .ws-empty { display: flex; flex: 1; align-items: center; justify-content: center; padding: 32px; color: var(--ws-muted); text-align: center; }
 .linkish { padding: 0; font: inherit; color: var(--fgColor-accent); background: none; border: 0; cursor: pointer; }
 .linkish:hover { text-decoration: underline; }
+
+/* ---------- Lists beside a detail ---------- */
+.ws-filters { gap: 2px; padding: 4px; }
+.ws-filter { flex: 1; padding: 3px 6px; font: inherit; font-weight: 500; color: var(--ws-muted); white-space: nowrap; background: none; border: 0; border-radius: 5px; cursor: pointer; }
+.ws-filter:hover { color: var(--ws-text); }
+.ws-filter[aria-pressed='true'] { color: var(--ws-text); background: var(--ws-bg); box-shadow: 0 0 0 1px var(--ws-line); }
+.ws-filter:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; padding: 9px 12px; color: var(--ws-text); border-bottom: 1px solid var(--ws-line); }
+.ws-list-row:hover { color: var(--ws-text); text-decoration: none; background: var(--ws-hover); }
+.ws-list-row.is-selected { background: var(--ws-selected); }
+.ws-list-row:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+.ws-list-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.ws-list-title { font-weight: 500; overflow-wrap: anywhere; }
+.ws-list-tag { align-self: flex-start; margin-top: 3px; }
+.ws-list-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 4px 12px; font-size: 12px; border-top: 1px solid var(--ws-line); }
+
+/* ---------- Pull request: chat beside code ---------- */
+.ws-pr { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.ws-pr-head { flex: none; padding: 10px 16px 0; }
+.ws-pr-head .page-title { font-size: 18px; }
+.ws-pr-head > .mb-3 { margin-bottom: 0 !important; }
+.ws-pr-head .flex-center.wrap { padding-bottom: 8px !important; border-bottom: 0 !important; margin-top: 4px !important; }
+.ws-status-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 6px 16px; background: var(--ws-panel); border-block: 1px solid var(--ws-line); }
+.ws-status-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ws-status-end { margin-left: auto; }
+.ws-pr-code { container: ws-pr-code / inline-size; }
+.ws-pr-chat, .ws-pr-code { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.ws-subtabs { flex: none; display: flex; align-items: stretch; min-height: 36px; padding: 0 6px; border-bottom: 1px solid var(--ws-line); }
+.ws-subtabs-end { display: flex; align-items: center; margin-left: auto; padding: 0 8px; }
+.ws-pr-thread { padding: 12px; }
+.ws-pr-files { padding: 8px 12px; --gd-prtabs-h: 0px; --gd-header-h: 230px; }
+/* A pane is much narrower than the page these were laid out for. */
+.ws-pr-files .files-layout { grid-template-columns: minmax(150px, 200px) minmax(0, 1fr); }
+.ws-pr-files .files-layout.no-tree { grid-template-columns: minmax(0, 1fr); }
+.ws-pr-files .file-diff-header { flex-wrap: wrap; }
+.ws-pr-files .file-diff-name { flex: 1 1 140px; min-width: 120px; overflow-wrap: anywhere; word-break: normal; writing-mode: horizontal-tb; }
+@container ws-pr-code (max-width: 620px) {
+  .ws-pr-files .files-layout { grid-template-columns: minmax(0, 1fr); }
+  .ws-pr-files .files-tree { position: static; max-height: 200px; overflow: auto; margin-bottom: 8px; }
+}
+.ws-commit-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+
+/* The conversation is the same timeline as on the web, drawn as a chat: small avatars, one column, your messages on the right. */
+.ws-pr-thread .layout-sidebar { display: block; }
+.ws-pr-thread .timeline-comment-group { gap: 8px; }
+.ws-pr-thread .timeline-comment-group .avatar-col img, .ws-pr-thread .timeline-comment-group .avatar-col .avatar { width: 28px !important; height: 28px !important; }
+.ws-pr-thread .avatar-col { width: 28px; flex: none; }
+.ws-pr-thread .timeline-comment-group.is-mine { flex-direction: row-reverse; }
+.ws-pr-thread .timeline-comment-group > .timeline-comment, .ws-pr-thread .timeline-comment-group > .flex-1 { flex: 1; min-width: 0; }
+.ws-pr-thread .timeline-comment-group.is-mine > .timeline-comment { background: var(--ws-selected); }
+.ws-pr-thread .timeline-comment::before, .ws-pr-thread .timeline-comment::after { display: none; }
+.ws-pr-thread .timeline-event { margin-left: 0; font-size: 12px; }
+.ws-pr-thread .timeline-spacer { display: none; }
+.ws-pr-thread .merge-box { margin-left: 0; }
+.ws-pr-thread .merge-box .merge-icon { display: none; }
+.ws-pr-thread #pr-merge { margin-top: 12px; }
+.is-comments-only .timeline-event:not(.has-below) { display: none; }
+
+/* ---------- Tabs, the way Chrome draws them: the active one is part of the toolbar under it ---------- */
+.tabbed > .tab-strip { align-items: flex-end; gap: 0; padding-top: 8px; padding-right: 8px; color: var(--ws-chrome-muted); background: var(--ws-chrome-bg-deep); border-bottom: 0; }
+.tabbed .tab-list { align-items: flex-end; gap: 0; padding: 0 8px; }
+.tabbed .tab-item { flex: 0 1 220px; width: 220px; height: 36px; color: var(--ws-chrome-muted); border-radius: 9px 9px 0 0; }
+.tabbed .tab-item:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-bg-hover, #1a1e23); }
+.tabbed .tab-item.is-active, .tabbed .tab-item.is-active:hover { z-index: 1; color: var(--ws-chrome-text); background: var(--ws-chrome-bg); box-shadow: none; }
+.tabbed .tab-item.is-dragging { box-shadow: none; }
+.tabbed .tab-main { padding: 0 2px 0 12px; }
+.tabbed .tab-icon { color: inherit; }
+.tabbed .tab-close { color: var(--ws-chrome-muted); }
+.tabbed .tab-close:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-hover); }
+/* The thin line between two tabs that aren't active or under the mouse. */
+.tabbed .tab-item:not(.is-active):not(:hover)::after { content: ''; position: absolute; right: 0; top: 10px; bottom: 10px; width: 1px; background: var(--ws-chrome-line); }
+.tabbed .tab-item:has(+ .tab-item.is-active)::after, .tabbed .tab-item:has(+ .tab-item:hover)::after { display: none; }
+/* The active tab's corners flare out into the toolbar. */
+.tabbed .tab-item.is-active::before, .tabbed .tab-item.is-active::after { content: ''; position: absolute; bottom: 0; width: 9px; height: 9px; pointer-events: none; }
+.tabbed .tab-item.is-active::before { left: -9px; background: radial-gradient(circle at 0 0, transparent 9px, var(--ws-chrome-bg) 9.5px); }
+.tabbed .tab-item.is-active::after { right: -9px; background: radial-gradient(circle at 100% 0, transparent 9px, var(--ws-chrome-bg) 9.5px); }
+.tabbed .ws-tab-add { margin: 0 0 3px 2px; color: var(--ws-chrome-muted); }
+.tabbed .ws-tab-add:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-hover); }

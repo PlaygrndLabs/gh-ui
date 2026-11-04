@@ -82,6 +82,7 @@ export function SplitPaneView({ first, second, firstLabel, secondLabel, min, max
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerCancel}
+            onLostPointerCapture={onPointerCancel}
             onKeyDown={onKeyDown}
             onDoubleClick={() => onChange({ ...state, width: defaultWidth })}
           />

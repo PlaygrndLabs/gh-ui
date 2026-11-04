@@ -41,6 +41,7 @@ import {
 } from '@primer/octicons-react'
 import { Markdown, type SuggestionContext } from './Markdown'
 import { Composer } from './Composer'
+import { contentElementById, cssId } from '../lib/scroll'
 import { SuggestionActions } from './Suggestions'
 import { IssueLabel, InlineTitle, UserAvatar, UserLink, isBot, botName } from './Bits'
 import { hunkSlice, hunkTail, sideLabel, type DiffLine, type DiffSide } from '../lib/diff'
@@ -118,7 +119,7 @@ export function CommentCard(p: CommentCardProps) {
   const bot = isBot(p.author, p.authorType)
   const verb = p.verb === undefined ? 'commented' : p.verb
   return (
-    <div className={`timeline-comment-group ${p.inlineAvatar ? 'inline-avatar' : ''}`}>
+    <div className={`timeline-comment-group ${p.inlineAvatar ? 'inline-avatar' : ''} ${p.viewerDidAuthor ? 'is-mine' : ''}`}>
       {!p.inlineAvatar && (
         <div className="avatar-col">
           <UserAvatar login={p.author} src={p.avatar} size={40} square={bot} />
@@ -363,7 +364,9 @@ export function ReviewThread({ thread, context, showHunk, viewerLogin, replyLabe
             <button type="button" onClick={() => setCollapsed(!collapsed)} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'inherit', display: 'inline-flex' }} aria-label={collapsed ? 'Expand thread' : 'Collapse thread'}>
               {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
             </button>
-            <span className="text-mono text-bold text-break">{thread.root.path}</span>
+            <button type="button" className="linkish text-mono text-bold text-break" title="Show this file in the diff" onClick={() => contentElementById(`diff-${cssId(thread.root.path)}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+              {thread.root.path}
+            </button>
             {outdated && <Label variant="attention" size="small">Outdated</Label>}
             {resolved && <Label variant="done" size="small">Resolved</Label>}
           </div>

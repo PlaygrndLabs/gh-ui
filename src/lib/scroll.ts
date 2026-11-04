@@ -17,3 +17,8 @@ export function confirmDialogOpen() {
 export function contentElementById(id: string): Element | null {
   return contentArea()?.querySelector(`[id="${CSS.escape(id)}"]`) ?? null
 }
+
+/** A file path as the id of its diff. */
+export function cssId(path: string) {
+  return path.replace(/[^a-zA-Z0-9_-]/g, '_')
+}

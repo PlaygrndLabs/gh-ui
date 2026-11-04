@@ -7,7 +7,7 @@ import { useGitHub, errorMessage } from '../../lib/github'
 import { useRepo } from '../../lib/repo'
 import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { webUrl } from '../../lib/links'
-import { openExternal } from '../../lib/platform'
+import { isNative, openExternal } from '../../lib/platform'
 import { plural } from '../../lib/format'
 import { CopyButton, DiffStat, ErrorBox, InlineTitle, Loading, UserLink } from '../../components/Bits'
 import { PullStateLabel } from '../../components/Status'
@@ -16,6 +16,8 @@ import { Conversation } from './pull/Conversation'
 import { FilesChanged } from './pull/Files'
 import { PullCommits } from './pull/Commits'
 import { ChecksTab } from './pull/Checks'
+import { SplitPane } from '../../components/SplitPane'
+import { CheckoutButton, PullCommitsPane, PullStatusBar } from '../workspace/PullsWorkspace'
 
 /** Keyed per PR so every tab's local state (drafts, pending reviews, merge box) starts fresh. */
 export function PullRequestPage() {
@@ -39,6 +41,7 @@ function PullRequestView() {
   const invalidate = useInvalidatePull(owner, repo, number)
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState('')
+  const [chatOnly, setChatOnly] = useState(false)
 
   const saveTitle = useMutation({
     mutationFn: async () => octokit.rest.pulls.update({ owner, repo, pull_number: number, title }),
@@ -99,8 +102,7 @@ function PullRequestView() {
 
   // github.com lays out Files changed and Checks across the full width; Conversation and Commits stay in the 1280px container.
   const fullWidth = tab === 'files' || tab === 'checks'
-  return (
-    <div className={fullWidth ? 'container-full' : 'container-xl'} style={{ paddingBottom: 48 }}>
+  const header = (
       <div className="mb-3">
         {editingTitle ? (
           <form
@@ -170,13 +172,15 @@ function PullRequestView() {
                   </div>
                 </ActionMenu.Overlay>
               </ActionMenu>
+              {isNative && <CheckoutButton pr={pr} />}
+              <CopyButton text={webUrl(account.host, `/${owner}/${repo}/pull/${number}`)} label="Copy link to this pull request" size="medium" />
               <IconButton size="small" icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/pull/${number}`))} />
             </span>
           </div>
         )}
         {saveTitle.error && <div className="error-box mt-2">{errorMessage(saveTitle.error)}</div>}
         <div className="flex-center gap-2 wrap mt-2" style={{ paddingBottom: 16, borderBottom: '1px solid var(--borderColor-muted)' }}>
-          <PullStateLabel pull={pr} />
+          {!isNative && <PullStateLabel pull={pr} />}
           <span className="fg-muted">
             <UserLink login={pr.user?.login} type={pr.user?.type} className="text-bold fg-default" />{' '}
             {pr.merged ? (
@@ -193,6 +197,69 @@ function PullRequestView() {
           <CopyButton text={pr.head.ref} label="Copy head branch name" />
         </div>
       </div>
+  )
+
+  if (isNative) {
+    const rest = pathname.slice(base.length)
+    const showCommits = rest.startsWith('/commits')
+    const showChecks = rest.startsWith('/checks')
+    return (
+      <div className="ws-pr">
+        <div className="ws-pr-head">{header}</div>
+        <PullStatusBar pr={pr} />
+        <div className="ws-branch-body">
+          <SplitPane
+            id="pull-chat"
+            firstLabel="Chat"
+            secondLabel="Code"
+            defaultWidth={420}
+            min={300}
+            max={900}
+            first={
+              <div className={`ws-pr-chat ${chatOnly ? 'is-comments-only' : ''}`}>
+                <nav className="ws-subtabs" aria-label="Chat">
+                  <Link className="ws-tab" to={showChecks ? (showCommits ? `${base}/commits` : base) : pathname} aria-current={!showChecks && !chatOnly ? 'page' : undefined} onClick={() => setChatOnly(false)}>
+                    All
+                  </Link>
+                  <Link className="ws-tab" to={showChecks ? base : pathname} aria-current={!showChecks && chatOnly ? 'page' : undefined} onClick={() => setChatOnly(true)}>
+                    Conversation
+                  </Link>
+                  <Link className="ws-tab" to={`${base}/checks`} aria-current={showChecks ? 'page' : undefined}>
+                    Checks{checks.data && checks.data.runs.length > 0 ? ` ${checks.data.runs.length}` : ''}
+                  </Link>
+                </nav>
+                <div className="ws-scroll ws-pr-thread">{showChecks ? <ChecksTab pr={pr} /> : <Conversation pr={pr} />}</div>
+              </div>
+            }
+            second={
+              <div className="ws-pr-code">
+                <nav className="ws-subtabs" aria-label="Code">
+                  <Link className="ws-tab" to={`${base}/files`} aria-current={!showCommits ? 'page' : undefined}>
+                    Files {pr.changed_files}
+                  </Link>
+                  <Link className="ws-tab" to={`${base}/commits`} aria-current={showCommits ? 'page' : undefined}>
+                    Commits {pr.commits}
+                  </Link>
+                  <span className="ws-subtabs-end">
+                    <DiffStat additions={pr.additions} deletions={pr.deletions} />
+                  </span>
+                </nav>
+                {showCommits ? <PullCommitsPane pr={pr} /> : (
+                  <div className="ws-scroll ws-pr-files">
+                    <FilesChanged pr={pr} />
+                  </div>
+                )}
+              </div>
+            }
+          />
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className={fullWidth ? 'container-full' : 'container-xl'} style={{ paddingBottom: 48 }}>
+      {header}
 
       <div className="tabnav-sticky mb-3">
         <UnderlineNav aria-label="Pull request">

@@ -17,6 +17,8 @@ import { SettingsPage } from './pages/Settings'
 import { LocalReposPage } from './pages/Local'
 import { RepoLayout } from './pages/repo/RepoLayout'
 import { RepoHome } from './pages/repo/RepoHome'
+import { ActionsHome, ActionsLayout } from './pages/workspace/ActionsWorkspace'
+import { PullsHome, PullsLayout } from './pages/workspace/PullsWorkspace'
 import { CodePage, BlobPage } from './pages/repo/Code'
 import { CommitsPage, CommitPage } from './pages/repo/Commits'
 import { BranchesPage } from './pages/repo/Branches'
@@ -236,16 +238,22 @@ export function pageRoutes(shell: ReactElement) {
         <Route path="commit/:sha" element={<CommitPage />} />
         {/* The splat carries github.com's view paths: /branches/yours, /active, /stale, /all. */}
         <Route path="branches/*" element={<BranchesPage />} />
-        <Route path="pulls" element={<PullsPage />} />
-        <Route path="pull/:number/*" element={<PullRequestPage />} />
+        <Route element={<PullsLayout />}>
+          <Route path="pulls" element={<PullsHome />} />
+          <Route path="pull/:number/*" element={<PullRequestPage />} />
+        </Route>
+        <Route path="pulls/all" element={<PullsPage />} />
         <Route path="compare/*" element={<ComparePage />} />
         <Route path="issues" element={<IssuesPage />} />
         <Route path="issues/new" element={<NewIssuePage />} />
         <Route path="issues/:number" element={<IssuePage />} />
-        <Route path="actions" element={<ActionsPage />} />
+        <Route element={<ActionsLayout />}>
+          <Route path="actions" element={<ActionsHome />} />
+          <Route path="actions/runs/:runId" element={<RunPage />} />
+          <Route path="actions/runs/:runId/job/:jobId" element={<RunPage />} />
+        </Route>
+        <Route path="actions/all" element={<ActionsPage />} />
         <Route path="actions/workflows/:workflow" element={<ActionsPage />} />
-        <Route path="actions/runs/:runId" element={<RunPage />} />
-        <Route path="actions/runs/:runId/job/:jobId" element={<RunPage />} />
         <Route path="releases" element={<ReleasesPage />} />
         <Route path="releases/latest" element={<LatestReleasePage />} />
         <Route path="releases/tag/*" element={<ReleasePage />} />
