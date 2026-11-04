@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, TextInput } from '@primer/react'
-import { GitBranchIcon, InboxIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
+import { GitBranchIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { useAgent } from '../lib/agent/AgentProvider'
 import { errorMessage, useGitHub } from '../lib/github'
 import { webUrl } from '../lib/links'
@@ -13,6 +13,7 @@ import { syncAction, useWorkspaceRepos, workspacePath, type SyncKind, type Works
 import { repoKeyFromUrl } from '../lib/tabs'
 import { CloneDialog } from '../pages/Local'
 import { AccountMenu } from './AppHeader'
+import { InboxMenu } from './InboxMenu'
 
 const SYNC_LABEL: Record<SyncKind, string> = {
   clone: 'Clone repository',
@@ -359,9 +360,7 @@ export function WorkspaceHeader() {
         )}
         <div className="ws-toolbar-end">
           <Search repo={repo} />
-          <Link className="ws-tool" to="/notifications">
-            <InboxIcon /> Inbox
-          </Link>
+          <InboxMenu />
           <button type="button" className="ws-tool" aria-pressed={agent.open} onClick={agent.toggle}>
             <SparkleFillIcon /> Claude
           </button>

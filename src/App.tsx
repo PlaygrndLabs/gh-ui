@@ -8,7 +8,6 @@ import { WorkspaceHeader } from './components/WorkspaceHeader'
 import { AgentPanel } from './components/AgentPanel'
 import { Loading, Blankslate, ErrorBox } from './components/Bits'
 import { LoginPage } from './pages/Login'
-import { Dashboard } from './pages/Dashboard'
 import { NotificationsPage } from './pages/Notifications'
 import { GlobalListPage } from './pages/GlobalList'
 import { SearchPage } from './pages/Search'
@@ -16,7 +15,7 @@ import { ProfilePage } from './pages/Profile'
 import { SettingsPage } from './pages/Settings'
 import { LocalReposPage } from './pages/Local'
 import { RepoLayout } from './pages/repo/RepoLayout'
-import { RepoHome } from './pages/repo/RepoHome'
+import { HomePage, RepoHome } from './pages/repo/RepoHome'
 import { ActionsHome, ActionsLayout } from './pages/workspace/ActionsWorkspace'
 import { PullsHome, PullsLayout } from './pages/workspace/PullsWorkspace'
 import { CodePage, BlobPage } from './pages/repo/Code'
@@ -215,7 +214,7 @@ function OrgRedirect() {
 export function pageRoutes(shell: ReactElement) {
   return (
     <Route element={shell}>
-      <Route index element={<Dashboard />} />
+      <Route index element={<HomePage />} />
       <Route path="notifications" element={<NotificationsPage />} />
       <Route path="pulls" element={<GlobalListPage kind="pr" />} />
       <Route path="issues" element={<GlobalListPage kind="issue" />} />

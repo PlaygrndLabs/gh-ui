@@ -3,8 +3,23 @@ import { useRepo } from '../../lib/repo'
 import { useGitHub } from '../../lib/github'
 import { githubKey, useWorkspaceRepos } from '../../lib/workspace'
 import { Loading } from '../../components/Bits'
+import { RepoPickerPanel } from '../../components/RepoPicker'
+import { Dashboard } from '../Dashboard'
 import { BranchesWorkspace } from '../workspace/BranchesWorkspace'
 import { CodePage } from './Code'
+
+/** A new tab in the desktop app: where to go next. The web build, which has no tabs, keeps its dashboard. */
+export function HomePage() {
+  if (!isNative) return <Dashboard />
+  return (
+    <div className="ws-start">
+      <h1 className="ws-start-title">Open a repository</h1>
+      <div className="ws-start-panel">
+        <RepoPickerPanel onDone={() => {}} />
+      </div>
+    </div>
+  )
+}
 
 /** A repository's front page: its branches in the desktop app, and its code on the web. */
 export function RepoHome() {

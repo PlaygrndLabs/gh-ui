@@ -287,7 +287,7 @@ const pathParts = (url: string) =>
 
 export function titleFromPath(url: string): string {
   const [owner, repo, section, id, ...rest] = pathParts(url)
-  if (!owner) return 'Dashboard'
+  if (!owner) return 'New tab'
   const top = TOP_LEVEL[owner]
   if (top) {
     const q = owner === 'search' ? new URLSearchParams(url.split('?')[1]?.split('#')[0] ?? '').get('q') : null

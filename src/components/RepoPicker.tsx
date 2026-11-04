@@ -33,7 +33,7 @@ export function RepoPicker() {
   )
 }
 
-function RepoPickerPanel({ onDone }: { onDone(): void }) {
+export function RepoPickerPanel({ onDone }: { onDone(): void }) {
   const { octokit, key, account } = useGitHub()
   const tabs = useTabs()
   const qc = useQueryClient()

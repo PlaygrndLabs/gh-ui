@@ -172,7 +172,7 @@ describe('urls and titles', () => {
   })
 
   it('titles and icons come from the URL', () => {
-    expect(titleFromPath('/')).toBe('Dashboard')
+    expect(titleFromPath('/')).toBe('New tab')
     expect(titleFromPath('/pulls?q=x')).toBe('Pull requests')
     expect(titleFromPath('/search?q=hello%20world')).toBe('Search: hello world')
     expect(titleFromPath('/octo')).toBe('octo')

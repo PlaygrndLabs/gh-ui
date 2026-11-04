@@ -266,3 +266,10 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .tabbed .tab-item.is-active::after { right: -9px; background: radial-gradient(circle at 100% 0, transparent 9px, var(--ws-chrome-bg) 9.5px); }
 .tabbed .ws-tab-add { margin: 0 0 3px 2px; color: var(--ws-chrome-muted); }
 .tabbed .ws-tab-add:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-hover); }
+
+/* ---------- A new tab, and the inbox ---------- */
+.ws-start { display: flex; flex-direction: column; align-items: center; gap: 16px; min-height: 100%; padding: 48px 16px; }
+.ws-start-title { margin: 0; font-size: 22px; font-weight: 600; }
+.ws-start-panel { width: min(560px, 100%); background: var(--ws-bg); border: 1px solid var(--ws-line); border-radius: 10px; overflow: hidden; }
+.ws-start-panel .ws-picker { max-height: calc(100vh - 260px); }
+.ws-inbox { display: flex; flex-direction: column; max-height: min(560px, 75vh); font-size: var(--ws-font-size); }

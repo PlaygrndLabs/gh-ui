@@ -189,8 +189,8 @@ exports.steps = [
       await until(() => tabs().length === 4, 2000)
       // It resolves to a path that names another host, so the most it can open is a dashboard.
       const r = { tabs: tabTitles() }
-      r.fail = !(r.tabs.length === 4 && r.tabs.filter((t) => t === 'Dashboard').length === 2) || r.tabs.some((t) => t.includes('evil'))
-      tabs()[r.tabs.lastIndexOf('Dashboard')].parentElement.querySelector('.tab-close').click()
+      r.fail = !(r.tabs.length === 4 && r.tabs.filter((t) => t === 'New tab').length === 2) || r.tabs.some((t) => t.includes('evil'))
+      tabs()[r.tabs.lastIndexOf('New tab')].parentElement.querySelector('.tab-close').click()
       await until(() => tabs().length === 3, 2000)
       return r
     `,
@@ -209,9 +209,43 @@ exports.steps = [
       const inputs = [...document.querySelectorAll('input[aria-label="Search or jump to"]')]
       const focused = inputs.filter((i) => i === document.activeElement)
       const r = { active: activeTab().textContent.trim(), shown, header, searchBoxes: inputs.length, focusVisible: focused[0]?.getClientRects().length > 0 }
-      r.fail = !(r.active === 'Dashboard' && shown === 1 && header === 1 && r.focusVisible)
+      r.fail = !(r.active === 'New tab' && shown === 1 && header === 1 && r.focusVisible)
       focused[0]?.blur(); before?.focus?.()
       return r
+    `,
+  },
+  {
+    name: 'a new tab offers repositories to open',
+    screenshot: 'start-page',
+    js: `${helpers}
+      await until(() => main()?.querySelector('.ws-start .ws-picker-row'), 10000)
+      const r = { title: main()?.querySelector('.ws-start-title')?.textContent, rows: main()?.querySelectorAll('.ws-picker-row').length }
+      r.fail = !(r.title && r.rows > 0)
+      return r
+    `,
+  },
+  {
+    name: 'the inbox lists what needs attention across repositories',
+    screenshot: 'inbox',
+    js: `${helpers}
+      const button = [...document.querySelectorAll('.ws-tool')].filter((b) => b.getClientRects().length).find((b) => b.textContent.includes('Inbox'))
+      button.click()
+      const panel = await until(() => document.querySelector('.ws-inbox'), 5000)
+      await until(() => document.querySelector('.ws-inbox .ws-list-row, .ws-inbox .ws-note, .ws-inbox .error-box'), 15000)
+      const r = { panel: !!panel, rows: document.querySelectorAll('.ws-inbox .ws-list-row').length, text: panel?.innerText.slice(0, 160), error: !!document.querySelector('.ws-inbox .error-box') }
+      r.fail = !(r.panel && !r.error)
+      await sleep(100)
+      return r
+    `,
+  },
+  {
+    name: 'closing the inbox',
+    js: `${helpers}
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await sleep(200)
+      if (document.querySelector('.ws-inbox')) [...document.querySelectorAll('.ws-tool')].filter((b) => b.getClientRects().length).find((b) => b.textContent.includes('Inbox')).click()
+      await until(() => !document.querySelector('.ws-inbox'), 2000)
+      return { closed: !document.querySelector('.ws-inbox') }
     `,
   },
   {
@@ -261,7 +295,7 @@ exports.steps = [
     js: `${helpers}
       const url = await until(() => savedActiveUrl().endsWith('/pull/2') && savedActiveUrl(), 5000)
       const r = { url, tabs: tabTitles(), active: activeTab().textContent.trim() }
-      r.fail = !(url && r.active === 'gh-ui' && r.tabs[0] === 'Dashboard' && r.tabs[1] === 'jq')
+      r.fail = !(url && r.active === 'gh-ui' && r.tabs[0] === 'New tab' && r.tabs[1] === 'jq')
       return r
     `,
   },
@@ -369,7 +403,7 @@ exports.steps = [
     js: `${helpers}
       await sleep(300)
       const r = { tabs: tabTitles() }
-      r.fail = !(r.tabs.length === 1 && r.tabs[0] === 'Dashboard')
+      r.fail = !(r.tabs.length === 1 && r.tabs[0] === 'New tab')
       return r
     `,
   },
