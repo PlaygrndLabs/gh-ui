@@ -19,6 +19,9 @@ describe('validateGitArgs', () => {
     [['push', '-u', 'origin', 'HEAD']],
     [['remote', 'get-url', 'origin']],
     [['ls-tree', '-r', '--name-only', 'HEAD']],
+    [['branch', '--all', '--format=%(refname)%1f%(upstream:short)']],
+    [['log', '-n', '200', '--pretty=format:%H', 'origin/release', '--']],
+    [['reset', '--soft', 'HEAD~1']],
   ])('allows %j', (args) => expect(() => validateGitArgs(args)).not.toThrow())
 
   it.each([

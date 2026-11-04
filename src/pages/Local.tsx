@@ -25,7 +25,8 @@ import {
 import { useGitHub, errorMessage } from '../lib/github'
 import { native, type LocalRepo } from '../lib/platform'
 import { parseRemote } from '../lib/links'
-import { parseUnifiedDiff, type FileDiff } from '../lib/diff'
+import { changePaths, isStaged, isUnmerged, localGit, type StatusEntry } from '../lib/git'
+import type { FileDiff } from '../lib/diff'
 import { firstLine, shortSha } from '../lib/format'
 import { readPref, writePref } from '../lib/storage'
 import { generateCommitMessage } from '../lib/agent/oneshot'
@@ -234,54 +235,6 @@ function CloneDialog({ initial, onClose, onCloned }: { initial: string; onClose(
   )
 }
 
-interface StatusEntry {
-  path: string
-  origPath?: string
-  index: string
-  worktree: string
-}
-
-interface RepoState {
-  branch: string | null
-  upstream: string | null
-  ahead: number
-  behind: number
-  entries: StatusEntry[]
-}
-
-/** Parses `git status --porcelain=v1 -b -z`. */
-function parseStatus(out: string): RepoState {
-  const parts = out.split('\0').filter(Boolean)
-  const state: RepoState = { branch: null, upstream: null, ahead: 0, behind: 0, entries: [] }
-  for (let i = 0; i < parts.length; i++) {
-    const p = parts[i]
-    if (p.startsWith('## ')) {
-      const head = p.slice(3)
-      const m = head.match(/^(?:No commits yet on )?([^.\s]+(?:\.[^.\s]+)*?)(?:\.\.\.(\S+))?(?: \[(.+)\])?$/)
-      state.branch = m?.[1] ?? head
-      state.upstream = m?.[2] ?? null
-      const counts = m?.[3] ?? ''
-      state.ahead = Number(counts.match(/ahead (\d+)/)?.[1] ?? 0)
-      state.behind = Number(counts.match(/behind (\d+)/)?.[1] ?? 0)
-      continue
-    }
-    const x = p[0]
-    const y = p[1]
-    const path = p.slice(3)
-    const entry: StatusEntry = { path, index: x, worktree: y }
-    // ORIG_PATH follows any rename/copy, including work-tree ones (` R` for intent-to-add files).
-    if (x === 'R' || x === 'C' || y === 'R' || y === 'C') entry.origPath = parts[++i]
-    state.entries.push(entry)
-  }
-  return state
-}
-
-/** Merge-conflict entries (UU, AA, DD, AU, UA, DU, UD): neither staged nor unstaged. */
-const isUnmerged = (e: StatusEntry) => e.index === 'U' || e.worktree === 'U' || (e.index === 'A' && e.worktree === 'A') || (e.index === 'D' && e.worktree === 'D')
-
-/** Paths to restore or stage together: a rename's old path goes with the new one; a copy's source does not. */
-const changePaths = (e: StatusEntry) => ((e.index === 'R' || e.worktree === 'R') && e.origPath ? [e.origPath, e.path] : [e.path])
-
 function LocalRepoView({ repo }: { repo: LocalRepo }) {
   const { account } = useGitHub()
   const qc = useQueryClient()
@@ -296,43 +249,31 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
 
   useEffect(() => writePref('lastLocalRepo', repo.id), [repo.id])
 
-  const git = async (args: string[], withAuth = false) => {
-    const res = await native!.git(repo.id, args, withAuth ? auth : undefined)
-    if (res.code !== 0) throw new Error((res.stderr || res.stdout || `git ${args[0]} failed`).trim())
-    return res.stdout
-  }
+  const git = localGit(repo.id, auth)
 
   const status = useQuery({
     queryKey: ['local-status', repo.id],
-    queryFn: async () => parseStatus(await git(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'])),
+    queryFn: () => git.status(),
     refetchInterval: 4000,
     refetchOnWindowFocus: true,
   })
   const remote = useQuery({
     queryKey: ['local-remote', repo.id],
     queryFn: async () => {
-      const url = (await git(['remote', 'get-url', 'origin']).catch(() => '')).trim()
+      const url = await git.remoteUrl()
       return url ? parseRemote(url) : null
     },
   })
   const branches = useQuery({
     queryKey: ['local-branches', repo.id],
-    queryFn: async () => (await git(['branch', '--format=%(refname:short)'])).split('\n').filter(Boolean),
+    queryFn: () => git.branchNames(),
   })
 
   const entry = status.data?.entries.find((e) => e.path === selectedPath) ?? null
   const diff = useQuery({
     queryKey: ['local-diff', repo.id, selectedPath, entry?.index, entry?.worktree],
     enabled: !!entry,
-    queryFn: async () => {
-      if (!entry) return null
-      if (entry.index === '?' && entry.worktree === '?') {
-        const res = await native!.git(repo.id, ['diff', '--no-index', '--', '/dev/null', entry.path])
-        return parseUnifiedDiff(res.stdout)[0] ?? null
-      }
-      const out = await git(['diff', 'HEAD', '--', entry.path]).catch(() => git(['diff', '--cached', '--', entry.path]))
-      return parseUnifiedDiff(out)[0] ?? null
-    },
+    queryFn: () => (entry ? git.fileDiff(entry) : null),
   })
 
   const refresh = () => {
@@ -349,14 +290,13 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
   })
 
   const entries = status.data?.entries ?? []
-  const isStaged = (e: StatusEntry) => !isUnmerged(e) && e.index !== ' ' && e.index !== '?'
   const stagedCount = entries.filter(isStaged).length
   const conflictCount = entries.filter(isUnmerged).length
   const st = status.data
 
   const generate = useMutation({
     mutationFn: async () => {
-      const staged = await git(['diff', '--cached'])
+      const staged = await git.stagedDiff()
       if (!staged.trim()) throw new Error('Stage some changes first.')
       return generateCommitMessage(staged, account)
     },
@@ -378,24 +318,24 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
     if (!st) return null
     if (!st.upstream)
       return (
-        <Button leadingVisual={RepoPushIcon} loading={op.isPending} onClick={() => op.mutate(() => git(['push', '-u', 'origin', 'HEAD'], true))}>
+        <Button leadingVisual={RepoPushIcon} loading={op.isPending} onClick={() => op.mutate(() => git.publishBranch())}>
           Publish branch
         </Button>
       )
     if (st.behind > 0)
       return (
-        <Button leadingVisual={ArrowDownIcon} loading={op.isPending} onClick={() => op.mutate(() => git(['pull', '--ff-only'], true))}>
+        <Button leadingVisual={ArrowDownIcon} loading={op.isPending} onClick={() => op.mutate(() => git.pull())}>
           Pull origin <span className="counter">{st.behind}</span>
         </Button>
       )
     if (st.ahead > 0)
       return (
-        <Button leadingVisual={ArrowUpIcon} loading={op.isPending} onClick={() => op.mutate(() => git(['push'], true))}>
+        <Button leadingVisual={ArrowUpIcon} loading={op.isPending} onClick={() => op.mutate(() => git.push())}>
           Push origin <span className="counter">{st.ahead}</span>
         </Button>
       )
     return (
-      <Button leadingVisual={SyncIcon} loading={op.isPending} onClick={() => op.mutate(() => git(['fetch', '--prune', 'origin'], true))}>
+      <Button leadingVisual={SyncIcon} loading={op.isPending} onClick={() => op.mutate(() => git.fetch())}>
         Fetch origin
       </Button>
     )
@@ -413,7 +353,7 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
         </div>
         <div className="desktop-toolbar-item">
           <GitBranchIcon />
-          <BranchMenu current={st?.branch ?? '…'} branches={branches.data ?? []} onSwitch={(b) => op.mutate(() => git(['switch', b]))} onCreate={(b) => op.mutate(() => git(['switch', '-c', b]))} />
+          <BranchMenu current={st?.branch ?? '…'} branches={branches.data ?? []} onSwitch={(b) => op.mutate(() => git.switchTo(b))} onCreate={(b) => op.mutate(() => git.createBranch(b))} />
         </div>
         <div className="desktop-toolbar-item">{networkButton()}</div>
         <div className="desktop-toolbar-item ml-auto" style={{ borderRight: 0, borderLeft: '1px solid var(--borderColor-default)' }}>
@@ -457,8 +397,7 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
                   checked={entries.length > 0 && stagedCount === entries.length}
                   indeterminate={stagedCount > 0 && stagedCount < entries.length}
                   onChange={async () => {
-                    // A path-less `git reset` would also drop MERGE_HEAD / CHERRY_PICK_HEAD.
-                    if (stagedCount === entries.length) return op.mutate(() => git(['reset', '-q', '--', '.']))
+                    if (stagedCount === entries.length) return op.mutate(() => git.unstageAll())
                     if (
                       conflictCount &&
                       !(await confirm({
@@ -468,7 +407,7 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
                       }))
                     )
                       return
-                    op.mutate(() => git(['add', '-A']))
+                    op.mutate(() => git.stageAll())
                   }}
                   aria-label="Stage all"
                 />
@@ -488,7 +427,7 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
                         <Checkbox
                           checked={isStaged(e)}
                           aria-label={isUnmerged(e) ? `Mark ${e.path} as resolved` : `Stage ${e.path}`}
-                          onChange={() => op.mutate(() => (isStaged(e) ? git(['restore', '--staged', '--', ...changePaths(e)]) : git(['add', '--', ...changePaths(e)])))}
+                          onChange={() => op.mutate(() => (isStaged(e) ? git.unstage(e) : git.stage(e)))}
                         />
                       </span>
                       <span className="flex-1 text-truncate text-mono" title={e.path} style={{ direction: 'rtl', textAlign: 'left' }}>
@@ -517,7 +456,7 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
                   loading={op.isPending || generate.isPending}
                   onClick={() =>
                     op.mutate(async () => {
-                      await git(['commit', '-m', summary, ...(description.trim() ? ['-m', description] : [])])
+                      await git.commit(summary, description)
                       setSummary('')
                       setDescription('')
                     })
@@ -549,9 +488,7 @@ function LocalRepoView({ repo }: { repo: LocalRepo }) {
                       const paths = changePaths(entry)
                       const from = paths.length > 1 ? ` (renamed from ${paths[0]})` : ''
                       if (!(await confirm({ title: 'Discard changes?', content: `Your changes to ${entry.path}${from} will be lost.`, confirmButtonType: 'danger', confirmButtonContent: 'Discard' }))) return
-                      op.mutate(() =>
-                        entry.index === '?' ? git(['clean', '-f', '--', entry.path]) : git(['restore', '--staged', '--worktree', '--source=HEAD', '--', ...paths]),
-                      )
+                      op.mutate(() => git.discard(entry))
                     }}
                   >
                     Discard changes
@@ -649,28 +586,8 @@ function BranchMenu({ current, branches, onSwitch, onCreate }: { current: string
   )
 }
 
-interface LogEntry {
-  sha: string
-  author: string
-  date: string
-  subject: string
-}
-
 function useLog(repoId: string) {
-  return useQuery({
-    queryKey: ['local-log', repoId],
-    queryFn: async () => {
-      const res = await native!.git(repoId, ['log', '-n', '200', '--pretty=format:%H%x1f%an%x1f%aI%x1f%s'])
-      if (res.code !== 0) return [] as LogEntry[]
-      return res.stdout
-        .split('\n')
-        .filter(Boolean)
-        .map((l) => {
-          const [sha, author, date, subject] = l.split('\x1f')
-          return { sha, author, date, subject }
-        })
-    },
-  })
+  return useQuery({ queryKey: ['local-log', repoId], queryFn: () => localGit(repoId).log() })
 }
 
 function History({ repoId }: { repoId: string }) {
@@ -701,11 +618,7 @@ function HistoryDetail({ repoId, split }: { repoId: string; split: boolean }) {
   const show = useQuery({
     queryKey: ['local-show', repoId, sha],
     enabled: !!sha,
-    queryFn: async () => {
-      const res = await native!.git(repoId, ['show', '--format=%B%x1e', '--patch', '--no-color', sha!])
-      const [message, patch = ''] = res.stdout.split('\x1e')
-      return { message: message.trim(), files: parseUnifiedDiff(patch) }
-    },
+    queryFn: () => localGit(repoId).show(sha!),
   })
   const files = useMemo(() => show.data?.files ?? [], [show.data])
   if (!sha) return <Blankslate icon={<HistoryIcon size={32} />} title="Select a commit" />
