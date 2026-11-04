@@ -1,9 +1,8 @@
 # gh-ui
 
-A GitHub client that looks and works like github.com — built on GitHub's own Primer design system — with local repository management and a built-in Claude agent that reviews code, handles CodeRabbit / Greptile comments, fixes failing CI and re-runs Actions.
+A desktop GitHub client in the spirit of GitHub Desktop: local git and GitHub in one simple window, built on GitHub's own Primer design system, with a built-in Claude agent that reviews code, handles CodeRabbit / Greptile comments, fixes failing CI and re-runs Actions.
 
-- **Desktop app (Electron)** — everything runs on your computer: GitHub API calls, sign-in, Actions logs, local git, and the agent (with your own Anthropic key). No server involved.
-- **Web build (optional)** — the same UI deployed to Cloudflare Workers, for using gh-ui from a browser. The Worker only exists for the few things a browser can't do itself.
+Everything runs on your computer: GitHub API calls, sign-in, Actions logs, local git, and the agent (with your own Anthropic key). No server involved.
 
 ## Run the desktop app
 
@@ -39,14 +38,13 @@ macOS builds are ad-hoc signed, not notarized (no Apple Developer ID, see electr
 
 ## Sign in
 
-| Method | Desktop | Web | Notes |
-| --- | --- | --- | --- |
-| Personal access token (classic or fine-grained) | ✓ | ✓ | Classic: `repo, workflow, read:org, project, notifications` (`read:project` is enough to view projects; `delete_repo` only to delete repositories). Fine-grained: Contents, Pull requests, Issues, Actions, Checks, Projects, plus Administration, Webhooks, Secrets and Variables for repository settings (+ Workflows to edit `.github/workflows`). Fine-grained tokens can't read notifications. |
-| GitHub CLI session (`gh auth token`) | ✓ | dev only | Reuses your existing `gh auth login`. |
-| OAuth device flow | ✓ | ✓ (via Worker) | Needs the client ID of an OAuth App or GitHub App with “Enable Device Flow”. Set it on the login screen or in Settings → OAuth app. A GitHub App's client ID gives a `ghu_` user token, which works except for notifications. |
-| OAuth web flow | — | ✓ | Worker with `GITHUB_CLIENT_ID` + `GITHUB_CLIENT_SECRET`. |
-| GitHub Enterprise Server / GHE.com | ✓ | ✓ | “Change host” on the login screen. |
-| GitHub App installation token (`ghs_`) | — | — | Not accepted: it has no user. Use the app's client ID with the device flow instead. |
+| Method | Desktop | Notes |
+| --- | --- | --- |
+| Personal access token (classic or fine-grained) | ✓ | Classic: `repo, workflow, read:org, project, notifications` (`read:project` is enough to view projects; `delete_repo` only to delete repositories). Fine-grained: Contents, Pull requests, Issues, Actions, Checks, Projects, plus Administration, Webhooks, Secrets and Variables for repository settings (+ Workflows to edit `.github/workflows`). Fine-grained tokens can't read notifications. |
+| GitHub CLI session (`gh auth token`) | ✓ | Reuses your existing `gh auth login`. |
+| OAuth device flow | ✓ | Needs the client ID of an OAuth App or GitHub App with “Enable Device Flow”. Set it on the login screen or in Settings → OAuth app. A GitHub App's client ID gives a `ghu_` user token, which works except for notifications. |
+| GitHub Enterprise Server / GHE.com | ✓ | “Change host” on the login screen. |
+| GitHub App installation token (`ghs_`) | — | Not accepted: it has no user. Use the app's client ID with the device flow instead. |
 
 Multiple accounts are supported (avatar panel → Add account / switch). Signing in again with the same login on the same host replaces that account's saved token. On desktop, tokens are encrypted with the OS keychain (Electron `safeStorage`); in the browser they live in `localStorage` for that origin. When GitHub starts rejecting a saved token (revoked, or an expired `ghu_` token), a banner offers **Sign in again**; gh-ui can't refresh tokens itself because GitHub's refresh grant needs the client secret.
 
@@ -62,17 +60,19 @@ At github.com → Settings → Developer settings → OAuth Apps → New OAuth A
 | Enable Device Flow | On. |
 | Expire user access tokens | **Off.** gh-ui doesn't refresh tokens: refreshing needs the client secret, which a desktop app can't keep. With expiry on, you'd sign in again every 8 hours. |
 
-gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and used on github.com, so users don't enter a client ID there; other hosts ask for their own. A client ID is public and can be shared. If you fork gh-ui, replace it with your own. The client secret is only needed by the Worker's web flow; keep it out of the repo (`.dev.vars` locally, `wrangler secret put` in production). Anyone can authorize an OAuth App, but each person only gets a token for their own account.
+gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and used on github.com, so users don't enter a client ID there; other hosts ask for their own. A client ID is public and can be shared. If you fork gh-ui, replace it with your own. Anyone can authorize an OAuth App, but each person only gets a token for their own account.
 
 ## What's in it
 
-- **Tabs (desktop)** — browser-style tabs, each with its own page and back/forward history. Cmd-click or middle-click any in-app link to open it in the background, Cmd+Shift-click to open it in front; other links go to your browser. Drag to reorder, middle-click to close. Tabs come back after a restart, per account and device. Recent tabs stay alive, so half-written comments, scroll position and expanded logs survive switching; beyond 8 live tabs the least recently used hidden ones unload and reload from their URL when shown. A tab with unsent text, or something still running, is never unloaded, and closing it or switching account asks first. The tab strip stays the same size when the page is zoomed. The agent panel is shared and follows the active tab.
-- **Dashboard** — review requests, your PRs (with CI + review state), assigned issues, activity feed, top repositories.
+- **Repository tabs** — one Chrome-style tab per repository, each with its own view and Claude chat. A link to another repository moves to its tab, and pages outside a repository (search, profiles, settings) get their own. **+** opens the repository list: folders on your Mac, repositories on GitHub, Add local folder, Clone, New.
+- **Toolbar** — the current branch, and one sync button that becomes Clone, Publish repository, Publish branch, Pull, Push or Fetch as the repository needs. Then Branches, Pull requests, Actions and More (Code, Issues, Releases, Discussions, Projects, Wiki, Security, Insights, Repository settings).
+- **Panes** — every list and detail can be resized by dragging or with the arrow keys, and collapsed from its divider. Double-click a divider to reset it. Layouts are remembered, and shared by all tabs.
+- **Inbox** — reviews you were asked for and your pull requests with failing checks, across all repositories.
 - **Code** — file tree, README, About/languages/releases, branch & tag picker, go-to-file, syntax-highlighted file view with line links, in-place edit & commit, commits and commit diffs, branches (ahead/behind, PR links, create/delete).
-- **Pull requests** — list with GitHub search filters; conversation timeline with review threads (reply, resolve/unresolve, edit, delete), merge box (checks, reviews, update branch, ready for review, merge/squash/rebase, delete branch), reviewers/assignees/labels editing, Commits, Checks (annotations, re-run), Files changed (file tree, unified/split diff, “viewed” tracking, approve / request changes), compare & create PR.
+- **Pull requests** — a list (All, To review, Mine; the checked-out branch's pull request first) beside the chosen one: chat next to its files or commits, per-commit diffs, a status bar with state, review, checks, conflicts, open threads and files viewed, check out and copy link. Search and filter all under the list; conversation timeline with review threads (reply, resolve/unresolve, edit, delete), merge box (checks, reviews, update branch, ready for review, merge/squash/rebase, delete branch), reviewers/assignees/labels editing, Commits, Checks (annotations, re-run), Files changed (file tree, unified/split diff, “viewed” tracking, approve / request changes), compare & create PR.
 - **Code review** — select lines by dragging a line's “+” or shift-clicking line numbers (one side, one hunk) for multi-line comments; “Add a suggestion” (⌘G) in the comment editor; **Commit suggestion** / **Add suggestion to batch** on suggested changes (from reviewers, CodeRabbit or Greptile) when you can push, refused if the branch moved, with Co-authored-by credit. A pending review started anywhere (github.com, `gh`, another client) is picked up over GraphQL: new comments and replies go into it, its comments can be edited or deleted, and **Finish your review** submits or abandons it.
 - **Issues** — list, create, comment, close as completed / not planned, labels & assignees.
-- **Actions** — runs per workflow with filters, run summary and job graph, step-by-step logs with search and collapsible groups, re-run all / failed / single job, cancel, delete, `workflow_dispatch` with inputs, artifacts.
+- **Actions** — a list of runs (All, Failing, This branch) beside the chosen run; all workflows with filters below the list, run summary and job graph, step-by-step logs with search and collapsible groups, re-run all / failed / single job, cancel, delete, `workflow_dispatch` with inputs, artifacts.
 - **Notifications** — inbox with reasons and repository filters, mark read / done / unsubscribe.
 - **Releases** — release notes, assets and download counts, per-tag pages; with push access, draft/edit/delete releases (choose or create a tag, generate release notes, pre-release / latest, discussion) and attach or remove assets (desktop only: GitHub's upload host sends no CORS headers).
 - **Discussions** — categories, upvotes, answered state, threaded comments and replies.
@@ -81,14 +81,14 @@ gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and u
 - **Insights** — weekly pulse, 52-week commit activity, top contributors.
 - **Repository settings** (admins) — General (rename, features, merge buttons, default branch, Danger Zone with typed confirmations), About details, Collaborators and invitations, classic branch protection rules, rulesets (read-only), Webhooks with recent deliveries and redeliver, Deploy keys, Actions secrets (encrypted in the app with the repository's public key) and variables.
 - **Wiki** — the desktop app clones `<repo>.wiki.git` and renders its pages (GitHub has no wiki API).
-- **Local repositories (desktop)** — clone (HTTPS uses your signed-in token), add existing, changes with staging checkboxes, diff, discard, commit (with agent-written messages), branch switch/create, fetch/pull/push/publish, history.
+- **Branches** — every branch, local or on GitHub, without checking it out: uncommitted files with staging, commits only on your Mac, commits on GitHub including ones not pulled yet, its pull request and its checks, with the selected file or commit beside them. Commit (with agent-written messages), undo, discard, and stash when a switch would overwrite changes. Works for a folder with no GitHub repository (with a Publish prompt) and for a repository not cloned yet. Clone with HTTPS uses your signed-in token; SSH URLs use your SSH keys, and the clone dialog offers to switch them to HTTPS.
 
 ### Keyboard shortcuts (desktop)
 
 | Shortcut | Action |
 | --- | --- |
-| ⌘T | New tab (dashboard) |
-| ⌘W | Close tab; closing the last one leaves a fresh dashboard. ⌘⇧W closes the window. |
+| ⌘T | New tab, which offers repositories to open |
+| ⌘W | Close tab; closing the last one leaves a new tab. ⌘⇧W closes the window. |
 | ⌘⇧T | Reopen the last closed tab |
 | ⌘1…⌘8, ⌘9 | Go to that tab; ⌘9 is the last one |
 | ⌃Tab, ⌃⇧Tab | Next, previous tab |
@@ -106,28 +106,7 @@ It works through GitHub tools: reading PRs, diffs, files, review threads, checks
 
 - **Approval**: read tools run automatically; every write shows an Approve / Deny card unless you turn on auto-approve in Settings → Agent.
 - **Models**: Claude Opus 5.5 by default (Sonnet 5.5, Haiku 5.5, Fable 5.1 selectable), adaptive thinking, configurable effort, streaming with eager tool-input streaming, prompt caching, and server-side refusal fallback enabled on models that support it.
-- **Key**: desktop — your Anthropic API key, stored encrypted, requests go straight to api.anthropic.com. Web — your key in the browser, or the Worker's key restricted to `ALLOWED_GITHUB_USERS`.
-
-## Web build and Cloudflare (optional)
-
-```bash
-npm run dev                 # browser dev server
-npm run cf:dev              # build + wrangler dev (copy .dev.vars.example to .dev.vars first,
-                            # or pass --var GITHUB_CLIENT_ID:… --var GITHUB_CLIENT_SECRET:… to wrangler dev)
-npm run cf:deploy           # build + wrangler deploy
-```
-
-Worker settings (`wrangler.jsonc` vars, secrets via `npx wrangler secret put NAME`):
-
-| Name | Purpose |
-| --- | --- |
-| `GITHUB_CLIENT_ID` | Enables “Continue with GitHub” (device flow) without users entering a client ID. |
-| `GITHUB_CLIENT_SECRET` (secret) | Enables the web OAuth redirect flow. Callback URL: `https://<your-domain>/api/oauth/callback`. |
-| `ANTHROPIC_API_KEY` (secret) | Lets allowed users run the agent without their own key. |
-| `ALLOWED_GITHUB_USERS` | Comma-separated logins allowed to use that key. A bare login means a github.com account; Enterprise accounts are written `host/login` (e.g. `github.example.com/alice`). `*` allows anyone who signs in — don't. |
-| `GHES_HOSTS` | Extra GitHub Enterprise hosts for device flow and log proxying. |
-
-Worker routes: `/api/config`, `/api/gh-login/*` (device-flow proxy; github.com sends no CORS headers), `/api/oauth/start|callback`, `/api/anthropic/v1/*` (verifies the caller's GitHub identity, then forwards with the server key), `/api/gh/job-logs` (follows the Actions log redirect without forwarding the token). Everything else is the SPA from Workers Static Assets, served with a strict CSP (`public/_headers`).
+- **Key**: your Anthropic API key, stored encrypted; requests go straight to api.anthropic.com.
 
 ## Security model (desktop)
 
@@ -139,13 +118,13 @@ Worker routes: `/api/config`, `/api/gh-login/*` (device-flow proxy; github.com s
 ## Development
 
 ```bash
-npm run typecheck           # app + worker
-npm test                    # vitest: agent loop (mocked API), Worker routes, device flow, PAT verification, git policy, suggestions, sealed box, projects GraphQL, parsers, links, tab state
-npm run test:e2e:desktop    # real Electron app, throwaway profile: local git flow, gh sign-in, tabs, wiki clone + render
+npm run typecheck
+npm test                    # vitest: agent loop (mocked API), device flow, PAT verification, git policy, suggestions, sealed box, projects GraphQL, parsers, links, tab state
+npm run test:e2e:desktop    # real Electron app, throwaway profile: local git flow, gh sign-in, one tab per repository, branches, pull requests, Actions, panes, inbox, wiki clone + render
 npm run build               # typecheck + production bundle
 ```
 
-Layout: `src/` React app (`pages/`, `components/`, `lib/` incl. `lib/agent/`), `electron/` main + preload, `worker/` Cloudflare Worker.
+Layout: `src/` React app (`pages/`, `components/`, `lib/` incl. `lib/agent/`), `pages/workspace/` the desktop views, `electron/` main + preload.
 
 ## Packaging for Windows and Linux
 
@@ -156,4 +135,4 @@ Layout: `src/` React app (`pages/`, `components/`, `lib/` incl. `lib/agent/`), `
 
 ## Not covered yet
 
-Not checked against real accounts: the web OAuth flow in the Cloudflare build, and project editing (mocked data only). Logged-in screens follow GitHub's docs and weren't compared side by side with github.com. Mixed-side comment ranges (from a deleted line to an added line); editing rulesets, environment and organization secrets, and settings pages without an API (Pages, Actions permissions, social preview, …); multi-select fields, labels/assignees and the item side panel in Projects; signed/notarized builds. The Windows package builds but hasn't been launched. Actions logs are split into steps from GitHub's second-precision step times (the API no longer exposes per-step logs), so a composite action's last inner step can occasionally show at the top of the next step.
+Not checked against real accounts: project editing (mocked data only). Logged-in screens follow GitHub's docs and weren't compared side by side with github.com. Mixed-side comment ranges (from a deleted line to an added line); editing rulesets, environment and organization secrets, and settings pages without an API (Pages, Actions permissions, social preview, …); multi-select fields, labels/assignees and the item side panel in Projects; signed/notarized builds. The Windows package builds but hasn't been launched. Actions logs are split into steps from GitHub's second-precision step times (the API no longer exposes per-step logs), so a composite action's last inner step can occasionally show at the top of the next step.

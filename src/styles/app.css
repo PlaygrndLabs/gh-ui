@@ -796,16 +796,6 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 .device-code { font-family: var(--fontStack-monospace); font-size: 32px; letter-spacing: 6px; text-align: center; font-weight: 600; padding: 12px; border: 1px dashed var(--borderColor-default); border-radius: 6px; background: var(--bgColor-default); }
 
 /* ---------- Local repos ---------- */
-.desktop-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: calc(100vh - 65px - var(--tab-strip-h, 0px)); }
-.desktop-sidebar { border-right: 1px solid var(--borderColor-default); display: flex; flex-direction: column; min-height: 0; }
-.desktop-toolbar { display: flex; align-items: stretch; border-bottom: 1px solid var(--borderColor-default); background: var(--bgColor-muted); }
-.desktop-toolbar-item { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-right: 1px solid var(--borderColor-default); min-width: 0; }
-.desktop-file-list { flex: 1; overflow: auto; }
-.desktop-file { display: flex; align-items: center; gap: 8px; padding: 4px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--borderColor-muted); }
-.desktop-file:hover { background: var(--bgColor-muted); }
-.desktop-file.selected { background: var(--bgColor-accent-muted); }
-.desktop-commit { border-top: 1px solid var(--borderColor-default); padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--bgColor-muted); }
-.desktop-diff { overflow: auto; min-height: 0; }
 
 /* ---------- Syntax highlighting mapped to Primer prettylights tokens ---------- */
 .hljs-comment, .hljs-quote { color: var(--color-prettylights-syntax-comment); }
