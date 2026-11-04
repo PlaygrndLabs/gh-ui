@@ -269,7 +269,9 @@ export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } 
           />
           {timeline.isLoading ? <Loading /> : timeline.error ? <ErrorBox error={timeline.error} /> : events.map(renderEvent)}
           <div className="timeline-spacer" />
-          <MergeBox pr={pr} />
+          <div id="pr-merge">
+            <MergeBox pr={pr} />
+          </div>
           {error && <div className="error-box mb-3">{error}</div>}
           <div className="timeline-comment-group mt-3">
             <div className="avatar-col">

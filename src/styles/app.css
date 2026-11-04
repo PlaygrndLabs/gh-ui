@@ -105,7 +105,7 @@ body:has(.app-shell) { overflow: hidden; }
 /* Each tab renders the header and content of its own page, and the agent panel is shared by all of them, yet the header
    still has to span the panel. So the shell is a grid, and a tab's pane (display:contents) puts its parts straight in it. */
 /* The strip stays one size at any page zoom, so --tab-strip-h, in the page's pixels, shrinks as the page zooms in. */
-.is-native { --tab-strip-h: calc(37px / var(--page-zoom, 1)); --gd-header-h: 142px; }
+.is-native { --tab-strip-h: calc(44px / var(--page-zoom, 1)); --gd-header-h: 142px; }
 .app-shell.tabbed { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto minmax(0, 1fr); }
 .tab-pane { display: contents; }
 .tabbed > .tab-strip { grid-area: 1 / 1 / 2 / -1; }
@@ -138,12 +138,12 @@ body:has(.app-shell) { overflow: hidden; }
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 37px;
+  height: 44px;
   zoom: calc(1 / var(--page-zoom, 1));
   padding: 0 16px 0 max(16px, calc(var(--window-buttons-w, 0px) + 12px));
   background: var(--bgColor-inset);
   border-bottom: 1px solid var(--borderColor-muted);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 20px;
 }
 .tab-list {
@@ -164,7 +164,7 @@ body:has(.app-shell) { overflow: hidden; }
   flex: 0 1 200px;
   width: 200px;
   min-width: 96px;
-  height: 28px;
+  height: 34px;
   border-radius: 6px;
   color: var(--fgColor-muted);
   user-select: none;
@@ -821,16 +821,6 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 .device-code { font-family: var(--fontStack-monospace); font-size: 32px; letter-spacing: 6px; text-align: center; font-weight: 600; padding: 12px; border: 1px dashed var(--borderColor-default); border-radius: 6px; background: var(--bgColor-default); }
 
 /* ---------- Local repos ---------- */
-.desktop-layout { display: grid; grid-template-columns: 320px minmax(0, 1fr); height: calc(100vh - 65px - var(--tab-strip-h, 0px)); }
-.desktop-sidebar { border-right: 1px solid var(--borderColor-default); display: flex; flex-direction: column; min-height: 0; }
-.desktop-toolbar { display: flex; align-items: stretch; border-bottom: 1px solid var(--borderColor-default); background: var(--bgColor-muted); }
-.desktop-toolbar-item { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-right: 1px solid var(--borderColor-default); min-width: 0; }
-.desktop-file-list { flex: 1; overflow: auto; }
-.desktop-file { display: flex; align-items: center; gap: 8px; padding: 4px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--borderColor-muted); }
-.desktop-file:hover { background: var(--bgColor-muted); }
-.desktop-file.selected { background: var(--bgColor-accent-muted); }
-.desktop-commit { border-top: 1px solid var(--borderColor-default); padding: 12px; display: flex; flex-direction: column; gap: 8px; background: var(--bgColor-muted); }
-.desktop-diff { overflow: auto; min-height: 0; }
 
 /* ---------- Syntax highlighting mapped to Primer prettylights tokens ---------- */
 .hljs-comment, .hljs-quote { color: var(--color-prettylights-syntax-comment); }

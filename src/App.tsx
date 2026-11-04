@@ -4,10 +4,10 @@ import { Banner } from '@primer/react'
 import { reauthPath, useAuth } from './lib/auth'
 import { AgentProvider, useAgent } from './lib/agent/AgentProvider'
 import { AppHeader } from './components/AppHeader'
+import { WorkspaceHeader } from './components/WorkspaceHeader'
 import { AgentPanel } from './components/AgentPanel'
 import { Loading, Blankslate, ErrorBox } from './components/Bits'
 import { LoginPage } from './pages/Login'
-import { Dashboard } from './pages/Dashboard'
 import { NotificationsPage } from './pages/Notifications'
 import { GlobalListPage } from './pages/GlobalList'
 import { SearchPage } from './pages/Search'
@@ -15,6 +15,9 @@ import { ProfilePage } from './pages/Profile'
 import { SettingsPage } from './pages/Settings'
 import { LocalReposPage } from './pages/Local'
 import { RepoLayout } from './pages/repo/RepoLayout'
+import { HomePage, RepoHome } from './pages/repo/RepoHome'
+import { ActionsHome, ActionsLayout } from './pages/workspace/ActionsWorkspace'
+import { PullsHome, PullsLayout } from './pages/workspace/PullsWorkspace'
 import { CodePage, BlobPage } from './pages/repo/Code'
 import { CommitsPage, CommitPage } from './pages/repo/Commits'
 import { BranchesPage } from './pages/repo/Branches'
@@ -165,7 +168,7 @@ export function AppShell({ tabbed = false }: { tabbed?: boolean }) {
   if (tabbed) {
     return (
       <>
-        <AppHeader />
+        <WorkspaceHeader />
         <RejectedTokenBanner />
         {page}
       </>
@@ -212,7 +215,7 @@ function OrgRedirect() {
 export function pageRoutes(shell: ReactElement) {
   return (
     <Route element={shell}>
-      <Route index element={<Dashboard />} />
+      <Route index element={<HomePage />} />
       <Route path="notifications" element={<NotificationsPage />} />
       <Route path="pulls" element={<GlobalListPage kind="pr" />} />
       <Route path="issues" element={<GlobalListPage kind="issue" />} />
@@ -222,11 +225,12 @@ export function pageRoutes(shell: ReactElement) {
       <Route path="settings/:section" element={<SettingsPage />} />
       <Route path="local" element={<LocalReposPage />} />
       <Route path="local/:id" element={<LocalReposPage />} />
+      <Route path="local/:id/:section" element={<LocalReposPage />} />
       <Route path="orgs/:org" element={<OrgRedirect />} />
       <Route path="orgs/:org/:tab" element={<OrgRedirect />} />
       <Route path=":owner" element={<ProfilePage />} />
       <Route path=":owner/:repo" element={<RepoLayout />}>
-        <Route index element={<CodePage />} />
+        <Route index element={<RepoHome />} />
         <Route path="tree/*" element={<CodePage />} />
         <Route path="blob/*" element={<BlobPage />} />
         <Route path="blame/*" element={<BlobPage />} />
@@ -234,16 +238,22 @@ export function pageRoutes(shell: ReactElement) {
         <Route path="commit/:sha" element={<CommitPage />} />
         {/* The splat carries github.com's view paths: /branches/yours, /active, /stale, /all. */}
         <Route path="branches/*" element={<BranchesPage />} />
-        <Route path="pulls" element={<PullsPage />} />
-        <Route path="pull/:number/*" element={<PullRequestPage />} />
+        <Route element={<PullsLayout />}>
+          <Route path="pulls" element={<PullsHome />} />
+          <Route path="pull/:number/*" element={<PullRequestPage />} />
+        </Route>
+        <Route path="pulls/all" element={<PullsPage />} />
         <Route path="compare/*" element={<ComparePage />} />
         <Route path="issues" element={<FeatureGate feature="issues"><IssuesPage /></FeatureGate>} />
         <Route path="issues/new" element={<FeatureGate feature="issues"><NewIssuePage /></FeatureGate>} />
         <Route path="issues/:number" element={<FeatureGate feature="issues"><IssuePage /></FeatureGate>} />
-        <Route path="actions" element={<ActionsPage />} />
+        <Route element={<ActionsLayout />}>
+          <Route path="actions" element={<ActionsHome />} />
+          <Route path="actions/runs/:runId" element={<RunPage />} />
+          <Route path="actions/runs/:runId/job/:jobId" element={<RunPage />} />
+        </Route>
+        <Route path="actions/all" element={<ActionsPage />} />
         <Route path="actions/workflows/:workflow" element={<ActionsPage />} />
-        <Route path="actions/runs/:runId" element={<RunPage />} />
-        <Route path="actions/runs/:runId/job/:jobId" element={<RunPage />} />
         <Route path="releases" element={<ReleasesPage />} />
         <Route path="releases/latest" element={<LatestReleasePage />} />
         <Route path="releases/tag/*" element={<ReleasePage />} />

@@ -351,11 +351,20 @@ function e2eTest(win, file) {
     for (const step of steps) {
       try {
         if (step.accelerator) findMenuItem(Menu.getApplicationMenu(), step.accelerator).click()
+        // Real input, for what synthetic events can't do, such as a pointer capture.
+        if (step.inputJs) {
+          for (const event of await win.webContents.executeJavaScript(`(async () => { ${step.inputJs} })()`)) {
+            win.webContents.sendInputEvent(event)
+            await new Promise((r) => setTimeout(r, 30))
+          }
+        }
         const result = step.js ? await win.webContents.executeJavaScript(`(async () => { ${step.js} })()`) : true
         results.push({ step: step.name, ok: true, result })
       } catch (err) {
         results.push({ step: step.name, ok: false, error: String(err && err.message ? err.message : err) })
       }
+      // For looking at the result: GH_UI_E2E_SHOTS=<folder> saves a picture of any step that names one.
+      if (step.screenshot && process.env.GH_UI_E2E_SHOTS) await fsp.writeFile(path.join(process.env.GH_UI_E2E_SHOTS, `${step.screenshot}.png`), (await win.webContents.capturePage()).toPNG())
       if (step.waitMs) await new Promise((r) => setTimeout(r, step.waitMs))
     }
     const ok = results.every((r) => r.ok && !(r.result && r.result.fail))

@@ -15,8 +15,8 @@ function parseRequestUrl(req: IncomingMessage, res: ServerResponse): URL | null 
   }
 }
 
-// Mirrors /api/gh-login in worker/index.ts: device flow against github.com or the
-// host named by ?host=, never forwarding a client secret.
+// For the browser dev server: device flow against github.com or the host named by
+// ?host=, never forwarding a client secret.
 async function deviceFlowProxy(req: IncomingMessage, res: ServerResponse) {
   const url = parseRequestUrl(req, res)
   if (!url) return
@@ -92,7 +92,7 @@ function ghCliDevBridge(): Plugin {
           res.end(JSON.stringify({ token: stdout.trim() }))
         })
       })
-      // Mirrors /api/gh/job-logs in worker/index.ts: follow the log redirect without the token.
+      // Follow the log redirect without the token.
       server.middlewares.use('/api/gh/job-logs', async (req, res) => {
         const url = parseRequestUrl(req, res)
         if (!url) return

@@ -13,15 +13,15 @@ import {
   IssueOpenedIcon,
   PersonIcon,
   PlayIcon,
-  PlusIcon,
   RepoIcon,
   SearchIcon,
   XIcon,
   type Icon,
 } from '@primer/octicons-react'
+import { RepoPicker } from './RepoPicker'
 import { UpdateNotice } from './UpdateNotice'
 import { tabButtonId, tabPanelId, useTabs } from '../lib/TabsProvider'
-import { iconFromPath, tabTitle, type Tab, type TabIcon } from '../lib/tabs'
+import { iconFromPath, repoKeyFromUrl, tabTitle, type Tab, type TabIcon } from '../lib/tabs'
 
 const ICONS: Record<TabIcon, Icon> = {
   home: HomeIcon,
@@ -49,7 +49,7 @@ type Side = 'left' | 'right'
 
 /** The row of tabs at the very top of the window, sharing it with the macOS window buttons. */
 export function TabStrip() {
-  const { state, active, select, newTab, close, split, toggleSplit } = useTabs()
+  const { state, active, select, close, split, toggleSplit } = useTabs()
   const list = useRef<HTMLDivElement>(null)
   const [dropSide, setDropSide] = useState<Side | null>(null)
   const [menu, setMenu] = useState<{ tab: Tab; anchor: HTMLElement } | null>(null)
@@ -105,7 +105,7 @@ export function TabStrip() {
           />
         ))}
       </div>
-      <IconButton className="tab-new" icon={PlusIcon} aria-label="New tab" size="small" variant="invisible" onClick={newTab} />
+      <RepoPicker />
       <div className="tab-strip-end">
         <UpdateNotice />
         <IconButton
@@ -159,7 +159,7 @@ function TabItem({
 }) {
   const { state, select, close, move, split } = useTabs()
   const title = tabTitle(tab)
-  const Icon = ICONS[iconFromPath(tab.url)]
+  const Icon = repoKeyFromUrl(tab.url) ? RepoIcon : ICONS[iconFromPath(tab.url)]
   const stateRef = useRef(state)
   stateRef.current = state
 
