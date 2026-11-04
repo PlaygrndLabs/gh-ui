@@ -60,7 +60,8 @@ export function buildWorkspaceRepos(folders: Array<{ repo: LocalRepo; remoteUrl:
  * another host can only open as its folder; null means this account can't open it at all.
  */
 export function workspacePath(repo: WorkspaceRepo, accountHost: string): string | null {
-  if (repo.github && sameHost(repo.github.host, accountHost)) return `/${repo.github.owner}/${repo.github.repo}`
+  const isExtraClone = repo.key.startsWith('local/')
+  if (repo.github && sameHost(repo.github.host, accountHost) && !isExtraClone) return `/${repo.github.owner}/${repo.github.repo}`
   return repo.local ? `/local/${repo.local.id}` : null
 }
 

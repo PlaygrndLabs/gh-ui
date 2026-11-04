@@ -47,7 +47,12 @@ export function SplitPaneView({ first, second, firstLabel, secondLabel, min, max
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     if (drag.current) onChange({ ...state, width: dragWidth(drag.current.width, drag.current.x, e.clientX, bounds, sized) })
   }
-  const onPointerEnd = () => {
+  // The browser can merge the last move into the release, so the release has the final say.
+  const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    onPointerMove(e)
+    drag.current = null
+  }
+  const onPointerCancel = () => {
     drag.current = null
   }
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -75,8 +80,8 @@ export function SplitPaneView({ first, second, firstLabel, secondLabel, min, max
             title="Drag to resize. Double-click to reset."
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
-            onPointerUp={onPointerEnd}
-            onPointerCancel={onPointerEnd}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerCancel}
             onKeyDown={onKeyDown}
             onDoubleClick={() => onChange({ ...state, width: defaultWidth })}
           />

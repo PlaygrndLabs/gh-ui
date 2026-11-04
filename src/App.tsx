@@ -223,6 +223,7 @@ export function pageRoutes(shell: ReactElement) {
       <Route path="settings/:section" element={<SettingsPage />} />
       <Route path="local" element={<LocalReposPage />} />
       <Route path="local/:id" element={<LocalReposPage />} />
+      <Route path="local/:id/:section" element={<LocalReposPage />} />
       <Route path="orgs/:org" element={<OrgRedirect />} />
       <Route path="orgs/:org/:tab" element={<OrgRedirect />} />
       <Route path=":owner" element={<ProfilePage />} />

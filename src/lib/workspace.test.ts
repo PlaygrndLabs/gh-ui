@@ -52,6 +52,11 @@ describe('workspacePath', () => {
     expect(workspacePath(both, 'ghe.example.com')).toBe('/local/checkout')
   })
 
+  it('keeps a second clone on its own page', () => {
+    const [, extra] = buildWorkspaceRepos([folder('first', 1, 'git@github.com:acme/web.git'), folder('second', 2, 'git@github.com:acme/web.git')], [])
+    expect(workspacePath(extra, 'github.com')).toBe('/local/second')
+  })
+
   it('can’t open a GitHub-only repository on another host', () => {
     expect(workspacePath(github, 'ghe.example.com')).toBeNull()
   })

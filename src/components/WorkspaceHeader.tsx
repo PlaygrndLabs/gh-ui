@@ -11,6 +11,7 @@ import { useRepoCounts, useRepoQuery } from '../lib/repo'
 import { useLocalRepo } from '../lib/useLocalRepo'
 import { syncAction, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
 import { repoKeyFromUrl } from '../lib/tabs'
+import { CloneDialog } from '../pages/Local'
 import { AccountMenu } from './AppHeader'
 
 const SYNC_LABEL: Record<SyncKind, string> = {
@@ -91,7 +92,7 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
                 key={b.name}
                 selected={b.current}
                 onSelect={() => {
-                  if (!b.current) local.op.mutate(() => local.git!.switchTo(b.name))
+                  if (!b.current) local.switchBranch(b.name)
                   setFilter('')
                 }}
               >
@@ -124,14 +125,14 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
 
 function SyncButton({ repo }: { repo: WorkspaceRepo }) {
   const local = useLocalRepo(repo.local)
-  const navigate = useNavigate()
   const [publishing, setPublishing] = useState(false)
+  const [cloning, setCloning] = useState(false)
   const action = syncAction(repo.location, local.status.data)
   const [fetched, setFetched] = useState<Date | null>(null)
   if (!action) return <div className="ws-seg ws-seg-sync" />
   const run = () => {
     const { git, op } = local
-    if (action.kind === 'clone') return navigate(`/local?clone=${repo.github!.owner}/${repo.github!.repo}`)
+    if (action.kind === 'clone') return setCloning(true)
     if (action.kind === 'publish-repo') return setPublishing(true)
     op.mutate(async () => {
       if (action.kind === 'publish-branch') await git!.publishBranch()
@@ -157,6 +158,7 @@ function SyncButton({ repo }: { repo: WorkspaceRepo }) {
         )}
       </button>
       {publishing && repo.local && <PublishDialog repo={repo} onClose={() => setPublishing(false)} />}
+      {cloning && repo.github && <CloneDialog initial={`${repo.github.owner}/${repo.github.repo}`} onClose={() => setCloning(false)} onCloned={() => setCloning(false)} />}
       {local.error && <Banner className="ws-error" variant="critical" title="Git said" description={local.error} onDismiss={local.clearError} />}
     </>
   )
@@ -253,7 +255,8 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const { account, octokit, key } = useGitHub()
   const github = repo.github
   const path = workspacePath(repo, account.host)
-  const base = github && path === `/${github.owner}/${github.repo}` ? path : null
+  // A second clone has its own page, but its pull requests and runs are the repository's.
+  const base = github && github.host.toLowerCase() === account.host.toLowerCase() ? `/${github.owner}/${github.repo}` : null
   const counts = useRepoCounts(github?.owner ?? '', github?.repo ?? '', !!base)
   const info = useRepoQuery(github?.owner ?? '', github?.repo ?? '', !!base)
   const parts = pathname.split('/').filter(Boolean)

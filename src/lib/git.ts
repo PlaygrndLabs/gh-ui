@@ -134,6 +134,10 @@ export function createGitClient(run: GitRunner) {
     if (res.code !== 0) throw new Error((res.stderr || res.stdout || `git ${args[0]} failed`).trim())
     return res.stdout
   }
+  const log = async (revisions: string[], limit = 200): Promise<LogEntry[]> => {
+    const res = await run(['log', '-n', String(limit), LOG_FORMAT, ...revisions, '--'], false)
+    return res.code === 0 ? parseCommitLog(res.stdout) : []
+  }
   return {
     status: async () => parseStatus(await git(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'])),
     /** Empty when there's no origin. */
@@ -151,9 +155,16 @@ export function createGitClient(run: GitRunner) {
     },
     stagedDiff: () => git(['diff', '--cached']),
     /** The newest commits of `ref`, or of the checked-out branch. Empty before the first commit. */
-    async log(ref?: string, limit = 200): Promise<LogEntry[]> {
-      const res = await run(['log', '-n', String(limit), LOG_FORMAT, ...(ref ? [ref, '--'] : [])], false)
-      return res.code === 0 ? parseCommitLog(res.stdout) : []
+    log: (ref?: string, limit = 200) => log(ref ? [ref] : [], limit),
+    /** A branch's commits by where they are: only here, on origin, or on its upstream and not pulled yet. */
+    async branchCommits(branch: BranchState, limit = 100) {
+      const ref = branch.location === 'remote' ? `origin/${branch.name}` : branch.name
+      const all = await log([ref], limit)
+      if (branch.location === 'remote') return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote: all }
+      const local = await log([ref, '--not', '--remotes=origin'], limit)
+      const onlyHere = new Set(local.map((c) => c.sha))
+      const incoming = branch.upstream && branch.behind ? await log([`${ref}..${branch.upstream}`], limit) : []
+      return { local, incoming, remote: all.filter((c) => !onlyHere.has(c.sha)) }
     },
     async show(sha: string) {
       const res = await run(['show', '--format=%B%x1e', '--patch', '--no-color', sha], false)
@@ -167,6 +178,10 @@ export function createGitClient(run: GitRunner) {
     fetch: () => git(['fetch', '--prune', 'origin'], true),
     switchTo: (branch: string) => git(['switch', branch]),
     createBranch: (branch: string) => git(['switch', '-c', branch]),
+    /** Saves every change, new files too, and leaves the working tree clean. */
+    stash: () => git(['stash', 'push', '-u']),
+    stashPop: () => git(['stash', 'pop']),
+    stashList: async () => (await git(['stash', 'list', '--format=%s'])).split('\n').filter(Boolean),
     // A path-less `git reset` would also drop MERGE_HEAD / CHERRY_PICK_HEAD.
     unstageAll: () => git(['reset', '-q', '--', '.']),
     stageAll: () => git(['add', '-A']),

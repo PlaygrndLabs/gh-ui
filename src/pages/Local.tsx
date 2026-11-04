@@ -1,55 +1,50 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useState, type MouseEvent } from 'react'
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionList, ActionMenu, Button, Checkbox, Dialog, FormControl, IconButton, NavList, RelativeTime, SegmentedControl, TextInput, Textarea, UnderlineNav, useConfirm } from '@primer/react'
-import {
-  DeviceDesktopIcon,
-  RepoIcon,
-  PlusIcon,
-  GitBranchIcon,
-  TriangleDownIcon,
-  SyncIcon,
-  ArrowUpIcon,
-  ArrowDownIcon,
-  FileDirectoryIcon,
-  TrashIcon,
-  SparkleFillIcon,
-  CodeIcon,
-  HistoryIcon,
-  FileDiffIcon,
-  MarkGithubIcon,
-  UndoIcon,
-  RepoPushIcon,
-  GitPullRequestIcon,
-} from '@primer/octicons-react'
+import { ActionList, ActionMenu, Button, Dialog, FormControl, IconButton, NavList, TextInput, useConfirm } from '@primer/react'
+import { DeviceDesktopIcon, RepoIcon, PlusIcon, FileDirectoryIcon, TrashIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage } from '../lib/github'
 import { native, type LocalRepo } from '../lib/platform'
-import { parseRemote } from '../lib/links'
-import { changePaths, isStaged, isUnmerged, localGit, type StatusEntry } from '../lib/git'
-import { useWorkspaceRepos, workspacePath } from '../lib/workspace'
-import type { FileDiff } from '../lib/diff'
-import { firstLine, shortSha } from '../lib/format'
+import { toHttpsRemote } from '../lib/links'
 import { readPref, writePref } from '../lib/storage'
-import { generateCommitMessage } from '../lib/agent/oneshot'
-import { useAgentPageContext } from '../lib/agent/AgentProvider'
 import { useEffectOnChange } from '../lib/activity'
-import { FileDiffBox } from '../components/DiffView'
+import { useWorkspaceRepos, workspacePath } from '../lib/workspace'
+import { PublishDialog } from '../components/WorkspaceHeader'
 import { Blankslate, ErrorBox, Loading } from '../components/Bits'
+import { BranchesWorkspace } from './workspace/BranchesWorkspace'
 
 /** A folder's own page, when it has no GitHub path: one with a GitHub repository lives at that repository's path. */
-function LocalWorkspace({ id }: { id: string }) {
+function LocalWorkspace({ id, section }: { id: string; section?: string }) {
   const { repos, isLoading } = useWorkspaceRepos()
   const { account } = useGitHub()
+  const [publishing, setPublishing] = useState(false)
   const repo = repos.find((r) => r.local?.id === id)
   if (isLoading) return <Loading />
   if (!repo?.local) return <LocalShell />
   const path = workspacePath(repo, account.host)
-  if (path && path !== `/local/${id}`) return <Navigate to={path} replace />
-  return <LocalRepoView key={id} repo={repo.local} embedded />
+  if (path && path !== `/local/${id}`) return <Navigate to={`${path}${section ? `/${section}` : ''}`} replace />
+  if (section)
+    return (
+      <div className="container-lg">
+        <Blankslate
+          icon={<RepoIcon size={32} />}
+          title={`Publish ${repo.name} to use ${section === 'pulls' ? 'pull requests' : 'Actions'}`}
+          action={
+            <Button variant="primary" onClick={() => setPublishing(true)}>
+              Publish repository
+            </Button>
+          }
+        >
+          This repository lives only on your Mac, so Branches works as usual. Publish it to GitHub when you want to collaborate.
+        </Blankslate>
+        {publishing && <PublishDialog repo={repo} onClose={() => setPublishing(false)} />}
+      </div>
+    )
+  return <BranchesWorkspace key={id} repo={repo} />
 }
 
 export function LocalReposPage() {
-  const { id } = useParams()
+  const { id, section } = useParams()
   if (!native) {
     return (
       <div className="container-lg">
@@ -59,7 +54,7 @@ export function LocalReposPage() {
       </div>
     )
   }
-  return id ? <LocalWorkspace id={id} /> : <LocalShell />
+  return id ? <LocalWorkspace id={id} section={section} /> : <LocalShell />
 }
 
 function useLocalRepos() {
@@ -67,23 +62,13 @@ function useLocalRepos() {
 }
 
 function LocalShell() {
-  const { id } = useParams()
   const repos = useLocalRepos()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const confirm = useConfirm()
   const [params, setParams] = useSearchParams()
   const cloneTarget = params.get('clone')
   const [error, setError] = useState<string | null>(null)
-  const selected = repos.data?.find((r) => r.id === id) ?? null
-
-  useEffect(() => {
-    if (!id && repos.data?.length) {
-      const last = readPref<string | null>('lastLocalRepo', null)
-      const target = repos.data.find((r) => r.id === last) ?? repos.data[0]
-      // Keep the query so a `?clone=` request (header menu, Code page) still opens the dialog.
-      navigate({ pathname: `/local/${target.id}`, search: params.toString() ? `?${params}` : '' }, { replace: true })
-    }
-  }, [id, repos.data, navigate, params])
 
   const add = async () => {
     setError(null)
@@ -92,76 +77,81 @@ function LocalShell() {
     try {
       const repo = await native!.repos.add(dir)
       await qc.invalidateQueries({ queryKey: ['local-repos'] })
+      await qc.invalidateQueries({ queryKey: ['workspace-folders'] })
       navigate(`/local/${repo.id}`)
     } catch (e) {
       setError(errorMessage(e))
     }
   }
+  const remove = async (repo: LocalRepo) => {
+    if (await confirm({ title: `Remove ${repo.name}?`, content: 'It is removed from gh-ui only; the folder stays on disk.', confirmButtonContent: 'Remove' })) {
+      await native!.repos.remove(repo.id)
+      await qc.invalidateQueries({ queryKey: ['local-repos'] })
+      await qc.invalidateQueries({ queryKey: ['workspace-folders'] })
+    }
+  }
 
   return (
-    <div className="desktop-layout">
-      <div className="desktop-sidebar">
-        <div className="flex-center gap-2" style={{ padding: 12, borderBottom: '1px solid var(--borderColor-default)' }}>
-          <span className="text-bold flex-1">Local repositories</span>
-          <ActionMenu>
-            <ActionMenu.Anchor>
-              <IconButton size="small" icon={PlusIcon} aria-label="Add repository" />
-            </ActionMenu.Anchor>
-            <ActionMenu.Overlay>
-              <ActionList>
-                <ActionList.Item onSelect={() => setParams({ clone: '' })}>Clone repository…</ActionList.Item>
-                <ActionList.Item onSelect={() => void add()}>Add existing repository…</ActionList.Item>
-              </ActionList>
-            </ActionMenu.Overlay>
-          </ActionMenu>
-        </div>
-        {error && <div className="error-box" style={{ margin: 8 }}>{error}</div>}
-        <div className="desktop-file-list">
-          {repos.isLoading ? (
-            <Loading />
-          ) : repos.data?.length ? (
-            <NavList aria-label="Local repositories">
-              {repos.data.map((r) => (
-                <NavList.Item key={r.id} as={Link} to={`/local/${r.id}`} aria-current={r.id === id ? 'page' : undefined}>
-                  <NavList.LeadingVisual>
-                    <RepoIcon />
-                  </NavList.LeadingVisual>
-                  {r.name}
-                  <NavList.Description variant="block">{r.path}</NavList.Description>
-                </NavList.Item>
-              ))}
-            </NavList>
-          ) : (
-            <div className="p-3 fg-muted text-small">No local repositories yet. Clone one from GitHub or add a folder that already contains a git repository.</div>
-          )}
-        </div>
+    <div className="container-lg">
+      <div className="flex-center gap-2 mb-3">
+        <h1 className="flex-1" style={{ fontSize: 20, margin: 0 }}>Folders on this Mac</h1>
+        <ActionMenu>
+          <ActionMenu.Anchor>
+            <IconButton icon={PlusIcon} aria-label="Add repository" />
+          </ActionMenu.Anchor>
+          <ActionMenu.Overlay>
+            <ActionList>
+              <ActionList.Item onSelect={() => setParams({ clone: '' })}>Clone repository…</ActionList.Item>
+              <ActionList.Item onSelect={() => void add()}>Add existing repository…</ActionList.Item>
+            </ActionList>
+          </ActionMenu.Overlay>
+        </ActionMenu>
       </div>
-      <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        {selected ? (
-          <LocalRepoView key={selected.id} repo={selected} />
-        ) : (
-          <Blankslate
-            icon={<DeviceDesktopIcon size={32} />}
-            title="Work on your code locally"
-            action={
-              <span className="flex-center gap-2" style={{ justifyContent: 'center' }}>
-                <Button variant="primary" onClick={() => setParams({ clone: '' })}>
-                  Clone a repository
-                </Button>
-                <Button onClick={() => void add()}>Add an existing repository</Button>
-              </span>
-            }
-          >
-            Review and commit changes, switch branches and push — then open a pull request with the agent's help.
-          </Blankslate>
-        )}
-      </div>
+      {error && <ErrorBox error={new Error(error)} title="Could not add that folder" />}
+      {repos.isLoading ? (
+        <Loading />
+      ) : repos.data?.length ? (
+        <NavList aria-label="Local repositories">
+          {repos.data.map((r) => (
+            <NavList.Item key={r.id} as={Link} to={`/local/${r.id}`}>
+              <NavList.LeadingVisual>
+                <RepoIcon />
+              </NavList.LeadingVisual>
+              {r.name}
+              <NavList.Description variant="block">{r.path}</NavList.Description>
+              <NavList.TrailingAction
+                icon={TrashIcon}
+                label={`Remove ${r.name} from gh-ui`}
+                onClick={(e: MouseEvent) => {
+                  e.preventDefault()
+                  void remove(r)
+                }}
+              />
+            </NavList.Item>
+          ))}
+        </NavList>
+      ) : (
+        <Blankslate
+          icon={<DeviceDesktopIcon size={32} />}
+          title="Work on your code locally"
+          action={
+            <span className="flex-center gap-2" style={{ justifyContent: 'center' }}>
+              <Button variant="primary" onClick={() => setParams({ clone: '' })}>
+                Clone a repository
+              </Button>
+              <Button onClick={() => void add()}>Add an existing repository</Button>
+            </span>
+          }
+        >
+          Review and commit changes, switch branches and push.
+        </Blankslate>
+      )}
       {cloneTarget !== null && <CloneDialog initial={cloneTarget} onClose={() => setParams({})} onCloned={(r) => navigate(`/local/${r.id}`)} />}
     </div>
   )
 }
 
-function CloneDialog({ initial, onClose, onCloned }: { initial: string; onClose(): void; onCloned(r: LocalRepo): void }) {
+export function CloneDialog({ initial, onClose, onCloned }: { initial: string; onClose(): void; onCloned(r: LocalRepo): void }) {
   const { octokit, key, account } = useGitHub()
   const qc = useQueryClient()
   const [filter, setFilter] = useState(initial)
@@ -185,11 +175,13 @@ function CloneDialog({ initial, onClose, onCloned }: { initial: string; onClose(
     onSuccess: async (r) => {
       writePref('cloneParent', parent)
       await qc.invalidateQueries({ queryKey: ['local-repos'] })
+      await qc.invalidateQueries({ queryKey: ['workspace-folders'] })
       onCloned(r)
       onClose()
     },
     onError: (e) => setError(errorMessage(e)),
   })
+  const sshUrl = !!toHttpsRemote(url)
   const shown = (mine.data ?? []).filter((r) => r.full_name.toLowerCase().includes(filter.toLowerCase())).slice(0, 50)
   return (
     <Dialog
@@ -224,6 +216,14 @@ function CloneDialog({ initial, onClose, onCloned }: { initial: string; onClose(
       <FormControl className="mt-3">
         <FormControl.Label>Repository URL</FormControl.Label>
         <TextInput block value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://github.com/owner/repo.git or git@github.com:owner/repo.git" />
+        {sshUrl && (
+          <FormControl.Caption>
+            SSH URLs use your SSH keys, not your sign-in.{' '}
+            <button type="button" className="linkish" onClick={() => setUrl(toHttpsRemote(url)!)}>
+              Use HTTPS with your sign-in
+            </button>
+          </FormControl.Caption>
+        )}
       </FormControl>
       <FormControl className="mt-2">
         <FormControl.Label>Local path</FormControl.Label>
@@ -246,407 +246,5 @@ function CloneDialog({ initial, onClose, onCloned }: { initial: string; onClose(
       </FormControl>
       {error && <div className="error-box mt-3">{error}</div>}
     </Dialog>
-  )
-}
-
-/** `embedded`: inside the desktop workspace, whose toolbar has the branch and sync controls. */
-export function LocalRepoView({ repo, embedded = false }: { repo: LocalRepo; embedded?: boolean }) {
-  const { account } = useGitHub()
-  const qc = useQueryClient()
-  const confirm = useConfirm()
-  const [tab, setTab] = useState<'changes' | 'history'>('changes')
-  const [selectedPath, setSelectedPath] = useState<string | null>(null)
-  const [summary, setSummary] = useState('')
-  const [description, setDescription] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [split, setSplit] = useState(() => readPref('diffSplit', false))
-  const auth = { token: account.token, host: account.host }
-
-  useEffect(() => writePref('lastLocalRepo', repo.id), [repo.id])
-
-  const git = localGit(repo.id, auth)
-
-  const status = useQuery({
-    queryKey: ['local-status', repo.id],
-    queryFn: () => git.status(),
-    refetchInterval: 4000,
-    refetchOnWindowFocus: true,
-  })
-  const remote = useQuery({
-    queryKey: ['local-remote', repo.id],
-    queryFn: async () => {
-      const url = await git.remoteUrl()
-      return url ? parseRemote(url) : null
-    },
-  })
-  const branches = useQuery({
-    queryKey: ['local-branches', repo.id],
-    queryFn: () => git.branchNames(),
-  })
-
-  const entry = status.data?.entries.find((e) => e.path === selectedPath) ?? null
-  const diff = useQuery({
-    queryKey: ['local-diff', repo.id, selectedPath, entry?.index, entry?.worktree],
-    enabled: !!entry,
-    queryFn: () => (entry ? git.fileDiff(entry) : null),
-  })
-
-  const refresh = () => {
-    void qc.invalidateQueries({ queryKey: ['local-status', repo.id] })
-    void qc.invalidateQueries({ queryKey: ['local-diff', repo.id] })
-    void qc.invalidateQueries({ queryKey: ['local-branches', repo.id] })
-    void qc.invalidateQueries({ queryKey: ['local-log', repo.id] })
-  }
-
-  const op = useMutation({
-    mutationFn: async (fn: () => Promise<unknown>) => fn(),
-    onSuccess: () => (setError(null), refresh()),
-    onError: (e) => setError(errorMessage(e)),
-  })
-
-  const entries = status.data?.entries ?? []
-  const stagedCount = entries.filter(isStaged).length
-  const conflictCount = entries.filter(isUnmerged).length
-  const st = status.data
-
-  const generate = useMutation({
-    mutationFn: async () => {
-      const staged = await git.stagedDiff()
-      if (!staged.trim()) throw new Error('Stage some changes first.')
-      return generateCommitMessage(staged, account)
-    },
-    onSuccess: (m) => {
-      setSummary(m.summary)
-      setDescription(m.description)
-    },
-    onError: (e) => setError(errorMessage(e)),
-  })
-
-  useAgentPageContext({
-    tabTitle: repo.name,
-    label: `local repository ${repo.name} at ${repo.path}${remote.data ? ` (GitHub: ${remote.data.owner}/${remote.data.repo})` : ''}`,
-    owner: remote.data?.owner,
-    repo: remote.data?.repo,
-    details: { branch: st?.branch, ahead: st?.ahead, behind: st?.behind, changed_files: entries.length, note: 'Agent GitHub tools see only pushed code, not local changes.' },
-  })
-
-  const networkButton = () => {
-    if (!st) return null
-    if (!st.upstream)
-      return (
-        <Button leadingVisual={RepoPushIcon} loading={op.isPending} onClick={() => op.mutate(() => git.publishBranch())}>
-          Publish branch
-        </Button>
-      )
-    if (st.behind > 0)
-      return (
-        <Button leadingVisual={ArrowDownIcon} loading={op.isPending} onClick={() => op.mutate(() => git.pull())}>
-          Pull origin <span className="counter">{st.behind}</span>
-        </Button>
-      )
-    if (st.ahead > 0)
-      return (
-        <Button leadingVisual={ArrowUpIcon} loading={op.isPending} onClick={() => op.mutate(() => git.push())}>
-          Push origin <span className="counter">{st.ahead}</span>
-        </Button>
-      )
-    return (
-      <Button leadingVisual={SyncIcon} loading={op.isPending} onClick={() => op.mutate(() => git.fetch())}>
-        Fetch origin
-      </Button>
-    )
-  }
-
-  return (
-    <>
-      {!embedded && <div className="desktop-toolbar">
-        <div className="desktop-toolbar-item" style={{ minWidth: 220 }}>
-          <RepoIcon />
-          <div style={{ minWidth: 0 }}>
-            <div className="text-small fg-muted">Current repository</div>
-            <div className="text-bold text-truncate">{repo.name}</div>
-          </div>
-        </div>
-        <div className="desktop-toolbar-item">
-          <GitBranchIcon />
-          <BranchMenu current={st?.branch ?? '…'} branches={branches.data ?? []} onSwitch={(b) => op.mutate(() => git.switchTo(b))} onCreate={(b) => op.mutate(() => git.createBranch(b))} />
-        </div>
-        <div className="desktop-toolbar-item">{networkButton()}</div>
-        <div className="desktop-toolbar-item ml-auto" style={{ borderRight: 0, borderLeft: '1px solid var(--borderColor-default)' }}>
-          {remote.data && (
-            <>
-              <IconButton description="Open repository in gh-ui" as={Link} to={`/${remote.data.owner}/${remote.data.repo}`} icon={MarkGithubIcon} aria-label="Open repository in gh-ui" />
-              {st?.branch && st.upstream && (
-                <IconButton description="Create pull request for this branch" as={Link} to={`/${remote.data.owner}/${remote.data.repo}/compare/${encodeURIComponent(st.branch)}`} icon={GitPullRequestIcon} aria-label="Create pull request" />
-              )}
-            </>
-          )}
-          <IconButton description="Open in editor" icon={CodeIcon} aria-label="Open in editor" onClick={() => void native!.openInEditor(repo.id)} />
-          <IconButton description="Show in file manager" icon={FileDirectoryIcon} aria-label="Show in file manager" onClick={() => void native!.revealInFinder(repo.id)} />
-          <IconButton description="Remove from gh-ui (files stay on disk)"
-              icon={TrashIcon}
-              aria-label="Remove repository from list"
-              onClick={async () => {
-                if (await confirm({ title: `Remove ${repo.name}?`, content: 'It is removed from gh-ui only; the folder stays on disk.', confirmButtonContent: 'Remove' })) {
-                  await native!.repos.remove(repo.id)
-                  void qc.invalidateQueries({ queryKey: ['local-repos'] })
-                }
-              }}
-            />
-        </div>
-      </div>}
-      {error && <div className="error-box" style={{ margin: 8, whiteSpace: 'pre-wrap' }}>{error}</div>}
-      <div style={{ display: 'grid', gridTemplateColumns: '320px minmax(0,1fr)', flex: 1, minHeight: 0 }}>
-        <div className="desktop-sidebar">
-          <UnderlineNav aria-label="Local view">
-            <UnderlineNav.Item as="button" icon={FileDiffIcon} counter={entries.length} aria-current={tab === 'changes' ? 'page' : undefined} onSelect={() => setTab('changes')}>
-              Changes
-            </UnderlineNav.Item>
-            <UnderlineNav.Item as="button" icon={HistoryIcon} aria-current={tab === 'history' ? 'page' : undefined} onSelect={() => setTab('history')}>
-              History
-            </UnderlineNav.Item>
-          </UnderlineNav>
-          {tab === 'changes' ? (
-            <>
-              <div className="desktop-file" style={{ cursor: 'default', background: 'var(--bgColor-muted)' }}>
-                <Checkbox
-                  checked={entries.length > 0 && stagedCount === entries.length}
-                  indeterminate={stagedCount > 0 && stagedCount < entries.length}
-                  onChange={async () => {
-                    if (stagedCount === entries.length) return op.mutate(() => git.unstageAll())
-                    if (
-                      conflictCount &&
-                      !(await confirm({
-                        title: 'Mark conflicts as resolved?',
-                        content: `Staging all changes also marks ${conflictCount} conflicted file${conflictCount === 1 ? '' : 's'} as resolved. Make sure no conflict markers are left.`,
-                        confirmButtonContent: 'Stage all',
-                      }))
-                    )
-                      return
-                    op.mutate(() => git.stageAll())
-                  }}
-                  aria-label="Stage all"
-                />
-                <span className="text-small">
-                  {entries.length} changed file{entries.length === 1 ? '' : 's'}
-                </span>
-              </div>
-              <div className="desktop-file-list">
-                {status.error ? (
-                  <div className="p-3">
-                    <ErrorBox error={status.error} />
-                  </div>
-                ) : (
-                  entries.map((e) => (
-                    <div key={e.path} className={`desktop-file ${selectedPath === e.path ? 'selected' : ''}`} onClick={() => setSelectedPath(e.path)}>
-                      <span onClick={(ev) => ev.stopPropagation()}>
-                        <Checkbox
-                          checked={isStaged(e)}
-                          aria-label={isUnmerged(e) ? `Mark ${e.path} as resolved` : `Stage ${e.path}`}
-                          onChange={() => op.mutate(() => (isStaged(e) ? git.unstage(e) : git.stage(e)))}
-                        />
-                      </span>
-                      <span className="flex-1 text-truncate text-mono" title={e.path} style={{ direction: 'rtl', textAlign: 'left' }}>
-                        {e.path}
-                      </span>
-                      <ChangeBadge e={e} />
-                    </div>
-                  ))
-                )}
-              </div>
-              <div className="desktop-commit">
-                {conflictCount > 0 && (
-                  <div className="text-small fg-danger">
-                    Resolve {conflictCount} conflicted file{conflictCount === 1 ? '' : 's'} and stage {conflictCount === 1 ? 'it' : 'them'} before committing.
-                  </div>
-                )}
-                <div className="flex gap-1">
-                  <TextInput className="flex-1" placeholder="Summary (required)" value={summary} onChange={(e) => setSummary(e.target.value)} aria-label="Commit summary" />
-                  <IconButton description="Write the message with the agent" icon={SparkleFillIcon} aria-label="Generate commit message" disabled={!stagedCount || conflictCount > 0} onClick={() => generate.mutate()} />
-                </div>
-                <Textarea block rows={3} placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} aria-label="Commit description" />
-                <Button
-                  variant="primary"
-                  block
-                  disabled={!summary.trim() || !stagedCount || conflictCount > 0}
-                  loading={op.isPending || generate.isPending}
-                  onClick={() =>
-                    op.mutate(async () => {
-                      await git.commit(summary, description)
-                      setSummary('')
-                      setDescription('')
-                    })
-                  }
-                >
-                  Commit {stagedCount ? `${stagedCount} file${stagedCount === 1 ? '' : 's'} ` : ''}to {st?.branch ?? '…'}
-                </Button>
-              </div>
-            </>
-          ) : (
-            <History repoId={repo.id} />
-          )}
-        </div>
-        <div className="desktop-diff p-3">
-          {tab === 'changes' ? (
-            entry ? (
-              <>
-                <div className="flex-center gap-2 mb-2">
-                  <SegmentedControl aria-label="Diff layout" size="small" onChange={(i) => (setSplit(i === 1), writePref('diffSplit', i === 1))}>
-                    <SegmentedControl.Button selected={!split}>Unified</SegmentedControl.Button>
-                    <SegmentedControl.Button selected={split}>Split</SegmentedControl.Button>
-                  </SegmentedControl>
-                  <Button
-                    className="ml-auto"
-                    size="small"
-                    variant="danger"
-                    leadingVisual={UndoIcon}
-                    onClick={async () => {
-                      const paths = changePaths(entry)
-                      const from = paths.length > 1 ? ` (renamed from ${paths[0]})` : ''
-                      if (!(await confirm({ title: 'Discard changes?', content: `Your changes to ${entry.path}${from} will be lost.`, confirmButtonType: 'danger', confirmButtonContent: 'Discard' }))) return
-                      op.mutate(() => git.discard(entry))
-                    }}
-                  >
-                    Discard changes
-                  </Button>
-                </div>
-                {diff.isLoading ? (
-                  <Loading />
-                ) : diff.data ? (
-                  <LocalFileDiff file={diff.data} split={split} />
-                ) : (
-                  <div className="fg-muted">No textual changes.</div>
-                )}
-              </>
-            ) : (
-              <Blankslate icon={<FileDiffIcon size={32} />} title={entries.length ? 'Select a file to see its diff' : 'No local changes'}>
-                {entries.length ? '' : 'There are no uncommitted changes in this repository.'}
-              </Blankslate>
-            )
-          ) : (
-            <HistoryDetail repoId={repo.id} split={split} />
-          )}
-        </div>
-      </div>
-    </>
-  )
-}
-
-function ChangeBadge({ e }: { e: StatusEntry }) {
-  const code = isUnmerged(e) ? '!' : e.index === '?' ? 'U' : e.index !== ' ' ? e.index : e.worktree
-  const color = code === 'A' || code === 'U' ? 'fg-success' : code === 'D' || code === '!' ? 'fg-danger' : code === 'R' ? 'fg-accent' : 'fg-attention'
-  return (
-    <span className={`text-mono text-small text-bold ${color}`} title={{ M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', U: 'Untracked', C: 'Copied', '!': 'Conflicted' }[code] ?? code}>
-      {code}
-    </span>
-  )
-}
-
-function LocalFileDiff({ file, split }: { file: FileDiff; split: boolean }) {
-  return (
-    <FileDiffBox
-      file={{ path: file.newPath, previousPath: file.oldPath !== file.newPath ? file.oldPath : null, status: file.status, additions: file.additions, deletions: file.deletions, patch: file.binary ? null : file.patch }}
-      split={split}
-    />
-  )
-}
-
-function BranchMenu({ current, branches, onSwitch, onCreate }: { current: string; branches: string[]; onSwitch(b: string): void; onCreate(b: string): void }) {
-  const [creating, setCreating] = useState(false)
-  const [name, setName] = useState('')
-  return (
-    <>
-      <ActionMenu>
-        <ActionMenu.Anchor>
-          <Button variant="invisible" trailingVisual={TriangleDownIcon}>
-            <span className="text-small fg-muted" style={{ display: 'block', textAlign: 'left' }}>
-              Current branch
-            </span>
-            <span className="text-bold">{current}</span>
-          </Button>
-        </ActionMenu.Anchor>
-        <ActionMenu.Overlay width="medium">
-          <ActionList selectionVariant="single">
-            <ActionList.Item onSelect={() => setCreating(true)}>
-              <ActionList.LeadingVisual>
-                <PlusIcon />
-              </ActionList.LeadingVisual>
-              New branch…
-            </ActionList.Item>
-            <ActionList.Divider />
-            {branches.map((b) => (
-              <ActionList.Item key={b} selected={b === current} onSelect={() => b !== current && onSwitch(b)}>
-                {b}
-              </ActionList.Item>
-            ))}
-          </ActionList>
-        </ActionMenu.Overlay>
-      </ActionMenu>
-      {creating && (
-        <Dialog
-          title="Create a branch"
-          onClose={() => setCreating(false)}
-          footerButtons={[
-            { content: 'Cancel', onClick: () => setCreating(false) },
-            { content: 'Create branch', buttonType: 'primary', disabled: !name.trim(), onClick: () => (onCreate(name.trim()), setCreating(false), setName('')) },
-          ]}
-        >
-          <FormControl>
-            <FormControl.Label>Name</FormControl.Label>
-            <TextInput block autoFocus value={name} onChange={(e) => setName(e.target.value.replace(/\s/g, '-'))} />
-            <FormControl.Caption>Created from {current} and checked out.</FormControl.Caption>
-          </FormControl>
-        </Dialog>
-      )}
-    </>
-  )
-}
-
-function useLog(repoId: string) {
-  return useQuery({ queryKey: ['local-log', repoId], queryFn: () => localGit(repoId).log() })
-}
-
-function History({ repoId }: { repoId: string }) {
-  const log = useLog(repoId)
-  const [params, setParams] = useSearchParams()
-  const selected = params.get('commit')
-  return (
-    <div className="desktop-file-list">
-      {log.isLoading ? (
-        <Loading />
-      ) : (
-        log.data?.map((c) => (
-          <div key={c.sha} className={`desktop-file ${selected === c.sha ? 'selected' : ''}`} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 2, padding: '8px 12px' }} onClick={() => setParams({ commit: c.sha })}>
-            <span className="text-bold text-truncate w-100">{firstLine(c.subject)}</span>
-            <span className="text-small fg-muted">
-              {c.author} · <RelativeTime date={new Date(c.date)} /> · <span className="text-mono">{shortSha(c.sha)}</span>
-            </span>
-          </div>
-        ))
-      )}
-    </div>
-  )
-}
-
-function HistoryDetail({ repoId, split }: { repoId: string; split: boolean }) {
-  const [params] = useSearchParams()
-  const sha = params.get('commit')
-  const show = useQuery({
-    queryKey: ['local-show', repoId, sha],
-    enabled: !!sha,
-    queryFn: () => localGit(repoId).show(sha!),
-  })
-  const files = useMemo(() => show.data?.files ?? [], [show.data])
-  if (!sha) return <Blankslate icon={<HistoryIcon size={32} />} title="Select a commit" />
-  if (show.isLoading) return <Loading />
-  return (
-    <>
-      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'var(--fontStack-sansSerif)', fontSize: 14, marginTop: 0 }} className="text-bold">
-        {show.data?.message}
-      </pre>
-      {files.map((f) => (
-        <LocalFileDiff key={f.newPath} file={f} split={split} />
-      ))}
-    </>
   )
 }

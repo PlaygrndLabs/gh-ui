@@ -155,6 +155,38 @@ describe('createGitClient against a real repository', () => {
     expect((await client.status()).entries).toEqual([])
   })
 
+  it('sorts a branch’s commits by where they are', async () => {
+    await client.switchTo('main')
+    await writeFile(join(work, 'mine.txt'), 'mine\n')
+    await client.stage({ path: 'mine.txt', index: '?', worktree: '?' })
+    await client.commit('only here')
+    const branches = await client.branches()
+    const main = branches.find((b) => b.name === 'main')!
+    expect(main).toMatchObject({ ahead: 1, behind: 1 })
+    const commits = await client.branchCommits(main)
+    expect(commits.local.map((c) => c.subject)).toEqual(['only here'])
+    expect(commits.remote.map((c) => c.subject)).toEqual(['first'])
+    expect(commits.incoming.map((c) => c.subject)).toEqual(['theirs'])
+    const release = await client.branchCommits(branches.find((b) => b.name === 'release')!)
+    expect(release).toMatchObject({ local: [], incoming: [] })
+    expect(release.remote.map((c) => c.subject)).toEqual(['release', 'theirs', 'first'])
+    await client.undoCommit()
+    await client.unstageAll()
+    await client.discard({ path: 'mine.txt', index: '?', worktree: '?' })
+    await client.switchTo('spike')
+  })
+
+  it('stashes changes and restores them', async () => {
+    await writeFile(join(work, 'wip.txt'), 'wip\n')
+    await client.stash()
+    expect((await client.status()).entries).toEqual([])
+    expect(await client.stashList()).toHaveLength(1)
+    await client.stashPop()
+    expect((await client.status()).entries).toMatchObject([{ path: 'wip.txt' }])
+    await client.discard((await client.status()).entries[0])
+    expect(await client.stashList()).toEqual([])
+  })
+
   it('switches and creates branches, and says when there is no remote', async () => {
     await client.createBranch('feature/x')
     expect((await client.status()).branch).toBe('feature/x')

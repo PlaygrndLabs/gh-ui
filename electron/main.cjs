@@ -339,6 +339,13 @@ function e2eTest(win, file) {
     for (const step of steps) {
       try {
         if (step.accelerator) findMenuItem(Menu.getApplicationMenu(), step.accelerator).click()
+        // Real input, for what synthetic events can't do, such as a pointer capture.
+        if (step.inputJs) {
+          for (const event of await win.webContents.executeJavaScript(`(async () => { ${step.inputJs} })()`)) {
+            win.webContents.sendInputEvent(event)
+            await new Promise((r) => setTimeout(r, 30))
+          }
+        }
         const result = step.js ? await win.webContents.executeJavaScript(`(async () => { ${step.js} })()`) : true
         results.push({ step: step.name, ok: true, result })
       } catch (err) {

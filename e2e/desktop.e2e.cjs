@@ -99,10 +99,22 @@ exports.steps = [
       await until(() => tabs().length === 2)
       clickLink('/jqlang/jq')
       await until(() => tabTitles()[1] === 'jq')
-      await until(() => main()?.innerText.includes('README'))
+      await until(() => main()?.querySelector('.ws-branch'))
       // The window's own URL never moves: pages live in each tab's router.
       const r = { tabs: tabTitles(), active: activeTab().textContent.trim(), windowUrl: location.pathname }
       r.fail = !(r.tabs.length === 2 && r.active === 'jq' && r.windowUrl === '/')
+      return r
+    `,
+  },
+  {
+    name: 'a repository only on GitHub shows its branches and commits',
+    screenshot: 'github-only',
+    js: `${helpers}
+      await until(() => main()?.querySelector('.ws-section .ws-row'), 15000)
+      await until(() => main()?.querySelector('.file-diff'), 15000)
+      const text = main().innerText
+      const r = { branches: main().querySelectorAll('.ws-branch').length, commits: main().querySelectorAll('.ws-section .ws-row').length, diff: !!main().querySelector('.file-diff'), clone: text.includes('Clone jq'), toolbar: !!byText('.ws-seg-value', 'Clone repository') }
+      r.fail = !(r.branches > 0 && r.commits > 0 && r.diff && r.clone && r.toolbar)
       return r
     `,
   },
@@ -361,12 +373,119 @@ exports.steps = [
       const text = main()?.innerText ?? ''
       const r = {
         showsUntracked: text.includes('scratch.txt'),
-        commitButton: !!byText('button', 'Commit'),
+        commitButton: !!byText('button', 'Commit to main'),
         branch: !!byText('.ws-seg-value', 'main'),
         sync: !!byText('.ws-seg-value', 'Publish repository'),
         navigation: [...document.querySelectorAll('.ws-tabs')].filter((n) => n.getClientRects().length).map((n) => n.innerText.includes('Branches'))[0],
       }
       r.fail = !(r.showsUntracked && r.commitButton && r.branch && r.sync && r.navigation)
+      return r
+    `,
+  },
+  {
+    name: 'branches: stage, commit and undo through the page',
+    screenshot: 'branches-commit',
+    js: `${helpers}
+      const box = () => main().querySelector('input[aria-label="Stage scratch.txt"]')
+      await until(box)
+      box().click()
+      await until(() => box()?.checked)
+      const summary = main().querySelector('input[aria-label="Commit summary"]')
+      setInput(summary, 'Add scratch')
+      await sleep(200)
+      byText('button', 'Commit 1 file').click()
+      const row = await until(() => [...main().querySelectorAll('.ws-section[aria-label="Only on this Mac"] .ws-row')].find((c) => c.textContent.includes('Add scratch')))
+      const r = { committed: !!row, cleared: !box() }
+      await until(() => main().querySelector('.file-diff'))
+      r.diffShown = !!main().querySelector('.file-diff')
+      r.fail = !(r.committed && r.cleared && r.diffShown)
+      return r
+    `,
+  },
+  {
+    name: 'branches: undo puts the commit back into the changes',
+    js: `${helpers}
+      byText('button', 'Undo last commit').click()
+      const entry = await until(() => main().querySelector('input[aria-label="Stage scratch.txt"]'))
+      const summary = main().querySelector('input[aria-label="Commit summary"]').value
+      const r = { entry: !!entry, stagedAgain: entry?.checked, summary }
+      r.fail = !(r.entry && r.stagedAgain && r.summary === 'Add scratch')
+      return r
+    `,
+  },
+  {
+    name: 'branches: create a branch, and pick another without checking it out',
+    js: `${helpers}
+      const seg = [...document.querySelectorAll('button.ws-seg-branch')].find((b) => b.getClientRects().length)
+      seg.click()
+      const field = await until(() => document.querySelector('input[aria-label="Filter or name a new branch"]'), 3000)
+      setInput(field, 'side')
+      const create = await until(() => byText('[role^=menuitem]', 'Create branch side'), 3000)
+      create.click()
+      const created = await until(() => byText('.ws-seg-value', 'side'), 10000)
+      const main0 = await until(() => [...main().querySelectorAll('.ws-branch')].find((b) => b.textContent.includes('main')), 10000)
+      main0.click()
+      await until(() => byText('button', 'Check out'), 3000)
+      const r = { created: !!created, canCheckOut: !!byText('button', 'Check out'), stillOnSide: !!byText('.ws-seg-value', 'side') }
+      r.fail = !(r.created && r.canCheckOut && r.stillOnSide)
+      byText('button', 'Check out').click()
+      r.switched = !!(await until(() => byText('.ws-seg-value', 'main'), 10000))
+      r.fail = r.fail || !r.switched
+      return r
+    `,
+  },
+  {
+    name: 'panes: drag a divider with the real pointer',
+    inputJs: `${helpers}
+      const handle = [...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)
+      window.__width = Number(handle.getAttribute('aria-valuenow'))
+      const box = handle.getBoundingClientRect()
+      const x = Math.round(box.left + box.width / 2), y = Math.round(box.top + 40)
+      return [
+        { type: 'mouseMove', x, y },
+        { type: 'mouseDown', x, y, button: 'left', clickCount: 1 },
+        { type: 'mouseMove', x: x + 30, y, button: 'left' },
+        { type: 'mouseMove', x: x + 60, y, button: 'left' },
+        { type: 'mouseUp', x: x + 60, y, button: 'left', clickCount: 1 },
+      ]
+    `,
+    js: `${helpers}
+      const handle = [...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)
+      await until(() => Number(handle.getAttribute('aria-valuenow')) === window.__width + 60, 3000)
+      const r = { before: window.__width, after: Number(handle.getAttribute('aria-valuenow')) }
+      r.fail = r.after !== r.before + 60
+      return r
+    `,
+  },
+  {
+    name: 'panes: arrow keys, collapse, restore, and remembering',
+    js: `${helpers}
+      const handle = () => [...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)
+      const before = Number(handle().getAttribute('aria-valuenow'))
+      handle().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+      await sleep(100)
+      const after = Number(handle().getAttribute('aria-valuenow'))
+      const collapse = document.querySelector('[aria-label="Collapse Branches"]')
+      collapse.click()
+      const strip = await until(() => document.querySelector('[aria-label="Show Branches"]'), 2000)
+      const saved = JSON.parse(localStorage.getItem('gh-ui:pane:branches'))
+      strip?.click()
+      await until(() => !document.querySelector('[aria-label="Show Branches"]'), 2000)
+      const r = { before, after, strip: !!strip, saved }
+      r.fail = !(after === before + 20 && r.strip && saved.collapsed === 'first')
+      return r
+    `,
+  },
+  {
+    name: 'a folder without GitHub asks to publish for pull requests',
+    js: `${helpers}
+      const tab = [...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Pull requests'))
+      tab.click()
+      const shown = await until(() => main()?.innerText.includes('to use pull requests'), 5000)
+      const r = { shown: !!shown, button: !!byText('button', 'Publish repository') }
+      r.fail = !(r.shown && r.button)
+      ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Branches')).click()
+      await until(() => main()?.querySelector('.ws-branch'), 5000)
       return r
     `,
   },
