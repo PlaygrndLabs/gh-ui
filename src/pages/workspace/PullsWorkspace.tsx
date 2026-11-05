@@ -47,6 +47,8 @@ function PullList() {
   const pulls = useQuery({
     queryKey: [key, 'workspace-pulls', owner, repo, filter],
     staleTime: 30_000,
+    // This list stays on screen while pull requests open, change and merge, here or anywhere else.
+    refetchInterval: 30_000,
     queryFn: async () => {
       const res: { search: { nodes: PullNode[] } } = await octokit.graphql(
         `query($q:String!){ search(query:$q,type:ISSUE,first:50){ nodes{ ... on PullRequest{ number title state isDraft headRefName author{login} reviewDecision commits(last:1){nodes{commit{statusCheckRollup{state}}}} } } } }`,
@@ -58,6 +60,12 @@ function PullList() {
   // The checked-out branch's pull request comes first, wherever it would have sorted. This never changes the branch.
   const rows = useMemo(() => [...(pulls.data ?? [])].sort((a, b) => Number(b.headRefName === branch && b.state === 'OPEN') - Number(a.headRefName === branch && a.state === 'OPEN')), [pulls.data, branch])
   const first = rows[0]?.number
+  // Opening a pull request the list doesn't have, such as one just created, means the list is behind.
+  const { refetch } = pulls
+  const missing = !!number && !!pulls.data && !pulls.data.some((p) => String(p.number) === number)
+  useEffect(() => {
+    if (missing && filter === 'all') void refetch()
+  }, [missing, filter, number, refetch])
   useEffect(() => {
     if (first && pathname.replace(/\/$/, '') === `${base}/pulls`) navigate(`${base}/pull/${first}`, { replace: true })
   }, [first, pathname, base, navigate])
