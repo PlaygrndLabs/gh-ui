@@ -368,7 +368,6 @@ export function WorkspaceHeader() {
   const [cloning, setCloning] = useState(false)
   // A folder's tab goes by the folder on all of its pages, not only the one that names it.
   useTabTitle(repo?.name)
-  const cloneThis = repo?.location === 'github' && repo.github ? `${repo.github.owner}/${repo.github.repo}` : ''
   const content = useMemo(() => repo && <RepoTabs key={repo.key} repo={repo} />, [repo])
   return (
     <header className="ws-header">
@@ -381,9 +380,12 @@ export function WorkspaceHeader() {
         )}
         <div className="ws-toolbar-end">
           <Search repo={repo} />
-          <button type="button" className="ws-tool" onClick={() => setCloning(true)}>
-            <RepoCloneIcon /> Clone
-          </button>
+          {/* Inside a repository the sync button offers what applies: Clone, or Publish for a folder not on GitHub. */}
+          {!repo && (
+            <button type="button" className="ws-tool" onClick={() => setCloning(true)}>
+              <RepoCloneIcon /> Clone
+            </button>
+          )}
           <InboxMenu />
           <button type="button" className="ws-tool" aria-pressed={agent.open} onClick={agent.toggle}>
             <SparkleFillIcon /> Claude
@@ -392,8 +394,7 @@ export function WorkspaceHeader() {
         </div>
       </div>
       {content}
-      {/* Cloning the repository on screen keeps its page, which now has the folder too. */}
-      {cloning && <CloneDialog initial={cloneThis} onClose={() => setCloning(false)} onCloned={(r) => !cloneThis && navigate(`/local/${r.id}`)} />}
+      {cloning && <CloneDialog initial="" onClose={() => setCloning(false)} onCloned={(r) => navigate(`/local/${r.id}`)} />}
     </header>
   )
 }

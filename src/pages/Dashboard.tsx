@@ -95,16 +95,16 @@ export function Dashboard({ repositories }: { repositories?: ReactNode }) {
           </>
         )}
       </aside>
-      <main className="dashboard-main">
+      <main className={`dashboard-main ${activity ? '' : 'home-full'}`}>
         <div className="flex-center gap-2 mb-3">
           <h2 className="section-title flex-1" style={{ margin: 0 }}>
             Home
           </h2>
-          <Button leadingVisual={SparkleFillIcon} variant="primary" onClick={() => agent.ask('Look at the pull requests waiting on my review, my own open pull requests (CI state, unresolved review comments) and issues assigned to me. Give me a prioritized to-do list for today.')}>
+          <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask('Look at the pull requests waiting on my review, my own open pull requests (CI state, unresolved review comments) and issues assigned to me. Give me a prioritized to-do list for today.')}>
             What needs my attention?
           </Button>
         </div>
-        <div className="flex wrap" style={{ gap: 16, alignItems: 'flex-start' }}>
+        <div className="flex wrap home-columns" style={{ gap: 16 }}>
           <FocusCard title="Review requests" icon={<EyeIcon />} items={focus.data?.reviews.nodes} total={focus.data?.reviews.issueCount} loading={focus.isLoading} to="/pulls?f=3" empty="No pull requests are waiting on your review." />
           <FocusCard title="Your pull requests" icon={<GitPullRequestIcon />} items={focus.data?.mine.nodes} total={focus.data?.mine.issueCount} loading={focus.isLoading} to="/pulls" empty="You have no open pull requests." />
           {assigned && <FocusCard title="Assigned issues" icon={<IssueOpenedIcon />} items={focus.data?.assigned.nodes} total={focus.data?.assigned.issueCount} loading={focus.isLoading} to="/issues?f=1" empty="No open issues are assigned to you." />}

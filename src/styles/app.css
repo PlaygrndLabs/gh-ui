@@ -745,6 +745,7 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 /* ---------- Dashboard ---------- */
 .dashboard-sidebar { background: var(--bgColor-default); border-right: 1px solid var(--borderColor-muted); padding: 24px 16px; }
 .dashboard-main { padding: 24px 32px; background: var(--bgColor-default); }
+.home-columns { align-items: flex-start; }
 .repo-list-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; }
 .repo-list-item a { color: var(--fgColor-default); font-weight: 600; }
 .feed-card { border: 1px solid var(--borderColor-default); border-radius: 6px; margin-bottom: 16px; background: var(--bgColor-default); }

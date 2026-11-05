@@ -243,7 +243,10 @@ exports.steps = [
     js: `${helpers}
       await until(() => main()?.querySelector('.ws-home .ws-picker-row'), 10000)
       const r = { title: main()?.querySelector('.ws-home-title')?.textContent, rows: main()?.querySelectorAll('.ws-picker-row').length, top: main()?.innerText.includes('Top repositories'), home: !!main()?.querySelector('.dashboard-main'), clone: !![...main().querySelectorAll('.ws-picker-actions button')].find((b) => b.textContent.includes('Clone')) }
-      r.fail = !(r.title && r.rows > 0 && !r.top && r.home && !r.clone)
+      const box = main().querySelector('.home-columns').getBoundingClientRect()
+      r.columns = [...main().querySelectorAll('.home-columns > .feed-card')].map((c) => Math.round(c.getBoundingClientRect().height))
+      r.fill = Math.round(window.innerHeight - box.bottom)
+      r.fail = !(r.title && r.rows > 0 && !r.top && r.home && !r.clone && new Set(r.columns).size === 1 && r.fill <= 40)
       return r
     `,
   },
@@ -640,8 +643,10 @@ exports.steps = [
       const rows = await until(() => main().querySelectorAll('.ws-section[aria-label="Only on this Mac"] .ws-row').length, 3000)
       const sections = main().querySelectorAll('.ws-section').length
       const title = await until(() => activeTab().textContent.trim() === 'e2e-local - main', 3000)
-      const r = { names, opened, github: !!github, rows, sections, title: activeTab().textContent.trim() }
-      r.fail = !(names.length === 3 && github && rows > 0 && sections === 1 && title)
+      const clone = [...document.querySelectorAll('.ws-tool')].some((t) => t.getClientRects().length && t.textContent.includes('Clone'))
+      const publish = !![...main().querySelectorAll('.ws-branch-head button')].find((b) => b.textContent.includes('Publish repository'))
+      const r = { names, opened, github: !!github, rows, sections, title: activeTab().textContent.trim(), clone, publish }
+      r.fail = !(names.length === 3 && github && rows > 0 && sections === 1 && title && !clone && publish)
       return r
     `,
   },
@@ -688,10 +693,12 @@ exports.steps = [
   {
     name: 'the toolbar clones, and a folder that already holds the repository opens instead',
     screenshot: 'clone-existing',
+    accelerator: 'CmdOrCtrl+T',
     js: `${helpers}
       const repo = (await g.repos.list()).find((r) => r.name === 'e2e-local')
       await g.git(repo.id, ['remote', 'add', 'origin', 'https://github.com/acme/e2e.git'])
-      ;[...document.querySelectorAll('.ws-tool')].find((t) => t.getClientRects().length && t.textContent.includes('Clone')).click()
+      const tool = await until(() => [...document.querySelectorAll('.ws-tool')].find((t) => t.getClientRects().length && t.textContent.includes('Clone')), 5000)
+      tool.click()
       const dlg = await until(() => document.querySelector('[role=dialog]'), 5000)
       if (!dlg) return { fail: true, error: 'no clone dialog' }
       const inputs = [...dlg.querySelectorAll('input')]
@@ -725,6 +732,7 @@ exports.steps = [
   },
   {
     name: 'the file tree follows the code as it scrolls in its pane',
+    screenshot: 'files-sticky',
     js: `${helpers}
       clickLink('/PlaygrndLabs/gh-ui/pull/10/files')
       const pane = await until(() => [...document.querySelectorAll('.ws-pr-files')].find((p) => p.getClientRects().length && p.querySelector('.file-diff')), 30000)
@@ -735,8 +743,15 @@ exports.steps = [
       const target = diffs[Math.floor(diffs.length / 2)]
       pane.scrollTop += target.getBoundingClientRect().top - pane.getBoundingClientRect().top - 100
       const after = await until(() => current() !== before && current(), 5000)
-      const r = { before, after, files: diffs.length, shownDiff: target.id }
-      r.fail = !after
+      await sleep(300)
+      // Nothing shows above the sticky toolbar, and the file header sits right under it.
+      const paneTop = pane.getBoundingClientRect().top
+      const bar = pane.querySelector('.files-toolbar').getBoundingClientRect()
+      const stuck = [...pane.querySelectorAll('.file-diff-header')].map((h) => h.getBoundingClientRect()).find((h) => h.bottom > bar.bottom)
+      const gap = Math.round(bar.top - paneTop)
+      const under = stuck ? Math.round(stuck.top - bar.bottom) : null
+      const r = { before, after, files: diffs.length, shownDiff: target.id, gap, under, barHeight: Math.round(bar.height) }
+      r.fail = !after || gap !== 0
       return r
     `,
   },

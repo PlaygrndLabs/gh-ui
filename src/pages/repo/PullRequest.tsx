@@ -134,7 +134,7 @@ function PullRequestView() {
               <CheckoutMenu pr={pr} owner={owner} repo={repo} />
               <ActionMenu>
                 <ActionMenu.Anchor>
-                  <Button size="small" variant="primary" leadingVisual={SparkleFillIcon} trailingVisual={TriangleDownIcon}>
+                  <Button size="small" leadingVisual={SparkleFillIcon} trailingVisual={TriangleDownIcon}>
                     Agent
                   </Button>
                 </ActionMenu.Anchor>

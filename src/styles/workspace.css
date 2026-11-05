@@ -195,7 +195,8 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .ws-subtabs-end { display: flex; align-items: center; margin-left: auto; padding: 0 8px; }
 /* The right side leaves room for the scrollbar, so it never sits against the content. */
 .ws-pr-thread { padding: 12px 20px 12px 12px; }
-.ws-pr-files { padding: 8px 20px 8px 12px; --gd-prtabs-h: 0px; --gd-header-h: 230px; }
+/* No top padding: a sticky bar stops below a scroller's padding, and code would show through above it. */
+.ws-pr-files { padding: 0 20px 8px 12px; --gd-prtabs-h: 0px; --gd-header-h: 230px; }
 /* A pane is much narrower than the page these were laid out for. */
 .ws-pr-files .files-layout { grid-template-columns: minmax(150px, 200px) minmax(0, 1fr); }
 .ws-pr-files .files-layout.no-tree { grid-template-columns: minmax(0, 1fr); }
@@ -248,11 +249,19 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .ws-home .layout-dashboard { grid-template-columns: 300px minmax(0, 1fr); }
 /* The list stays in view and scrolls on its own while the work queue scrolls with the page. */
 .ws-home .dashboard-sidebar { position: sticky; top: 0; align-self: start; display: flex; flex-direction: column; height: calc(100vh - 95px); padding: 0; }
+/* Each column fills the window and scrolls on its own, under a header that stays put. */
+.ws-home .home-full { display: flex; flex-direction: column; height: calc(100vh - 95px); padding-bottom: 16px; }
+.ws-home .home-full .home-columns { flex: 1; flex-wrap: nowrap; align-items: stretch; min-height: 0; }
+.ws-home .home-full .feed-card { margin-bottom: 0; overflow: auto; }
+.ws-home .home-full .feed-card > .Box-header { position: sticky; top: 0; z-index: 1; }
 .ws-home-title { flex: none; margin: 0; padding: 16px 12px 6px; font-size: 14px; font-weight: 600; }
 .ws-home .ws-picker { flex: 1; min-height: 0; max-height: none; }
 .ws-home .ws-picker-filter { border-bottom: 0; padding-top: 4px; }
 @container main (max-width: 1012px) {
   .ws-home .layout-dashboard { grid-template-columns: minmax(0, 1fr); }
+  .ws-home .home-full { height: auto; }
+  .ws-home .home-full .home-columns { flex-wrap: wrap; align-items: flex-start; }
+  .ws-home .home-full .feed-card { overflow: visible; }
   .ws-home .dashboard-sidebar { position: static; height: 340px; border-right: 0; border-bottom: 1px solid var(--ws-line); }
 }
 .ws-inbox { display: flex; flex-direction: column; max-height: min(560px, 75vh); font-size: var(--ws-font-size); }

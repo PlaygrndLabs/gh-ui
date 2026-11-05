@@ -290,9 +290,6 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
             {!github && (
               <>
                 <p className="ws-note">This repository isn’t on GitHub yet.</p>
-                <Button size="small" onClick={() => setDialog('publish')}>
-                  Publish {repo.name}
-                </Button>
               </>
             )}
             {data?.incoming.map((c) => <CommitRow key={c.sha} commit={c} mark="↓" selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
@@ -421,6 +418,11 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
                     </span>
                   )}
                 </div>
+                {repo.location === 'local' && (
+                  <Button size="small" variant="primary" onClick={() => setDialog('publish')}>
+                    Publish repository
+                  </Button>
+                )}
               </div>
               <div className="ws-branch-body">
                 <SplitPane id="branch-timeline" firstLabel="Timeline" secondLabel="Details" defaultWidth={420} min={280} max={800} first={timeline} second={details} />
