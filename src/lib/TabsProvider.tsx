@@ -26,6 +26,7 @@ import {
   selectTabNumber,
   serializeTabs,
   setSplitRatio,
+  setTabBranch,
   setTabTitle,
   setTabUrl,
   splitTab,
@@ -70,6 +71,7 @@ interface TabsApi {
   activeRouter(): TabRouter
   routerFor(tab: Tab): TabRouter
   setTitle(id: string, title: string): void
+  setBranch(id: string, change: Pick<Tab, 'branch'> | Pick<Tab, 'pickedBranch'>): void
   pinQueries(id: string): void
   unpinQueries(id: string): void
 }
@@ -215,6 +217,7 @@ export function TabsProvider({
   const reopen = useCallback(() => setState(reopenClosedTab), [])
   const move = useCallback((id: string, toIndex: number) => setState((s) => moveTab(s, id, toIndex)), [])
   const setTitle = useCallback((id: string, title: string) => setState((s) => setTabTitle(s, id, title)), [])
+  const setBranch = useCallback((id: string, change: Pick<Tab, 'branch'> | Pick<Tab, 'pickedBranch'>) => setState((s) => setTabBranch(s, id, change)), [])
   const newTab = useCallback(() => {
     const id = newId()
     setState((s) => openNewTab(s, id))
@@ -377,8 +380,8 @@ export function TabsProvider({
 
   const active = state.tabs.find((t) => t.id === state.activeId)!
   const value = useMemo<TabsApi>(
-    () => ({ state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplit: toggleSplitView, focusOtherPane: focusOther, setSplitRatio: setRatio, close, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, pinQueries, unpinQueries }),
-    [state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplitView, focusOther, setRatio, close, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, pinQueries, unpinQueries],
+    () => ({ state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplit: toggleSplitView, focusOtherPane: focusOther, setSplitRatio: setRatio, close, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, setBranch, pinQueries, unpinQueries }),
+    [state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplitView, focusOther, setRatio, close, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, setBranch, pinQueries, unpinQueries],
   )
   return <TabsContext.Provider value={value}>{children}</TabsContext.Provider>
 }
@@ -424,6 +427,20 @@ export function useTabQueryPins(id: string) {
     unpinQueries(id)
     return () => pinQueries(id)
   }, [id, pinQueries, unpinQueries])
+}
+
+/** The branch picked in the tab this runs in, and the name its title shows. Without tabs, the pick lasts as long as the page. */
+export function useTabBranch() {
+  const tabs = useContext(TabsContext)
+  const id = useContext(CurrentTabContext)
+  const [ownPick, setOwnPick] = useState<string | null>(null)
+  const setBranch = tabs?.setBranch
+  const inTab = !!setBranch && !!id
+  const setPicked = useCallback((name: string | null) => (inTab ? setBranch(id, { pickedBranch: name }) : setOwnPick(name)), [inTab, setBranch, id])
+  const showBranch = useCallback((name: string) => void (inTab && setBranch(id, { branch: name })), [inTab, setBranch, id])
+  const tab = inTab ? tabs.state.tabs.find((t) => t.id === id) : undefined
+  const picked = inTab ? (tab?.pickedBranch ?? null) : ownPick
+  return { picked, setPicked, showBranch, shownBranch: tab?.branch ?? null }
 }
 
 /** Names the tab a page is in. Does nothing in the web build, which has no tabs. */

@@ -37,27 +37,10 @@
 .ws-divider { position: relative; flex: none; width: 1px; background: var(--ws-line); z-index: 3; }
 .ws-divider-handle { position: absolute; inset: 0 -3px; cursor: col-resize; touch-action: none; }
 .ws-divider-handle:hover, .ws-divider-handle:focus-visible { background: var(--ws-accent); outline: none; }
-.ws-divider-button {
-  position: absolute;
-  left: -9px;
-  width: 19px;
-  height: 24px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ws-muted);
-  background: var(--ws-panel);
-  border: 1px solid var(--ws-line);
-  border-radius: 5px;
-  cursor: pointer;
-}
-.ws-divider-button:hover { color: var(--ws-text); background: var(--ws-hover); }
-.ws-divider-button:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: 1px; }
-.ws-divider-button-first { top: calc(50% - 26px); }
-.ws-divider-button-second { top: calc(50% + 2px); }
 
 .ws-pane-strip {
+  cursor: col-resize;
+  touch-action: none;
   flex: none;
   width: var(--ws-strip-width);
   padding: 12px 0 0;
@@ -183,7 +166,7 @@ button.ws-row:hover, a.ws-row:hover { color: var(--ws-text); text-decoration: no
 .ws-details { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
 .ws-details-head { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 48px; padding: 8px 16px; border-bottom: 1px solid var(--ws-line); }
 .ws-details-title { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
-.ws-diff { padding: 12px; }
+.ws-diff { padding: 12px 20px 12px 12px; }
 .ws-commit-message { margin: 0 0 12px; font-family: inherit; white-space: pre-wrap; }
 .ws-empty { display: flex; flex: 1; align-items: center; justify-content: center; padding: 32px; color: var(--ws-muted); text-align: center; }
 .linkish { padding: 0; font: inherit; color: var(--fgColor-accent); background: none; border: 0; cursor: pointer; }
@@ -217,8 +200,9 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .ws-pr-chat, .ws-pr-code { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
 .ws-subtabs { flex: none; display: flex; align-items: stretch; min-height: 36px; padding: 0 6px; border-bottom: 1px solid var(--ws-line); }
 .ws-subtabs-end { display: flex; align-items: center; margin-left: auto; padding: 0 8px; }
-.ws-pr-thread { padding: 12px; }
-.ws-pr-files { padding: 8px 12px; --gd-prtabs-h: 0px; --gd-header-h: 230px; }
+/* The right side leaves room for the scrollbar, so it never sits against the content. */
+.ws-pr-thread { padding: 12px 20px 12px 12px; }
+.ws-pr-files { padding: 8px 20px 8px 12px; --gd-prtabs-h: 0px; --gd-header-h: 230px; }
 /* A pane is much narrower than the page these were laid out for. */
 .ws-pr-files .files-layout { grid-template-columns: minmax(150px, 200px) minmax(0, 1fr); }
 .ws-pr-files .files-layout.no-tree { grid-template-columns: minmax(0, 1fr); }

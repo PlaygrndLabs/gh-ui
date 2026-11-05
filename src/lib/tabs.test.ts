@@ -19,6 +19,7 @@ import {
   selectTab,
   selectTabNumber,
   serializeTabs,
+  setTabBranch,
   setTabTitle,
   setTabUrl,
   tabsToUnload,
@@ -355,6 +356,9 @@ describe('one tab per repository', () => {
     expect(tabTitle({ url: '/acme/web/pull/2', title: '#2 Fix' })).toBe('web')
     expect(tabTitle({ url: '/local/abc', title: 'notes' })).toBe('notes')
     expect(tabTitle({ url: '/settings', title: null })).toBe('Settings')
+    expect(tabTitle({ url: '/acme/web/pull/2', title: '#2 Fix', branch: 'main' })).toBe('web - main')
+    expect(tabTitle({ url: '/local/abc', title: 'notes', branch: 'dev' })).toBe('notes - dev')
+    expect(tabTitle({ url: '/settings', title: null, branch: 'main' })).toBe('Settings')
   })
 
   it('keeps a repository’s pages in its tab', () => {
@@ -513,5 +517,26 @@ describe('split view', () => {
     const restored = parseSavedTabs(JSON.parse(JSON.stringify(old)), 'fresh')
     expect(restored.split).toBeNull()
     expect(restored.splitRatio).toBe(0.5)
+  })
+})
+
+describe('a tab\'s branch', () => {
+  it('stays across the repository\'s pages and goes with the repository', () => {
+    let s = setTabBranch(initialTabs('a', '/o/r'), 'a', { branch: 'dev' })
+    s = setTabBranch(s, 'a', { pickedBranch: 'dev' })
+    s = setTabUrl(s, 'a', '/o/r/pulls')
+    expect(s.tabs[0]).toMatchObject({ branch: 'dev', pickedBranch: 'dev' })
+    s = setTabUrl(s, 'a', '/x/y')
+    expect(s.tabs[0]).toMatchObject({ branch: null, pickedBranch: null })
+  })
+
+  it('keeps the state when nothing changed', () => {
+    const s = setTabBranch(initialTabs('a', '/o/r'), 'a', { branch: 'dev' })
+    expect(setTabBranch(s, 'a', { branch: 'dev' })).toBe(s)
+  })
+
+  it('is saved and restored', () => {
+    const s = setTabBranch(initialTabs('a', '/o/r'), 'a', { branch: 'dev' })
+    expect(parseSavedTabs(JSON.parse(JSON.stringify(serializeTabs(s))), 'fresh').tabs[0].branch).toBe('dev')
   })
 })

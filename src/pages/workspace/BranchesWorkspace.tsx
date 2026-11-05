@@ -13,11 +13,12 @@ import { openExternal } from '../../lib/platform'
 import { firstLine, shortSha } from '../../lib/format'
 import { readPref } from '../../lib/storage'
 import { useLocalRepo } from '../../lib/useLocalRepo'
-import type { WorkspaceRepo } from '../../lib/workspace'
+import { useRemoteBranches, type WorkspaceRepo } from '../../lib/workspace'
 import { CopyButton, Loading } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
 import { SplitPane } from '../../components/SplitPane'
 import { PublishDialog } from '../../components/WorkspaceHeader'
+import { useTabBranch } from '../../lib/TabsProvider'
 import { CloneDialog } from '../Local'
 
 const PLACE: Record<BranchState['location'], string> = { both: 'On this Mac and GitHub', local: 'Only on this Mac', remote: 'Only on GitHub' }
@@ -67,7 +68,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const local = useLocalRepo(repo.local)
   const confirm = useConfirm()
   const github = repo.github && repo.github.host.toLowerCase() === account.host.toLowerCase() ? repo.github : null
-  const [picked, setPicked] = useState<string | null>(null)
+  const { picked, setPicked } = useTabBranch()
   const [selection, setSelection] = useState<Selection>(null)
   const [summary, setSummary] = useState('')
   const [description, setDescription] = useState('')
@@ -75,15 +76,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const [genError, setGenError] = useState<string | null>(null)
   const split = readPref('diffSplit', false)
 
-  const remoteBranches = useQuery({
-    queryKey: [key, 'workspace-branches', github?.owner, github?.repo],
-    enabled: !repo.local && !!github,
-    queryFn: async () => {
-      const [info, list] = await Promise.all([octokit.rest.repos.get({ owner: github!.owner, repo: github!.repo }), octokit.rest.repos.listBranches({ owner: github!.owner, repo: github!.repo, per_page: 100 })])
-      const toState = (b: (typeof list.data)[number]): BranchState => ({ name: b.name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha: b.commit.sha, date: '' })
-      return list.data.map(toState).sort((a, b) => Number(b.name === info.data.default_branch) - Number(a.name === info.data.default_branch))
-    },
-  })
+  const remoteBranches = useRemoteBranches(repo)
   const branches = (repo.local ? local.branches.data : remoteBranches.data) ?? []
   const status = local.status.data
   const branch = branches.find((b) => b.name === picked) ?? branches.find((b) => b.current) ?? branches[0] ?? null
@@ -214,7 +207,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
               className={`ws-branch ${b.name === branch?.name ? 'is-selected' : ''}`}
               aria-pressed={b.name === branch?.name}
               onClick={() => {
-                setPicked(b.name)
+                setPicked(b.current ? null : b.name)
                 setSelection(null)
               }}
             >

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, TextInput } from '@primer/react'
-import { GitBranchIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
+import { GitBranchIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { useAgent } from '../lib/agent/AgentProvider'
 import { useFeatures } from '../lib/features'
 import { errorMessage, useGitHub } from '../lib/github'
@@ -10,7 +10,8 @@ import { webUrl } from '../lib/links'
 import { native, openExternal } from '../lib/platform'
 import { useRepoCounts, useRepoQuery } from '../lib/repo'
 import { useLocalRepo } from '../lib/useLocalRepo'
-import { syncAction, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
+import { useTabBranch } from '../lib/TabsProvider'
+import { syncAction, useRemoteBranches, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
 import { repoKeyFromUrl } from '../lib/tabs'
 import { CloneDialog } from '../pages/Local'
 import { AccountMenu } from './AppHeader'
@@ -60,21 +61,31 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const info = useRepoQuery(repo.github?.owner ?? '', repo.github?.repo ?? '', !repo.local && !!repo.github)
   const [filter, setFilter] = useState('')
   const [open, setOpen] = useState(false)
-  const current = local.status.data?.branch ?? info.data?.default_branch ?? '…'
+  const remote = useRemoteBranches(repo)
+  const { picked, setPicked, showBranch, shownBranch } = useTabBranch()
+  const all = (repo.local ? local.branches.data : remote.data) ?? []
+  const isPicked = (name: string | null): name is string => !!name && all.some((b) => b.name === name)
+  // A folder's menu says what's checked out. Without a folder, picking a branch is all there is to do with it.
+  const current = local.status.data?.branch ?? (!repo.local && isPicked(picked) ? picked : info.data?.default_branch) ?? '…'
+  const shown = isPicked(picked) ? picked : current === '…' ? null : current
+  useEffect(() => {
+    // Compared with the tab's, because moving to the repository's other address clears that.
+    if (shown && shown !== shownBranch) showBranch(shown)
+  }, [shown, shownBranch, showBranch])
   const name = filter.trim().replace(/\s+/g, '-')
-  const branches = (local.branches.data ?? []).filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()))
+  const branches = all.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()))
   const exists = local.branches.data?.some((b) => b.name === name)
 
   const label = (
     <>
       <GitBranchIcon />
       <span className="ws-seg-text">
-        <span className="ws-seg-key">{repo.local ? 'Current branch' : 'Default branch'}</span>
+        <span className="ws-seg-key">{repo.local ? 'Current branch' : current === info.data?.default_branch ? 'Default branch' : 'Branch'}</span>
         <span className="ws-seg-value">{current}</span>
       </span>
     </>
   )
-  if (!repo.local) return <div className="ws-seg ws-seg-branch">{label}</div>
+  if (!repo.local && !repo.github) return <div className="ws-seg ws-seg-branch">{label}</div>
   return (
     <>
       <ActionMenu open={open} onOpenChange={setOpen}>
@@ -86,29 +97,32 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
         </ActionMenu.Anchor>
         <ActionMenu.Overlay width="medium">
           <div className="ws-menu-filter">
-            <TextInput block autoFocus aria-label="Filter or name a new branch" placeholder="Filter or name a new branch" value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+            <TextInput block autoFocus aria-label={repo.local ? 'Filter or name a new branch' : 'Filter branches'} placeholder={repo.local ? 'Filter or name a new branch' : 'Filter branches'} value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
           </div>
           <ActionList selectionVariant="single" className="ws-menu-list">
             {branches.map((b) => (
               <ActionList.Item
                 key={b.name}
-                selected={b.current}
+                selected={b.name === current}
                 onSelect={() => {
-                  if (!b.current) local.switchBranch(b.name)
+                  // What's checked out is what the page should show from here on.
+                  setPicked(repo.local ? null : b.name)
+                  if (repo.local && !b.current) local.switchBranch(b.name)
                   setFilter('')
                 }}
               >
                 {b.name}
                 <ActionList.Description variant="block">
-                  {[b.location === 'remote' ? 'Only on GitHub' : b.location === 'local' ? 'Only on this Mac' : 'On this Mac and GitHub', b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : ''].filter(Boolean).join(' · ')}
+                  {!repo.local ? (b.name === info.data?.default_branch ? 'Default branch' : 'On GitHub') : [b.location === 'remote' ? 'Only on GitHub' : b.location === 'local' ? 'Only on this Mac' : 'On this Mac and GitHub', b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : ''].filter(Boolean).join(' · ')}
                 </ActionList.Description>
               </ActionList.Item>
             ))}
-            {name && !exists && (
+            {repo.local && name && !exists && (
               <>
                 {branches.length > 0 && <ActionList.Divider />}
                 <ActionList.Item
                   onSelect={() => {
+                    setPicked(null)
                     local.op.mutate(() => local.git!.createBranch(name))
                     setFilter('')
                   }}
@@ -350,6 +364,9 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
 export function WorkspaceHeader() {
   const repo = useCurrentRepo()
   const agent = useAgent()
+  const navigate = useNavigate()
+  const [cloning, setCloning] = useState(false)
+  const cloneThis = repo?.location === 'github' && repo.github ? `${repo.github.owner}/${repo.github.repo}` : ''
   const content = useMemo(() => repo && <RepoTabs key={repo.key} repo={repo} />, [repo])
   return (
     <header className="ws-header">
@@ -362,6 +379,9 @@ export function WorkspaceHeader() {
         )}
         <div className="ws-toolbar-end">
           <Search repo={repo} />
+          <button type="button" className="ws-tool" onClick={() => setCloning(true)}>
+            <RepoCloneIcon /> Clone
+          </button>
           <InboxMenu />
           <button type="button" className="ws-tool" aria-pressed={agent.open} onClick={agent.toggle}>
             <SparkleFillIcon /> Claude
@@ -370,6 +390,8 @@ export function WorkspaceHeader() {
         </div>
       </div>
       {content}
+      {/* Cloning the repository on screen keeps its page, which now has the folder too. */}
+      {cloning && <CloneDialog initial={cloneThis} onClose={() => setCloning(false)} onCloned={(r) => !cloneThis && navigate(`/local/${r.id}`)} />}
     </header>
   )
 }

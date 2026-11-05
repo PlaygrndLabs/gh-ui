@@ -8,6 +8,10 @@ export interface Tab {
   url: string
   /** What the page calls itself, or a title from the link that opened it. Null until then: see tabTitle. */
   title: string | null
+  /** The branch the tab's title names: the one picked here, or else the repository's own. */
+  branch?: string | null
+  /** A branch picked in this tab, to look at or, in a repository only on GitHub, to work with. */
+  pickedBranch?: string | null
   /** The tab it was opened from, so a run of background tabs lines up next to it in order. */
   opener?: string
 }
@@ -186,7 +190,7 @@ export function moveTab(state: TabsState, id: string, toIndex: number): TabsStat
   const tabs = [...state.tabs]
   // A moved tab is the user's choice of place, so later links no longer line up after it.
   const [tab] = tabs.splice(from, 1)
-  tabs.splice(to, 0, { id: tab.id, url: tab.url, title: tab.title })
+  tabs.splice(to, 0, { id: tab.id, url: tab.url, title: tab.title, branch: tab.branch, pickedBranch: tab.pickedBranch })
   return { ...state, tabs }
 }
 
@@ -205,7 +209,15 @@ const pathnameOf = (url: string) => url.replace(/[?#].*$/, '')
 /** A tab navigated. The title belonged to the old page, unless only the query or hash changed. */
 export function setTabUrl(state: TabsState, id: string, location: string): TabsState {
   const url = safeTabPath(location)
-  return mapTab(state, id, (tab) => (tab.url === url ? tab : { ...tab, url, title: pathnameOf(tab.url) === pathnameOf(url) ? tab.title : null }))
+  return mapTab(state, id, (tab) => {
+    if (tab.url === url) return tab
+    const next = { ...tab, url, title: pathnameOf(tab.url) === pathnameOf(url) ? tab.title : null }
+    return repoKeyFromUrl(tab.url) === repoKeyFromUrl(url) ? next : { ...next, branch: null, pickedBranch: null }
+  })
+}
+
+export function setTabBranch(state: TabsState, id: string, change: Pick<Tab, 'branch'> | Pick<Tab, 'pickedBranch'>): TabsState {
+  return mapTab(state, id, (tab) => (Object.entries(change).every(([k, v]) => (tab[k as 'branch'] ?? null) === v) ? tab : { ...tab, ...change }))
 }
 
 export function setTabTitle(state: TabsState, id: string, title: string): TabsState {
@@ -265,7 +277,7 @@ export function recordNavigation(history: TabHistory, action: 'POP' | 'PUSH' | '
 
 export function serializeTabs(state: TabsState) {
   return {
-    tabs: state.tabs.map((t) => ({ id: t.id, url: t.url, title: t.title })),
+    tabs: state.tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, ...(t.branch ? { branch: t.branch } : {}), ...(t.pickedBranch ? { pickedBranch: t.pickedBranch } : {}) })),
     activeId: state.activeId,
     closed: state.closed,
     split: state.split,
@@ -292,7 +304,7 @@ export function parseSavedTabs(saved: unknown, freshId: string): TabsState {
     const url = isRecord(t) ? savedUrl(t.url) : null
     if (!isRecord(t) || !validId(t.id) || seen.has(t.id) || !url) continue
     seen.add(t.id)
-    tabs.push({ id: t.id, url, title: validTitle(t.title) })
+    tabs.push({ id: t.id, url, title: validTitle(t.title), ...(validTitle(t.branch) ? { branch: validTitle(t.branch) } : {}), ...(validTitle(t.pickedBranch) ? { pickedBranch: validTitle(t.pickedBranch) } : {}) })
   }
   if (!tabs.length) return initialTabs(freshId)
   const closed: ClosedTab[] = []
@@ -387,11 +399,12 @@ export function iconFromPath(url: string): TabIcon {
   return !section ? 'repo' : section === 'blob' || section === 'tree' || section === 'blame' || section === 'commit' || section === 'commits' ? 'code' : 'repo'
 }
 
-/** A tab on a repository's page goes by the repository, whichever of its pages is showing. */
-export function tabTitle(tab: Pick<Tab, 'url' | 'title'>) {
+/** A tab on a repository's page goes by the repository and branch, whichever of its pages is showing. */
+export function tabTitle(tab: Pick<Tab, 'url' | 'title' | 'branch'>) {
   const [owner, repo] = pathParts(tab.url)
-  if (repoKeyFromUrl(tab.url) && owner !== 'local') return repo
-  return tab.title ?? titleFromPath(tab.url)
+  const isRepo = !!repoKeyFromUrl(tab.url)
+  const name = isRepo && owner !== 'local' ? repo : (tab.title ?? titleFromPath(tab.url))
+  return isRepo && tab.branch ? `${name} - ${tab.branch}` : name
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { clampWidth, dragWidth, keyWidth, restorePaneState } from '../lib/panes'
+import { clampWidth, dragCollapse, dragWidth, keyWidth, restorePaneState } from '../lib/panes'
 import { SplitPaneView } from './SplitPane'
 
 const bounds = { min: 100, max: 400 }
@@ -16,6 +16,15 @@ describe('pane rules', () => {
     expect(dragWidth(200, 500, 530, bounds)).toBe(230)
     expect(dragWidth(200, 500, 530, bounds, 'second')).toBe(170)
     expect(dragWidth(200, 500, 5000, bounds)).toBe(400)
+  })
+
+  it('hides a pane only when a drag goes well past a limit', () => {
+    expect(dragCollapse(200, 500, 460, bounds)).toBeNull()
+    expect(dragCollapse(200, 500, 360, bounds)).toBeNull()
+    expect(dragCollapse(200, 500, 200, bounds)).toBe('first')
+    expect(dragCollapse(200, 500, 800, bounds)).toBe('second')
+    expect(dragCollapse(200, 500, 800, bounds, 'second')).toBe('second')
+    expect(dragCollapse(200, 500, 200, bounds, 'second')).toBe('first')
   })
 
   it('resizes from the keyboard and ignores other keys', () => {
@@ -39,13 +48,12 @@ describe('SplitPaneView', () => {
       <SplitPaneView first={<p>list</p>} second={<p>detail</p>} firstLabel="List" secondLabel="Detail" min={100} max={400} defaultWidth={200} sized={sized} state={{ width: 240, collapsed }} onChange={() => {}} />,
     )
 
-  it('sizes one pane and offers the divider’s controls', () => {
+  it('sizes one pane and has no collapse buttons', () => {
     const html = render(null)
     expect(html).toContain('style="width:240px"')
     expect(html).toContain('role="separator"')
     expect(html).toContain('aria-valuenow="240"')
-    expect(html).toContain('aria-label="Collapse List"')
-    expect(html).toContain('aria-label="Collapse Detail"')
+    expect(html).not.toContain('Collapse')
     expect(html).not.toContain('Show List')
   })
 

@@ -72,7 +72,7 @@ The app is built for repositories, pull requests and Actions. Home is a work que
 
 - **Repository tabs** — one Chrome-style tab per repository, each with its own view and Claude chat. A link to another repository moves to its tab, and pages outside a repository (search, profiles, settings) get their own. **+** opens the repository list: folders on your Mac, repositories on GitHub, Add local folder, Clone, New.
 - **Toolbar** — the current branch, and one sync button that becomes Clone, Publish repository, Publish branch, Pull, Push or Fetch as the repository needs. Then Branches, Pull requests, Actions and More (Code, Issues, Releases, Discussions, Projects, Wiki, Security, Insights, Repository settings).
-- **Panes** — every list and detail can be resized by dragging or with the arrow keys, and collapsed from its divider. Double-click a divider to reset it. Layouts are remembered, and shared by all tabs.
+- **Panes** — every list and detail can be resized by dragging or with the arrow keys, and hidden by dragging its divider well past the edge (or pressing Enter on it); drag or click the strip that's left to bring it back. Double-click a divider to reset it. Layouts are remembered, and shared by all tabs.
 - **Inbox** — reviews you were asked for and your pull requests with failing checks, across all repositories.
 - **Split view** — two tabs side by side: drag a tab to an edge, use its menu, or the button at the end of the strip.
 - **Comment and description editor** — GitHub's formatting toolbar and shortcuts (Cmd-B, Cmd-I, Cmd-E, Cmd-K, Cmd-Shift-. for a quote, Cmd-Shift-7, 8 and L for lists), lists that continue on Enter, and pasting a URL over selected text to link it.

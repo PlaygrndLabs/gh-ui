@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('ghUi', {
     list: () => ipcRenderer.invoke('repos:list'),
     add: (path) => ipcRenderer.invoke('repos:add', path),
     remove: (id) => ipcRenderer.invoke('repos:remove', id),
+    cloneTarget: (parentDir, name) => ipcRenderer.invoke('repos:cloneTarget', parentDir, name),
     clone: (url, parentDir, name, auth) => ipcRenderer.invoke('repos:clone', url, parentDir, name, auth),
   },
   git: (repoId, args, auth) => ipcRenderer.invoke('git', repoId, args, auth),

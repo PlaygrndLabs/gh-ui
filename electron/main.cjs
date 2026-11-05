@@ -203,6 +203,18 @@ function registerIpc() {
   ipcMain.handle('repos:remove', async (_e, id) => {
     await writeJson('repos.json', (await listRepos()).filter((r) => r.id !== id))
   })
+  // What's already at the place a clone would go, so the dialog can say before anything runs.
+  ipcMain.handle('repos:cloneTarget', async (_e, parentDir, name) => {
+    if (typeof parentDir !== 'string' || !path.isAbsolute(parentDir) || typeof name !== 'string' || !/^[\w.-]+$/.test(name) || name === '.' || name === '..') return { exists: false }
+    const dest = path.join(parentDir, name)
+    const stat = await fsp.stat(dest).catch(() => null)
+    if (!stat) return { exists: false, path: dest }
+    if (!stat.isDirectory()) return { exists: true, path: dest, isRepo: false, origin: null }
+    const top = await run('git', ['rev-parse', '--show-toplevel'], { cwd: dest, env: GIT_BASE_ENV })
+    const isRepo = top.code === 0 && top.stdout.trim() === (await fsp.realpath(dest))
+    const origin = isRepo ? await run('git', ['remote', 'get-url', 'origin'], { cwd: dest, env: GIT_BASE_ENV }) : null
+    return { exists: true, path: dest, isRepo, origin: origin?.code === 0 ? origin.stdout.trim() : null }
+  })
   ipcMain.handle('repos:clone', async (_e, url, parentDir, name, auth) => {
     if (!isSafeRemote(url)) throw new Error('Enter an https:// or SSH clone URL')
     if (typeof name !== 'string' || !/^[\w.-]+$/.test(name) || name === '.' || name === '..') throw new Error('Invalid folder name')

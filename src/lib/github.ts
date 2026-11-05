@@ -319,7 +319,8 @@ export function errorMessage(err: unknown): string {
     const data = e.response?.data
     const detail = data?.errors?.map((x) => x.message).filter(Boolean).join('; ')
     if (data?.message) return detail ? `${data.message}: ${detail}` : data.message
-    if (e.message) return e.message
+    // Electron wraps what the main process threw.
+    if (e.message) return e.message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '')
   }
   return String(err)
 }

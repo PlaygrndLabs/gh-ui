@@ -58,6 +58,7 @@ export interface NativeBridge {
     list(): Promise<LocalRepo[]>
     add(path: string): Promise<LocalRepo>
     remove(id: string): Promise<void>
+    cloneTarget(parentDir: string, name: string): Promise<{ exists: boolean; path?: string; isRepo?: boolean; origin?: string | null }>
     clone(url: string, parentDir: string, name: string, auth?: GitAuth): Promise<LocalRepo>
   }
   /** Runs an allow-listed git subcommand inside a registered local repository. */
