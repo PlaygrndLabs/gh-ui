@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Avatar, Button, RelativeTime, TextInput } from '@primer/react'
@@ -27,7 +27,8 @@ const ITEM = `__typename
   ... on PullRequest { number title state isDraft updatedAt repository{nameWithOwner} author{login} reviewDecision commits(last:1){nodes{commit{statusCheckRollup{state}}}} }
   ... on Issue { number title state updatedAt repository{nameWithOwner} author{login} }`
 
-export function Dashboard() {
+/** `repositories` replaces the list of top repositories, for a page that has a fuller one. */
+export function Dashboard({ repositories }: { repositories?: ReactNode }) {
   const activity = useFeature('activityFeed')
   const assigned = useFeature('assignedIssues')
   const actionsOn = useFeature('homeActions')
@@ -70,24 +71,28 @@ export function Dashboard() {
   return (
     <div className="layout-dashboard">
       <aside className="dashboard-sidebar">
-        <div className="flex-center mb-2">
-          <h2 className="text-bold flex-1" style={{ fontSize: 14, margin: 0 }}>
-            Top repositories
-          </h2>
-        </div>
-        <TextInput block size="small" placeholder="Find a repository…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Find a repository" className="mb-2" />
-        {repos.isLoading ? (
-          <Loading />
-        ) : (
-          shownRepos.slice(0, 30).map((r) => (
-            <div key={r.id} className="repo-list-item">
-              <Avatar src={r.owner.avatar_url} size={16} square={r.owner.type === 'Organization'} />
-              <Link to={`/${r.full_name}`} className="text-truncate">
-                {r.full_name}
-              </Link>
-              {r.private && <LockIcon size={12} className="fg-muted" />}
+        {repositories ?? (
+          <>
+            <div className="flex-center mb-2">
+              <h2 className="text-bold flex-1" style={{ fontSize: 14, margin: 0 }}>
+                Top repositories
+              </h2>
             </div>
-          ))
+            <TextInput block size="small" placeholder="Find a repository…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Find a repository" className="mb-2" />
+            {repos.isLoading ? (
+              <Loading />
+            ) : (
+              shownRepos.slice(0, 30).map((r) => (
+                <div key={r.id} className="repo-list-item">
+                  <Avatar src={r.owner.avatar_url} size={16} square={r.owner.type === 'Organization'} />
+                  <Link to={`/${r.full_name}`} className="text-truncate">
+                    {r.full_name}
+                  </Link>
+                  {r.private && <LockIcon size={12} className="fg-muted" />}
+                </div>
+              ))
+            )}
+          </>
         )}
       </aside>
       <main className="dashboard-main">

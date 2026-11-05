@@ -245,10 +245,16 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .tabbed .ws-tab-add:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-hover); }
 
 /* ---------- A new tab, and the inbox ---------- */
-.ws-start { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 32px 16px 8px; }
-.ws-start-title { margin: 0; font-size: 22px; font-weight: 600; }
-.ws-start-panel { width: min(560px, 100%); background: var(--ws-bg); border: 1px solid var(--ws-line); border-radius: 10px; overflow: hidden; }
-.ws-start-panel .ws-picker { max-height: 320px; }
+.ws-home .layout-dashboard { grid-template-columns: 300px minmax(0, 1fr); }
+/* The list stays in view and scrolls on its own while the work queue scrolls with the page. */
+.ws-home .dashboard-sidebar { position: sticky; top: 0; align-self: start; display: flex; flex-direction: column; height: calc(100vh - 95px); padding: 0; }
+.ws-home-title { flex: none; margin: 0; padding: 16px 12px 6px; font-size: 14px; font-weight: 600; }
+.ws-home .ws-picker { flex: 1; min-height: 0; max-height: none; }
+.ws-home .ws-picker-filter { border-bottom: 0; padding-top: 4px; }
+@container main (max-width: 1012px) {
+  .ws-home .layout-dashboard { grid-template-columns: minmax(0, 1fr); }
+  .ws-home .dashboard-sidebar { position: static; height: 340px; border-right: 0; border-bottom: 1px solid var(--ws-line); }
+}
 .ws-inbox { display: flex; flex-direction: column; max-height: min(560px, 75vh); font-size: var(--ws-font-size); }
 
 /* Split view: a pane is narrower than the window, so the toolbar gives way. */

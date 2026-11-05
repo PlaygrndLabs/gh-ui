@@ -8,19 +8,20 @@ import { Dashboard } from '../Dashboard'
 import { BranchesWorkspace } from '../workspace/BranchesWorkspace'
 import { CodePage } from './Code'
 
-/** A new tab in the desktop app: where to go next, above Home's work queue. */
+/** A new tab in the desktop app: every repository to open, beside Home's work queue. */
 export function HomePage() {
   if (!isNative) return <Dashboard />
   return (
-    <>
-      <div className="ws-start">
-        <h1 className="ws-start-title">Open a repository</h1>
-        <div className="ws-start-panel">
-          <RepoPickerPanel onDone={() => {}} />
-        </div>
-      </div>
-      <Dashboard />
-    </>
+    <div className="ws-home">
+      <Dashboard
+        repositories={
+          <>
+            <h2 className="ws-home-title">Repositories</h2>
+            <RepoPickerPanel onDone={() => {}} />
+          </>
+        }
+      />
+    </div>
   )
 }
 

@@ -241,9 +241,9 @@ exports.steps = [
     name: 'a new tab offers repositories to open',
     screenshot: 'start-page',
     js: `${helpers}
-      await until(() => main()?.querySelector('.ws-start .ws-picker-row'), 10000)
-      const r = { title: main()?.querySelector('.ws-start-title')?.textContent, rows: main()?.querySelectorAll('.ws-picker-row').length }
-      r.fail = !(r.title && r.rows > 0)
+      await until(() => main()?.querySelector('.ws-home .ws-picker-row'), 10000)
+      const r = { title: main()?.querySelector('.ws-home-title')?.textContent, rows: main()?.querySelectorAll('.ws-picker-row').length, top: main()?.innerText.includes('Top repositories'), home: !!main()?.querySelector('.dashboard-main'), clone: !![...main().querySelectorAll('.ws-picker-actions button')].find((b) => b.textContent.includes('Clone')) }
+      r.fail = !(r.title && r.rows > 0 && !r.top && r.home && !r.clone)
       return r
     `,
   },

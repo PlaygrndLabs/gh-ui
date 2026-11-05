@@ -133,9 +133,6 @@ export function RepoPickerPanel({ onDone }: { onDone(): void }) {
         <Button size="small" onClick={() => void addFolder()}>
           Add local folder
         </Button>
-        <Button size="small" onClick={() => go('/local?clone=')}>
-          Clone
-        </Button>
         <Button
           size="small"
           onClick={() => {
