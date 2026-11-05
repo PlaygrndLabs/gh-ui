@@ -1,7 +1,0 @@
-# Copy to .dev.vars for `npm run cf:dev`. Never commit .dev.vars.
-GITHUB_CLIENT_ID=
-GITHUB_CLIENT_SECRET=
-ANTHROPIC_API_KEY=
-# github.com logins, or host/login for GitHub Enterprise accounts
-ALLOWED_GITHUB_USERS=your-github-login
-GHES_HOSTS=

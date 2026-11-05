@@ -146,6 +146,13 @@ export function parseRemote(remote: string): { host: string; owner: string; repo
   return null
 }
 
+/** The HTTPS form of an SSH remote, or null when it isn't one. HTTPS is what a sign-in with a token can authenticate. */
+export function toHttpsRemote(remote: string): string | null {
+  if (!/^(?:ssh:\/\/)?git@/.test(remote)) return null
+  const parsed = parseRemote(remote)
+  return parsed ? `https://${parsed.host}/${parsed.owner}/${parsed.repo}.git` : null
+}
+
 /**
  * Rewrites each URL of a srcset ("a.png 1x, b.png 2x") with `map`, keeping descriptors; candidates `map` returns
  * null for stay as they are. Parses like the HTML spec: a URL runs to the next whitespace (trailing commas end

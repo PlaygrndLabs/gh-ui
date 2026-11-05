@@ -1,0 +1,282 @@
+/* The desktop workspace's look: plain and native-feeling, not github.com's. Every color still comes from a Primer
+   variable, so all six themes work. Page styles use these tokens and the ws- prefix, apart from app.css. */
+
+:root {
+  --ws-bg: var(--bgColor-default);
+  --ws-panel: var(--bgColor-muted);
+  --ws-hover: var(--control-transparent-bgColor-hover);
+  --ws-selected: var(--bgColor-accent-muted);
+  --ws-line: var(--borderColor-muted);
+  --ws-text: var(--fgColor-default);
+  --ws-muted: var(--fgColor-muted);
+  --ws-accent: var(--bgColor-accent-emphasis);
+  --ws-on-accent: var(--fgColor-onEmphasis);
+  --ws-ok: var(--fgColor-success);
+  --ws-bad: var(--fgColor-danger);
+  --ws-warn: var(--fgColor-attention);
+  /* The tab strip and toolbar stay graphite in every theme, as GitHub Desktop's does. */
+  --ws-chrome-bg: #1f2328;
+  --ws-chrome-bg-deep: #14171a;
+  --ws-chrome-hover: #30363d;
+  --ws-chrome-line: #363c44;
+  --ws-chrome-text: #f0f2f4;
+  --ws-chrome-muted: #b6bec7;
+  --ws-font-size: 13px;
+  --ws-row-height: 34px;
+  --ws-control-height: 32px;
+  --ws-strip-width: 28px;
+}
+
+/* ---------- Split panes ---------- */
+.ws-split { display: flex; flex: 1; min-width: 0; min-height: 0; height: 100%; }
+.ws-pane { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ws-pane[hidden] { display: none; }
+/* Shrinks instead of pushing the other pane out when the window is narrower than the saved width. */
+.ws-pane-sized { flex: 0 1 auto; min-width: 120px; }
+
+.ws-divider { position: relative; flex: none; width: 1px; background: var(--ws-line); z-index: 3; }
+.ws-divider-handle { position: absolute; inset: 0 -3px; cursor: col-resize; touch-action: none; }
+.ws-divider-handle:hover, .ws-divider-handle:focus-visible { background: var(--ws-accent); outline: none; }
+.ws-divider-button {
+  position: absolute;
+  left: -9px;
+  width: 19px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ws-muted);
+  background: var(--ws-panel);
+  border: 1px solid var(--ws-line);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.ws-divider-button:hover { color: var(--ws-text); background: var(--ws-hover); }
+.ws-divider-button:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: 1px; }
+.ws-divider-button-first { top: calc(50% - 26px); }
+.ws-divider-button-second { top: calc(50% + 2px); }
+
+.ws-pane-strip {
+  flex: none;
+  width: var(--ws-strip-width);
+  padding: 12px 0 0;
+  display: flex;
+  justify-content: center;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ws-muted);
+  background: var(--ws-panel);
+  border: 0;
+  border-inline: 1px solid var(--ws-line);
+  cursor: pointer;
+}
+.ws-pane-strip:hover { color: var(--ws-text); background: var(--ws-hover); }
+.ws-pane-strip:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+.ws-pane-strip-label { writing-mode: vertical-rl; white-space: nowrap; }
+
+/* Too narrow to sit side by side, so the panes stack and neither can be resized or hidden. */
+@media (max-width: 860px) {
+  .ws-split { flex-direction: column; height: auto; }
+  .ws-pane, .ws-pane[hidden] { display: flex; flex: none; width: 100%; }
+  .ws-pane-sized { width: 100% !important; max-height: 420px; }
+  .ws-divider, .ws-pane-strip { display: none; }
+}
+
+/* ---------- Header ---------- */
+.is-native { --gd-header-h: 130px; }
+.tabbed .ws-header { grid-area: 2 / 1 / 3 / -1; }
+.ws-header { position: relative; z-index: 20; font-size: var(--ws-font-size); }
+.ws-toolbar { display: flex; align-items: stretch; height: 50px; background: var(--ws-chrome-bg); color: var(--ws-chrome-text); }
+.is-native-mac .ws-toolbar { -webkit-app-region: drag; }
+.is-native-mac .ws-toolbar button, .is-native-mac .ws-toolbar a, .is-native-mac .ws-toolbar input, .is-native-mac .ws-toolbar [role='button'] { -webkit-app-region: no-drag; }
+.ws-seg { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 0 14px; color: inherit; font: inherit; text-align: left; background: none; border: 0; border-right: 1px solid var(--ws-chrome-line); }
+button.ws-seg { cursor: pointer; }
+button.ws-seg:hover:not(:disabled), button.ws-seg[aria-expanded='true'] { background: var(--ws-chrome-hover); }
+button.ws-seg:focus-visible { outline: 2px solid var(--ws-chrome-text); outline-offset: -2px; }
+button.ws-seg:disabled { cursor: default; opacity: 0.75; }
+.ws-seg-branch { width: 270px; }
+.ws-seg-sync { width: 240px; }
+.ws-seg-text { display: flex; flex: 1; flex-direction: column; min-width: 0; line-height: 1.25; }
+.ws-seg-key { font-size: 11px; color: var(--ws-chrome-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-seg-value { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ws-seg-count { flex: none; padding: 1px 7px; font-size: 12px; font-weight: 600; color: #fff; background: #0b63ce; border-radius: 9px; }
+.ws-toolbar-end { display: flex; align-items: center; gap: 4px; margin-left: auto; padding: 0 10px; }
+.ws-search { width: 220px; }
+a.ws-tool, .ws-tool { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; font: inherit; color: inherit; background: none; border: 0; border-radius: 6px; cursor: pointer; }
+.ws-tool:hover, .ws-tool[aria-pressed='true'] { color: inherit; text-decoration: none; background: var(--ws-chrome-hover); }
+.ws-tool:focus-visible { outline: 2px solid var(--ws-chrome-text); outline-offset: 1px; }
+.ws-error { position: absolute; top: 100%; left: 8px; right: 8px; z-index: 30; }
+
+.ws-tabs { display: flex; align-items: stretch; min-height: 37px; padding: 0 6px; overflow: auto hidden; background: var(--ws-panel); border-bottom: 1px solid var(--ws-line); }
+a.ws-tab, .ws-tab { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; margin-bottom: -1px; font: inherit; font-weight: 500; color: var(--ws-muted); white-space: nowrap; background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer; }
+.ws-tab:hover { color: var(--ws-text); text-decoration: none; }
+.ws-tab:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+.ws-tab[aria-current='page'] { font-weight: 600; color: var(--ws-text); border-bottom-color: var(--ws-accent); }
+.ws-tabs-end { display: flex; margin-left: auto; }
+.ws-pill { padding: 0 6px; font-size: 11px; font-weight: 600; line-height: 17px; color: var(--ws-text); background: var(--ws-hover); border-radius: 9px; }
+.ws-mark { font-size: 12px; font-weight: 700; }
+.ws-ok { color: var(--ws-ok); }
+.ws-bad { color: var(--ws-bad); }
+.ws-run { color: var(--ws-warn); }
+
+.ws-menu-filter { padding: 8px; border-bottom: 1px solid var(--ws-line); }
+.ws-menu-list { max-height: 380px; overflow: auto; }
+
+/* ---------- Repository picker ---------- */
+.ws-tab-add { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0; color: var(--fgColor-muted); background: none; border: 0; border-radius: 6px; cursor: pointer; }
+.ws-tab-add:hover { color: var(--fgColor-default); background: var(--control-transparent-bgColor-hover); }
+.ws-tab-add:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+.ws-picker { display: flex; flex-direction: column; max-height: min(560px, 75vh); font-size: var(--ws-font-size); }
+.ws-picker-filter { padding: 10px; border-bottom: 1px solid var(--ws-line); }
+.ws-picker-list { flex: 1; min-height: 60px; overflow: auto; }
+.ws-picker-heading { padding: 9px 12px 4px; font-size: 11px; font-weight: 600; color: var(--ws-muted); }
+.ws-picker-row { display: flex; align-items: center; }
+.ws-picker-row:hover { background: var(--ws-hover); }
+.ws-picker-main { display: flex; flex: 1; align-items: center; gap: 9px; min-width: 0; padding: 7px 12px; font: inherit; color: var(--ws-text); text-align: left; background: none; border: 0; cursor: pointer; }
+.ws-picker-main:disabled { cursor: default; opacity: 0.6; }
+.ws-picker-main:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+.ws-picker-text { display: flex; flex-direction: column; min-width: 0; }
+.ws-picker-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-picker-sub { font-size: 12px; color: var(--ws-muted); }
+.ws-picker-remove { width: 24px; height: 24px; margin-right: 8px; padding: 0; color: var(--ws-muted); background: none; border: 0; border-radius: 4px; cursor: pointer; }
+.ws-picker-remove:hover { color: var(--ws-text); background: var(--ws-hover); }
+.ws-picker-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; border-top: 1px solid var(--ws-line); }
+
+/* ---------- Pages inside the workspace ---------- */
+.ws-page { display: flex; flex-direction: column; height: 100%; min-height: 0; font-size: var(--ws-font-size); }
+.ws-page-error { flex: none; margin: 8px; }
+.ws-page .ws-split { flex: 1; height: auto; }
+.ws-scroll { flex: 1; min-height: 0; overflow: auto; }
+.ws-list { display: flex; flex: 1; flex-direction: column; min-height: 0; background: var(--ws-panel); }
+.ws-list-head { flex: none; display: flex; align-items: center; min-height: 38px; padding: 0 12px; color: var(--ws-muted); border-bottom: 1px solid var(--ws-line); }
+.ws-branch { display: flex; flex-direction: column; width: 100%; padding: 8px 12px; font: inherit; color: var(--ws-text); text-align: left; background: none; border: 0; border-bottom: 1px solid var(--ws-line); cursor: pointer; }
+.ws-branch:hover { background: var(--ws-hover); }
+.ws-branch.is-selected { background: var(--ws-selected); }
+.ws-branch:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+.ws-branch-name { display: flex; align-items: center; gap: 4px; font-weight: 500; overflow-wrap: anywhere; }
+.ws-branch-head { flex: none; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 16px; border-bottom: 1px solid var(--ws-line); }
+.ws-branch-title { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
+.ws-branch-body { flex: 1; display: flex; min-height: 0; }
+.ws-tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; font-size: 11px; font-weight: 600; line-height: 18px; color: var(--ws-muted); border: 1px solid var(--ws-line); border-radius: 9px; }
+.ws-tag-ok { color: var(--ws-ok); border-color: currentColor; }
+.ws-section { padding: 12px 16px; border-bottom: 1px solid var(--ws-line); }
+.ws-section:last-child { border-bottom: 0; }
+.ws-section-head { display: flex; align-items: center; gap: 8px; min-height: 28px; margin-bottom: 6px; }
+.ws-section-title { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; color: var(--ws-muted); text-transform: uppercase; }
+.ws-section-action { margin-left: auto; }
+.ws-note { margin: 0 0 6px; color: var(--ws-muted); }
+.ws-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 4px 8px; font: inherit; color: var(--ws-text); text-align: left; background: none; border: 0; border-radius: 6px; }
+button.ws-row, a.ws-row { cursor: pointer; }
+button.ws-row:hover, a.ws-row:hover { color: var(--ws-text); text-decoration: none; background: var(--ws-hover); }
+.ws-row.is-selected, button.ws-row.is-selected:hover { background: var(--ws-selected); }
+.ws-row:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+.ws-row-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ws-row-sub { flex: none; max-width: 100%; font-size: 12px; color: var(--ws-muted); }
+.ws-branch .ws-row-sub { flex: initial; }
+.ws-row-check { cursor: pointer; }
+.ws-row-link { flex: 1; min-width: 0; padding: 0; font-size: 12px; color: var(--ws-text); text-align: left; overflow-wrap: anywhere; background: none; border: 0; cursor: pointer; }
+.ws-row-link:hover { text-decoration: underline; }
+.ws-commit { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.ws-commit-line { display: flex; gap: 6px; }
+.ws-details { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.ws-details-head { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 48px; padding: 8px 16px; border-bottom: 1px solid var(--ws-line); }
+.ws-details-title { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
+.ws-diff { padding: 12px; }
+.ws-commit-message { margin: 0 0 12px; font-family: inherit; white-space: pre-wrap; }
+.ws-empty { display: flex; flex: 1; align-items: center; justify-content: center; padding: 32px; color: var(--ws-muted); text-align: center; }
+.linkish { padding: 0; font: inherit; color: var(--fgColor-accent); background: none; border: 0; cursor: pointer; }
+.linkish:hover { text-decoration: underline; }
+
+/* ---------- Lists beside a detail ---------- */
+.ws-filters { gap: 2px; padding: 4px; }
+.ws-filter { flex: 1; padding: 3px 6px; font: inherit; font-weight: 500; color: var(--ws-muted); white-space: nowrap; background: none; border: 0; border-radius: 5px; cursor: pointer; }
+.ws-filter:hover { color: var(--ws-text); }
+.ws-filter[aria-pressed='true'] { color: var(--ws-text); background: var(--ws-bg); box-shadow: 0 0 0 1px var(--ws-line); }
+.ws-filter:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; padding: 9px 12px; color: var(--ws-text); border-bottom: 1px solid var(--ws-line); }
+.ws-list-row:hover { color: var(--ws-text); text-decoration: none; background: var(--ws-hover); }
+.ws-list-row.is-selected { background: var(--ws-selected); }
+.ws-list-row:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
+.ws-list-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
+.ws-list-title { font-weight: 500; overflow-wrap: anywhere; }
+.ws-list-tag { align-self: flex-start; margin-top: 3px; }
+.ws-list-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 40px; padding: 4px 12px; font-size: 12px; border-top: 1px solid var(--ws-line); }
+
+/* ---------- Pull request: chat beside code ---------- */
+.ws-pr { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.ws-pr-head { flex: none; padding: 10px 16px 0; }
+.ws-pr-head .page-title { font-size: 18px; }
+.ws-pr-head > .mb-3 { margin-bottom: 0 !important; }
+.ws-pr-head .flex-center.wrap { padding-bottom: 8px !important; border-bottom: 0 !important; margin-top: 4px !important; }
+.ws-status-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 6px 16px; background: var(--ws-panel); border-block: 1px solid var(--ws-line); }
+.ws-status-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.ws-status-end { margin-left: auto; }
+.ws-pr-code { container: ws-pr-code / inline-size; }
+.ws-pr-chat, .ws-pr-code { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+.ws-subtabs { flex: none; display: flex; align-items: stretch; min-height: 36px; padding: 0 6px; border-bottom: 1px solid var(--ws-line); }
+.ws-subtabs-end { display: flex; align-items: center; margin-left: auto; padding: 0 8px; }
+.ws-pr-thread { padding: 12px; }
+.ws-pr-files { padding: 8px 12px; --gd-prtabs-h: 0px; --gd-header-h: 230px; }
+/* A pane is much narrower than the page these were laid out for. */
+.ws-pr-files .files-layout { grid-template-columns: minmax(150px, 200px) minmax(0, 1fr); }
+.ws-pr-files .files-layout.no-tree { grid-template-columns: minmax(0, 1fr); }
+.ws-pr-files .file-diff-header { flex-wrap: wrap; }
+.ws-pr-files .file-diff-name { flex: 1 1 140px; min-width: 120px; overflow-wrap: anywhere; word-break: normal; writing-mode: horizontal-tb; }
+@container ws-pr-code (max-width: 620px) {
+  .ws-pr-files .files-layout { grid-template-columns: minmax(0, 1fr); }
+  .ws-pr-files .files-tree { position: static; max-height: 200px; overflow: auto; margin-bottom: 8px; }
+}
+.ws-commit-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+
+/* The conversation is the same timeline as on the web, drawn as a chat: small avatars, one column, your messages on the right. */
+.ws-pr-thread .layout-sidebar { display: block; }
+.ws-pr-thread .timeline-comment-group { gap: 8px; }
+.ws-pr-thread .timeline-comment-group .avatar-col img, .ws-pr-thread .timeline-comment-group .avatar-col .avatar { width: 28px !important; height: 28px !important; }
+.ws-pr-thread .avatar-col { width: 28px; flex: none; }
+.ws-pr-thread .timeline-comment-group.is-mine { flex-direction: row-reverse; }
+.ws-pr-thread .timeline-comment-group > .timeline-comment, .ws-pr-thread .timeline-comment-group > .flex-1 { flex: 1; min-width: 0; }
+.ws-pr-thread .timeline-comment-group.is-mine > .timeline-comment { background: var(--ws-selected); }
+.ws-pr-thread .timeline-comment::before, .ws-pr-thread .timeline-comment::after { display: none; }
+.ws-pr-thread .timeline-event { margin-left: 0; font-size: 12px; }
+.ws-pr-thread .timeline-spacer { display: none; }
+.ws-pr-thread .merge-box { margin-left: 0; }
+.ws-pr-thread .merge-box .merge-icon { display: none; }
+.ws-pr-thread #pr-merge { margin-top: 12px; }
+.is-comments-only .timeline-event:not(.has-below) { display: none; }
+
+/* ---------- Tabs, the way Chrome draws them: the active one is part of the toolbar under it ---------- */
+.tabbed > .tab-strip { align-items: flex-end; gap: 0; padding-top: 8px; padding-right: 8px; color: var(--ws-chrome-muted); background: var(--ws-chrome-bg-deep); border-bottom: 0; }
+.tabbed .tab-list { align-items: flex-end; gap: 0; padding: 0 8px; }
+.tabbed .tab-item { flex: 0 1 220px; width: 220px; height: 36px; color: var(--ws-chrome-muted); border-radius: 9px 9px 0 0; }
+.tabbed .tab-item:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-bg-hover, #1a1e23); }
+.tabbed .tab-item.is-active, .tabbed .tab-item.is-active:hover { z-index: 1; color: var(--ws-chrome-text); background: var(--ws-chrome-bg); box-shadow: none; }
+.tabbed .tab-item.is-dragging { box-shadow: none; }
+.tabbed .tab-main { padding: 0 2px 0 12px; }
+.tabbed .tab-icon { color: inherit; }
+.tabbed .tab-close { color: var(--ws-chrome-muted); }
+.tabbed .tab-close:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-hover); }
+/* The thin line between two tabs that aren't active or under the mouse. */
+.tabbed .tab-item:not(.is-active):not(:hover)::after { content: ''; position: absolute; right: 0; top: 10px; bottom: 10px; width: 1px; background: var(--ws-chrome-line); }
+.tabbed .tab-item:has(+ .tab-item.is-active)::after, .tabbed .tab-item:has(+ .tab-item:hover)::after { display: none; }
+/* The active tab's corners flare out into the toolbar. */
+.tabbed .tab-item.is-active::before, .tabbed .tab-item.is-active::after { content: ''; position: absolute; bottom: 0; width: 9px; height: 9px; pointer-events: none; }
+.tabbed .tab-item.is-active::before { left: -9px; background: radial-gradient(circle at 0 0, transparent 9px, var(--ws-chrome-bg) 9.5px); }
+.tabbed .tab-item.is-active::after { right: -9px; background: radial-gradient(circle at 100% 0, transparent 9px, var(--ws-chrome-bg) 9.5px); }
+.tabbed .ws-tab-add { margin: 0 0 3px 2px; color: var(--ws-chrome-muted); }
+.tabbed .ws-tab-add:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-hover); }
+
+/* ---------- A new tab, and the inbox ---------- */
+.ws-start { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 32px 16px 8px; }
+.ws-start-title { margin: 0; font-size: 22px; font-weight: 600; }
+.ws-start-panel { width: min(560px, 100%); background: var(--ws-bg); border: 1px solid var(--ws-line); border-radius: 10px; overflow: hidden; }
+.ws-start-panel .ws-picker { max-height: 320px; }
+.ws-inbox { display: flex; flex-direction: column; max-height: min(560px, 75vh); font-size: var(--ws-font-size); }
+
+/* Split view: a pane is narrower than the window, so the toolbar gives way. */
+.in-split .ws-search { display: none; }
+.in-split .ws-seg-branch, .in-split .ws-seg-sync { flex: 1 1 0; width: auto; }
+.tabbed .tab-split { color: var(--ws-chrome-muted); }
+.tabbed .tab-split:hover, .tabbed .tab-split[aria-pressed='true'] { color: var(--ws-chrome-text); }
+.is-native-mac .ws-tab-add { -webkit-app-region: no-drag; }

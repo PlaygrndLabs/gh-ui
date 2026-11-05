@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parsePatch, parseUnifiedDiff } from './diff'
 import { splitRefPath } from './repo'
-import { appPathFromApiUrl, appPathFromUrl, mapSrcset, parseRemote, safeNextPath } from './links'
+import { appPathFromApiUrl, appPathFromUrl, mapSrcset, parseRemote, safeNextPath, toHttpsRemote } from './links'
 import { assetUploadUrl, isValidTagName, makeLatestValue, tagMenu } from './releases'
 import { parseLog, splitLogBySteps, summarizeLog } from './logs'
 import { apiBaseFor, canReadNotifications, tokenKind } from './hosts'
@@ -289,5 +289,14 @@ describe('release form helpers', () => {
     const url = 'https://uploads.github.com/repos/acme/web/releases/1/assets{?name,label}'
     expect(assetUploadUrl(url, 'app v1.zip')).toBe('https://uploads.github.com/repos/acme/web/releases/1/assets?name=app%20v1.zip')
     expect(assetUploadUrl(url, 'a.txt', 'Notes')).toBe('https://uploads.github.com/repos/acme/web/releases/1/assets?name=a.txt&label=Notes')
+  })
+})
+
+describe('toHttpsRemote', () => {
+  it('rewrites SSH remotes and leaves others alone', () => {
+    expect(toHttpsRemote('git@github.com:acme/web.git')).toBe('https://github.com/acme/web.git')
+    expect(toHttpsRemote('ssh://git@ghe.example.com/acme/web')).toBe('https://ghe.example.com/acme/web.git')
+    expect(toHttpsRemote('https://github.com/acme/web.git')).toBeNull()
+    expect(toHttpsRemote('')).toBeNull()
   })
 })

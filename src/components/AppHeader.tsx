@@ -298,7 +298,7 @@ function RepoNav({ owner, repo, section }: { owner: string; repo: string; sectio
 }
 
 /** The avatar opens a right-hand side panel, like github.com's user navigation. */
-function AccountMenu() {
+export function AccountMenu() {
   const { active } = useAuth()
   const [open, setOpen] = useState(false)
   if (!active) return null
