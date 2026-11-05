@@ -724,6 +724,23 @@ exports.steps = [
     `,
   },
   {
+    name: 'the file tree follows the code as it scrolls in its pane',
+    js: `${helpers}
+      clickLink('/PlaygrndLabs/gh-ui/pull/10/files')
+      const pane = await until(() => [...document.querySelectorAll('.ws-pr-files')].find((p) => p.getClientRects().length && p.querySelector('.file-diff')), 30000)
+      if (!pane) return { fail: true, error: 'no files pane' }
+      const current = () => pane.querySelector('[role=treeitem][aria-current=true]')?.id
+      const before = await until(current, 8000)
+      const diffs = [...pane.querySelectorAll('.file-diff')]
+      const target = diffs[Math.floor(diffs.length / 2)]
+      pane.scrollTop += target.getBoundingClientRect().top - pane.getBoundingClientRect().top - 100
+      const after = await until(() => current() !== before && current(), 5000)
+      const r = { before, after, files: diffs.length, shownDiff: target.id }
+      r.fail = !after
+      return r
+    `,
+  },
+  {
     name: 'cleanup: forget repos and account in the test profile',
     js: `${helpers}
       for (const r of await g.repos.list()) await g.repos.remove(r.id)

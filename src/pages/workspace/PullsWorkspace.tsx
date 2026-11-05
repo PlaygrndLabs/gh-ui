@@ -163,7 +163,7 @@ export function PullStatusBar({ pr }: { pr: PullRequest }) {
       </span>
       {live && (
         <span className="ws-status-end">
-          <Button size="small" onClick={toMerge}>
+          <Button size="small" variant={!pr.draft && ['clean', 'unstable', 'has_hooks'].includes(pr.mergeable_state ?? '') ? 'primary' : 'default'} onClick={toMerge}>
             {pr.draft ? 'Ready for review' : 'Merge'}
           </Button>
         </span>

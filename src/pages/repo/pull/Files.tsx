@@ -158,7 +158,8 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
   // The tree follows the page: the file being read is the one that's reached the sticky bars. Picking a file in the tree
   // keeps it marked through the scroll there, and even if it's too short to reach them, until the user next scrolls.
   useEffect(() => {
-    const main = treeBox.current?.closest('.app-main')
+    // In the desktop app's chat-beside-code layout the files scroll in their own pane, not with the page.
+    const main = treeBox.current?.closest('.ws-pr-files') ?? treeBox.current?.closest('.app-main')
     if (!main || !shownPaths) return
     const paths = shownPaths.split('\n')
     let frame = 0
