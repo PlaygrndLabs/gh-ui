@@ -10,7 +10,7 @@ import { webUrl } from '../lib/links'
 import { native, openExternal } from '../lib/platform'
 import { useRepoCounts, useRepoQuery } from '../lib/repo'
 import { useLocalRepo } from '../lib/useLocalRepo'
-import { useTabBranch } from '../lib/TabsProvider'
+import { useTabBranch, useTabTitle } from '../lib/TabsProvider'
 import { syncAction, useRemoteBranches, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
 import { repoKeyFromUrl } from '../lib/tabs'
 import { CloneDialog } from '../pages/Local'
@@ -366,6 +366,8 @@ export function WorkspaceHeader() {
   const agent = useAgent()
   const navigate = useNavigate()
   const [cloning, setCloning] = useState(false)
+  // A folder's tab goes by the folder on all of its pages, not only the one that names it.
+  useTabTitle(repo?.name)
   const cloneThis = repo?.location === 'github' && repo.github ? `${repo.github.owner}/${repo.github.repo}` : ''
   const content = useMemo(() => repo && <RepoTabs key={repo.key} repo={repo} />, [repo])
   return (

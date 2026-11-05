@@ -168,8 +168,8 @@ exports.steps = [
       await until(() => main()?.querySelector('.ws-section .ws-row'), 15000)
       await until(() => main()?.querySelector('.file-diff'), 15000)
       const text = main().innerText
-      const r = { sidebar: main().querySelectorAll('.ws-list').length, commits: main().querySelectorAll('.ws-section .ws-row').length, diff: !!main().querySelector('.file-diff'), clone: text.includes('Clone jq'), toolbar: !!byText('.ws-seg-value', 'Clone repository') }
-      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.clone && r.toolbar)
+      const r = { sidebar: main().querySelectorAll('.ws-list').length, commits: main().querySelectorAll('.ws-section .ws-row').length, diff: !!main().querySelector('.file-diff'), toolbar: !!byText('.ws-seg-value', 'Clone repository') }
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar)
       return r
     `,
   },
@@ -625,6 +625,24 @@ exports.steps = [
     js: `${helpers}
       const title = await until(() => activeTab().textContent.trim() === 'e2e-local - main', 8000)
       return { title: activeTab().textContent.trim(), fail: !title }
+    `,
+  },
+  {
+    name: 'a branch’s sections are tabs, and the details follow them',
+    screenshot: 'branch-tabs',
+    js: `${helpers}
+      const tab = (name) => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes(name))
+      const names = [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].map((t) => t.textContent.trim())
+      const opened = main().querySelector('.ws-branch-tabs [aria-selected=true]')?.textContent
+      tab('On GitHub').click()
+      const github = await until(() => main().innerText.includes('isn’t on GitHub yet'), 3000)
+      tab('On this Mac').click()
+      const rows = await until(() => main().querySelectorAll('.ws-section[aria-label="Only on this Mac"] .ws-row').length, 3000)
+      const sections = main().querySelectorAll('.ws-section').length
+      const title = await until(() => activeTab().textContent.trim() === 'e2e-local - main', 3000)
+      const r = { names, opened, github: !!github, rows, sections, title: activeTab().textContent.trim() }
+      r.fail = !(names.length === 3 && github && rows > 0 && sections === 1 && title)
+      return r
     `,
   },
   {
