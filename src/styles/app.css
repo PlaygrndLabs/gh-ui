@@ -938,11 +938,14 @@ a.run-parent-link:hover { color: var(--fgColor-accent); }
 .run-graph-head { padding: 12px; }
 .run-graph-head h2 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.5; }
 .run-graph-head h2 a { color: var(--fgColor-default); }
-.run-graph { display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 40px; padding: 8px 12px 12px; max-height: 600px; overflow: auto; background: transparent; }
+.run-graph { position: relative; display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 56px; padding: 8px 12px 12px; max-height: 600px; overflow: auto; background: transparent; }
 .run-graph.wrap { flex-wrap: wrap; gap: 16px; }
+.run-graph-lines { position: absolute; top: 0; left: 0; pointer-events: none; }
+.run-graph-lines path { fill: none; stroke: var(--borderColor-default); stroke-width: 2; }
+.run-graph-lines circle { fill: var(--bgColor-neutral-emphasis, var(--fgColor-muted)); stroke: var(--bgColor-inset); stroke-width: 1; }
 .graph-stage { display: flex; flex-direction: column; gap: 40px; padding-top: 24px; flex-shrink: 0; }
 .graph-card { position: relative; width: 260px; border: 1px solid var(--borderColor-default); border-radius: 6px; background: var(--bgColor-muted); }
-.graph-card.group { width: 292px; padding: 16px; }
+.graph-card.group { width: 292px; padding: 0 4px 4px; }
 .graph-card.has-heading { border-top-left-radius: 0; }
 .graph-card-heading { position: absolute; left: -1px; bottom: 100%; max-width: 220px; padding: 4px 16px 0; font-size: 12px; font-weight: 600; line-height: 18px; background: var(--bgColor-muted); border: 1px solid var(--borderColor-default); border-bottom: 0; border-radius: 6px 6px 0 0; }
 .run-graph a.graph-job { display: flex; align-items: center; gap: 8px; padding: 12px; border-radius: 6px; font-size: 14px; color: var(--fgColor-default); }

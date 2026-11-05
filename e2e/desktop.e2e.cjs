@@ -713,6 +713,17 @@ exports.steps = [
     `,
   },
   {
+    name: 'a run’s graph joins its jobs with lines',
+    screenshot: 'run-graph',
+    js: `${helpers}
+      clickLink('/PlaygrndLabs/gh-ui/actions/runs/42027302260')
+      const paths = await until(() => document.querySelectorAll('.run-graph-lines path').length, 20000)
+      const r = { paths, cards: document.querySelectorAll('.graph-card').length }
+      r.fail = paths !== 3
+      return r
+    `,
+  },
+  {
     name: 'cleanup: forget repos and account in the test profile',
     js: `${helpers}
       for (const r of await g.repos.list()) await g.repos.remove(r.id)
