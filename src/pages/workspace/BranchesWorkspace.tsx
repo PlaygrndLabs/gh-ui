@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
-import { CheckIcon, DotFillIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
+import { CheckIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
 import { useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { generateCommitMessage } from '../../lib/agent/oneshot'
 import type { FileDiff } from '../../lib/diff'
@@ -24,10 +24,6 @@ import { CloneDialog } from '../Local'
 const PLACE: Record<BranchState['location'], string> = { both: 'On this Mac and GitHub', local: 'Only on this Mac', remote: 'Only on GitHub' }
 
 type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | null
-
-function branchHint(b: BranchState, pull?: { number: number }) {
-  return [PLACE[b.location], b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : '', b.gone ? 'Deleted on GitHub' : '', pull ? `#${pull.number}` : ''].filter(Boolean).join(' · ')
-}
 
 function ChangeBadge({ e }: { e: StatusEntry }) {
   const code = isUnmerged(e) ? '!' : e.index === '?' ? 'U' : e.index !== ' ' ? e.index : e.worktree
@@ -68,7 +64,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const local = useLocalRepo(repo.local)
   const confirm = useConfirm()
   const github = repo.github && repo.github.host.toLowerCase() === account.host.toLowerCase() ? repo.github : null
-  const { picked, setPicked } = useTabBranch()
+  const { picked } = useTabBranch()
   const [selection, setSelection] = useState<Selection>(null)
   const [summary, setSummary] = useState('')
   const [description, setDescription] = useState('')
@@ -79,7 +75,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const remoteBranches = useRemoteBranches(repo)
   const branches = (repo.local ? local.branches.data : remoteBranches.data) ?? []
   const status = local.status.data
-  const branch = branches.find((b) => b.name === picked) ?? branches.find((b) => b.current) ?? branches[0] ?? null
+  // The top menu chooses: in a folder by checking out, without one by picking.
+  const branch = (repo.local ? undefined : branches.find((b) => b.name === picked)) ?? branches.find((b) => b.current) ?? branches[0] ?? null
   const isCurrent = !!branch?.current
 
   const commits = useQuery({
@@ -191,38 +188,6 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       setSelection(null)
     })
 
-  const branchList = (
-    <div className="ws-list">
-      <div className="ws-list-head">
-        {branches.length} branch{branches.length === 1 ? '' : 'es'}
-      </div>
-      <div className="ws-scroll">
-        {!branch && (local.branches.isLoading || remoteBranches.isLoading) ? (
-          <Loading />
-        ) : (
-          branches.map((b) => (
-            <button
-              key={b.name}
-              type="button"
-              className={`ws-branch ${b.name === branch?.name ? 'is-selected' : ''}`}
-              aria-pressed={b.name === branch?.name}
-              onClick={() => {
-                setPicked(b.current ? null : b.name)
-                setSelection(null)
-              }}
-            >
-              <span className="ws-branch-name">
-                {b.current && <DotFillIcon className="fg-success" aria-label="Current branch" />}
-                {b.name}
-              </span>
-              <span className="ws-row-sub">{branchHint(b, github ? pullFor(b.name) : undefined)}</span>
-            </button>
-          ))
-        )}
-      </div>
-    </div>
-  )
-
   const timeline = branch && (
     <div className="ws-scroll">
       <Section title="Uncommitted" count={entries.length}>
@@ -257,7 +222,6 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           </>
         )}
         {isCurrent && !entries.length && <p className="ws-note">No uncommitted changes.</p>}
-        {!isCurrent && repo.local && <p className="ws-note">Uncommitted changes are on the current branch. Check out {branch.name} to work on it.</p>}
         {!repo.local && <p className="ws-note">This repository isn’t on your Mac yet.</p>}
         {!repo.local && (
           <Button size="small" onClick={() => setDialog('clone')}>
@@ -412,16 +376,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           }
         />
       )}
-      <SplitPane
-        id="branches"
-        firstLabel="Branches"
-        secondLabel="Branch"
-        defaultWidth={280}
-        min={180}
-        max={600}
-        first={branchList}
-        second={
-          branch ? (
+      <div className="ws-pane">
+          {branch ? (
             <>
               <div className="ws-branch-head">
                 <div className="ws-branch-title">
@@ -433,11 +389,6 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
                     </span>
                   )}
                 </div>
-                {repo.local && !isCurrent && (
-                  <Button size="small" variant="primary" onClick={() => local.switchBranch(branch.name)}>
-                    Check out
-                  </Button>
-                )}
               </div>
               <div className="ws-branch-body">
                 <SplitPane id="branch-timeline" firstLabel="Timeline" secondLabel="Details" defaultWidth={420} min={280} max={800} first={timeline} second={details} />
@@ -445,9 +396,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
             </>
           ) : (
             <div className="ws-empty">{commits.isLoading ? <Loading /> : 'No branches yet. Make the first commit to start one.'}</div>
-          )
-        }
-      />
+          )}
+      </div>
       {dialog === 'clone' && github && <CloneDialog initial={`${github.owner}/${github.repo}`} onClose={() => setDialog(null)} onCloned={() => setDialog(null)} />}
       {dialog === 'publish' && <PublishDialog repo={repo} onClose={() => setDialog(null)} />}
     </div>

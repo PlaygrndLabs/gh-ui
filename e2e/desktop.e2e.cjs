@@ -102,7 +102,7 @@ exports.steps = [
       await until(() => tabs().length === 2)
       clickLink('/jqlang/jq')
       await until(() => tabTitles()[1] === 'jq')
-      await until(() => main()?.querySelector('.ws-branch'))
+      await until(() => main()?.querySelector('.ws-branch-head'))
       // The window's own URL never moves: pages live in each tab's router.
       const r = { tabs: tabTitles(), active: tabName(activeTab()), windowUrl: location.pathname }
       r.fail = !(r.tabs.length === 2 && r.active === 'jq' && r.windowUrl === '/')
@@ -164,12 +164,12 @@ exports.steps = [
     screenshot: 'github-only',
     js: `${helpers}
       clickLink('/jqlang/jq')
-      await until(() => main()?.querySelector('.ws-branch'), 15000)
+      await until(() => main()?.querySelector('.ws-branch-head'), 15000)
       await until(() => main()?.querySelector('.ws-section .ws-row'), 15000)
       await until(() => main()?.querySelector('.file-diff'), 15000)
       const text = main().innerText
-      const r = { branches: main().querySelectorAll('.ws-branch').length, commits: main().querySelectorAll('.ws-section .ws-row').length, diff: !!main().querySelector('.file-diff'), clone: text.includes('Clone jq'), toolbar: !!byText('.ws-seg-value', 'Clone repository') }
-      r.fail = !(r.branches > 0 && r.commits > 0 && r.diff && r.clone && r.toolbar)
+      const r = { sidebar: main().querySelectorAll('.ws-list').length, commits: main().querySelectorAll('.ws-section .ws-row').length, diff: !!main().querySelector('.file-diff'), clone: text.includes('Clone jq'), toolbar: !!byText('.ws-seg-value', 'Clone repository') }
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.clone && r.toolbar)
       return r
     `,
   },
@@ -182,12 +182,12 @@ exports.steps = [
       seg().click()
       const items = await until(() => { const l = [...document.querySelectorAll('[role=menuitemradio]')]; return l.length > 1 && l }, 8000)
       if (!items) return { fail: true, error: 'no branch menu', before }
-      const name = [...main().querySelectorAll('.ws-branch:not(.is-selected) .ws-branch-name')][0]?.textContent.trim()
-      const item = items.find((i) => i.textContent.trim().startsWith(name))
+      const item = items.find((i) => i.getAttribute('aria-checked') !== 'true')
+      const name = item.textContent.trim().replace(/(Default branch|On GitHub)$/, '').trim()
       if (!item) return { fail: true, error: 'branch not in menu', name, items: items.length }
       item.click()
       const moved = await until(() => activeTab().textContent.trim() === 'jq - ' + name, 5000)
-      const row = await until(() => main()?.querySelector('.ws-branch.is-selected')?.textContent.includes(name), 5000)
+      const row = await until(() => main()?.querySelector('.ws-branch-title')?.textContent.includes(name), 5000)
       const r = { before, name, title: activeTab().textContent.trim(), seg: seg().innerText, row: !!row }
       r.fail = !(moved && row && seg().innerText.includes(name))
       return r
@@ -530,7 +530,7 @@ exports.steps = [
     `,
   },
   {
-    name: 'branches: create a branch, and pick another without checking it out',
+    name: 'branches: create a branch, and switch back from the top menu',
     js: `${helpers}
       const seg = [...document.querySelectorAll('button.ws-seg-branch')].find((b) => b.getClientRects().length)
       seg.click()
@@ -539,14 +539,12 @@ exports.steps = [
       const create = await until(() => byText('[role^=menuitem]', 'Create branch side'), 3000)
       create.click()
       const created = await until(() => byText('.ws-seg-value', 'side'), 10000)
-      const main0 = await until(() => [...main().querySelectorAll('.ws-branch')].find((b) => b.textContent.includes('main')), 10000)
-      main0.click()
-      await until(() => byText('button', 'Check out'), 3000)
-      const r = { created: !!created, canCheckOut: !!byText('button', 'Check out'), stillOnSide: !!byText('.ws-seg-value', 'side') }
-      r.fail = !(r.created && r.canCheckOut && r.stillOnSide)
-      byText('button', 'Check out').click()
+      ;[...document.querySelectorAll('.ws-header .ws-seg-branch')].find((x) => x.getClientRects().length).click()
+      const main0 = await until(() => byText('[role^=menuitem]', 'main'), 5000)
+      main0?.click()
+      const r = { created: !!created, sidebar: !main()?.querySelector('.ws-branch') }
       r.switched = !!(await until(() => byText('.ws-seg-value', 'main'), 10000))
-      r.fail = r.fail || !r.switched
+      r.fail = !(r.created && r.switched)
       return r
     `,
   },
@@ -585,10 +583,10 @@ exports.steps = [
       await sleep(100)
       const after = Number(handle().getAttribute('aria-valuenow'))
       handle().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
-      const strip = await until(() => document.querySelector('[aria-label="Show Branches"]'), 2000)
-      const saved = JSON.parse(localStorage.getItem('gh-ui:pane:branches'))
+      const strip = await until(() => document.querySelector('[aria-label="Show Timeline"]'), 2000)
+      const saved = JSON.parse(localStorage.getItem('gh-ui:pane:branch-timeline'))
       strip?.click()
-      await until(() => !document.querySelector('[aria-label="Show Branches"]'), 2000)
+      await until(() => !document.querySelector('[aria-label="Show Timeline"]'), 2000)
       const r = { before, after, strip: !!strip, saved }
       r.fail = !(after === before + 20 && r.strip && saved.collapsed === 'first')
       return r
@@ -603,7 +601,7 @@ exports.steps = [
       const r = { shown: !!shown, button: !!byText('button', 'Publish repository') }
       r.fail = !(r.shown && r.button)
       ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Branches')).click()
-      await until(() => main()?.querySelector('.ws-branch'), 5000)
+      await until(() => main()?.querySelector('.ws-branch-head'), 5000)
       return r
     `,
   },
@@ -652,19 +650,19 @@ exports.steps = [
       // A window that isn't on screen can hold back the real release, so send it if it hasn't come.
       await sleep(500)
       if (!window.__log.some((l) => l.startsWith('pointerup'))) [...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)?.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 2 }))
-      const strip = await until(() => document.querySelector('[aria-label="Show Branches"]'), 4000)
+      const strip = await until(() => document.querySelector('[aria-label="Show Timeline"]'), 4000)
       return { strip: !!strip, buttons: document.querySelectorAll('.ws-divider-button').length, width: window.__width, log: window.__log, handles: [...document.querySelectorAll('.ws-divider-handle')].filter((h) => h.getClientRects().length).map((h) => h.getAttribute('aria-label') + '=' + h.getAttribute('aria-valuenow')), fail: !strip }
     `,
   },
   {
     name: 'panes: dragging out of the strip brings the pane back',
     js: `${helpers}
-      const strip = document.querySelector('[aria-label="Show Branches"]')
+      const strip = document.querySelector('[aria-label="Show Timeline"]')
       const box = strip.getBoundingClientRect()
       strip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: box.left }))
       window.dispatchEvent(new PointerEvent('pointermove', { clientX: box.left + 240 }))
       window.dispatchEvent(new PointerEvent('pointerup', { clientX: box.left + 240 }))
-      const gone = await until(() => !document.querySelector('[aria-label="Show Branches"]'), 4000)
+      const gone = await until(() => !document.querySelector('[aria-label="Show Timeline"]'), 4000)
       const width = Number([...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)?.getAttribute('aria-valuenow'))
       return { gone: !!gone, width, fail: !(gone && width >= 180) }
     `,

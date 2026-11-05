@@ -17,7 +17,7 @@
 
 - **Review.** Multi-line comments, suggestions you can commit, and pending reviews started anywhere.
 - **Agent.** Reviews code, answers or fixes CodeRabbit and Greptile comments, and re-runs Actions. Every write waits for your approval.
-- **Local and GitHub together.** One view of every branch: uncommitted files, commits only on your Mac, commits on GitHub, its pull request and its checks. Clone, stage, commit, stash, switch, pull and push.
+- **Local and GitHub together.** One view of a branch: uncommitted files, commits only on your Mac, commits on GitHub, its pull request and its checks. Clone, stage, commit, stash, switch, pull and push.
 - **One tab per repository.** Chrome-style tabs that keep each repository's view and Claude chat separate. Panes resize and collapse.
 - **Any sign-in.** PAT, GitHub CLI session, OAuth, or GitHub Enterprise. Git uses the same sign-in for HTTPS clone, pull and push, so a token is enough.
 - **Runs on your computer.** No server. Tokens are encrypted with your OS keychain, and the agent uses your own Anthropic key.

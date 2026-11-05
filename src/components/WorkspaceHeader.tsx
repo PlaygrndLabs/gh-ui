@@ -67,7 +67,7 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const isPicked = (name: string | null): name is string => !!name && all.some((b) => b.name === name)
   // A folder's menu says what's checked out. Without a folder, picking a branch is all there is to do with it.
   const current = local.status.data?.branch ?? (!repo.local && isPicked(picked) ? picked : info.data?.default_branch) ?? '…'
-  const shown = isPicked(picked) ? picked : current === '…' ? null : current
+  const shown = current === '…' ? null : current
   useEffect(() => {
     // Compared with the tab's, because moving to the repository's other address clears that.
     if (shown && shown !== shownBranch) showBranch(shown)
