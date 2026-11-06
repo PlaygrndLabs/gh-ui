@@ -276,6 +276,4 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 /* Split view: a pane is narrower than the window, so the toolbar gives way. */
 .in-split .ws-search { display: none; }
 .in-split .ws-seg-branch, .in-split .ws-seg-sync, .in-split .ws-seg-pick { flex: 1 1 0; width: auto; }
-.tabbed .tab-split { color: var(--ws-chrome-muted); }
-.tabbed .tab-split:hover, .tabbed .tab-split[aria-pressed='true'] { color: var(--ws-chrome-text); }
 .is-native-mac .ws-tab-add { -webkit-app-region: no-drag; }

@@ -231,9 +231,11 @@ exports.steps = [
         r.corners = [document.elementFromPoint(h.left + 1, h.top + 1), document.elementFromPoint(h.right - 2, h.top + 1)].every((el) => header.contains(el))
         pane.scrollTop = 0
       }
+      // Split view is a drag or a tab's menu away; the strip has no button for it.
+      r.noSplitButton = ![...document.querySelectorAll('.tab-strip-end button')].some((x) => /split/i.test(x.getAttribute('aria-label') || ''))
       r.ends = [...nav.querySelectorAll('.ws-tabs-end button')].map((b) => b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent.trim() || b.textContent.trim())
       // Every page is a tab of its own; nothing hides behind More.
-      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && r.ends.includes('Copy link to branch') && r.stickyGap === 0 && r.corners)
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && r.ends.includes('Copy link to branch') && r.stickyGap === 0 && r.corners && r.noSplitButton)
       return r
     `,
   },

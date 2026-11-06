@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent } from 'react'
 import { createPortal, flushSync } from 'react-dom'
-import { ActionList, ActionMenu, IconButton } from '@primer/react'
+import { ActionList, ActionMenu } from '@primer/react'
 import {
   CodeIcon,
-  ColumnsIcon,
   CommentDiscussionIcon,
   DeviceDesktopIcon,
   GearIcon,
@@ -108,15 +107,6 @@ export function TabStrip() {
       <RepoPicker />
       <div className="tab-strip-end">
         <UpdateNotice />
-        <IconButton
-          className="tab-split"
-          icon={ColumnsIcon}
-          aria-label={state.split ? 'Close split view' : 'Split view'}
-          aria-pressed={!!state.split}
-          size="small"
-          variant="invisible"
-          onClick={toggleSplit}
-        />
       </div>
       {/* In the body: the strip keeps one size at any zoom, which would throw this out of place. */}
       {dropSide && createPortal(<div className={`split-drop is-${dropSide}`} aria-hidden="true" />, document.body)}
