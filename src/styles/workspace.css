@@ -81,6 +81,7 @@ button.ws-seg:focus-visible { outline: 2px solid var(--ws-chrome-text); outline-
 button.ws-seg:disabled { cursor: default; opacity: 0.75; }
 .ws-seg-branch { width: 270px; }
 .ws-seg-sync { width: 240px; }
+.ws-seg-pick { flex: 0 1 380px; width: 380px; }
 .ws-seg-text { display: flex; flex: 1; flex-direction: column; min-width: 0; line-height: 1.25; }
 .ws-seg-key { font-size: 11px; color: var(--ws-chrome-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ws-seg-value { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -106,6 +107,7 @@ a.ws-tab, .ws-tab { display: inline-flex; align-items: center; gap: 6px; padding
 
 .ws-menu-filter { padding: 8px; border-bottom: 1px solid var(--ws-line); }
 .ws-menu-list { max-height: 380px; overflow: auto; }
+.ws-menu-filters { display: flex; border-bottom: 1px solid var(--ws-line); }
 
 /* ---------- Repository picker ---------- */
 .ws-tab-add { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; padding: 0; color: var(--fgColor-muted); background: none; border: 0; border-radius: 6px; cursor: pointer; }
@@ -160,6 +162,8 @@ button.ws-row:hover, a.ws-row:hover { color: var(--ws-text); text-decoration: no
 .ws-diff { padding: 12px 20px 12px 12px; }
 .ws-commit-message { margin: 0 0 12px; font-family: inherit; white-space: pre-wrap; }
 .ws-empty { display: flex; flex: 1; align-items: center; justify-content: center; padding: 32px; color: var(--ws-muted); text-align: center; }
+.ws-empty-body { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.ws-empty-actions { display: flex; gap: 8px; }
 .linkish { padding: 0; font: inherit; color: var(--fgColor-accent); background: none; border: 0; cursor: pointer; }
 .linkish:hover { text-decoration: underline; }
 
@@ -268,7 +272,7 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 
 /* Split view: a pane is narrower than the window, so the toolbar gives way. */
 .in-split .ws-search { display: none; }
-.in-split .ws-seg-branch, .in-split .ws-seg-sync { flex: 1 1 0; width: auto; }
+.in-split .ws-seg-branch, .in-split .ws-seg-sync, .in-split .ws-seg-pick { flex: 1 1 0; width: auto; }
 .tabbed .tab-split { color: var(--ws-chrome-muted); }
 .tabbed .tab-split:hover, .tabbed .tab-split[aria-pressed='true'] { color: var(--ws-chrome-text); }
 .is-native-mac .ws-tab-add { -webkit-app-region: no-drag; }

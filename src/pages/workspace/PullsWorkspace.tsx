@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Link, Outlet, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@primer/react'
@@ -8,10 +8,9 @@ import { isNative } from '../../lib/platform'
 import { useRepo } from '../../lib/repo'
 import { useSharedPref } from '../../lib/storage'
 import { buildThreads } from '../../components/Timeline'
-import { CommitStatusMark, PullStateIcon, PullStateLabel } from '../../components/Status'
+import { PullStateLabel } from '../../components/Status'
 import { ErrorBox, Loading } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
-import { SplitPane } from '../../components/SplitPane'
 import { firstLine, shortSha } from '../../lib/format'
 import { contentElementById } from '../../lib/scroll'
 import { usePullFiles, useReviewComments, useReviewThreads } from '../repo/pull/data'
@@ -19,9 +18,9 @@ import { PullStatusLine } from '../repo/pull/PullHeaderActions'
 import { PullsPage } from '../repo/Pulls'
 import { useCheckedOutBranch } from './ActionsWorkspace'
 
-type PullFilter = 'all' | 'review' | 'mine'
+export type PullFilter = 'all' | 'review' | 'mine'
 
-interface PullNode {
+export interface PullNode {
   number: number
   title: string
   state: 'OPEN' | 'CLOSED' | 'MERGED'
@@ -32,111 +31,86 @@ interface PullNode {
   commits: { nodes: Array<{ commit: { statusCheckRollup: { state: string } | null } }> }
 }
 
-const REVIEW_NOTE: Record<string, string> = { APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested', REVIEW_REQUIRED: 'Review required' }
+export const REVIEW_NOTE: Record<string, string> = { APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested', REVIEW_REQUIRED: 'Review required' }
 const QUALIFIER: Record<PullFilter, string> = { all: '', review: 'is:open review-requested:@me', mine: 'is:open author:@me' }
 
-function PullList() {
-  const { owner, repo, fullName } = useRepo()
+/** A repository's pull requests, newest activity first, with the checked-out branch's open one on top. */
+export function usePullList(owner: string, repo: string, filter: PullFilter) {
   const { octokit, key } = useGitHub()
-  const { number } = useParams()
-  const { pathname } = useLocation()
-  const navigate = useNavigate()
   const { branch } = useCheckedOutBranch(owner, repo)
-  const [filter, setFilter] = useState<PullFilter>('all')
-  const base = `/${owner}/${repo}`
   const pulls = useQuery({
     queryKey: [key, 'workspace-pulls', owner, repo, filter],
+    enabled: !!owner && !!repo,
     staleTime: 30_000,
-    // This list stays on screen while pull requests open, change and merge, here or anywhere else.
+    // The header's list stays in view while pull requests open, change and merge, here or anywhere else.
     refetchInterval: 30_000,
     queryFn: async () => {
       const res: { search: { nodes: PullNode[] } } = await octokit.graphql(
         `query($q:String!){ search(query:$q,type:ISSUE,first:50){ nodes{ ... on PullRequest{ number title state isDraft headRefName author{login} reviewDecision commits(last:1){nodes{commit{statusCheckRollup{state}}}} } } } }`,
-        { q: `repo:${fullName} is:pr ${QUALIFIER[filter]} sort:updated-desc` },
+        { q: `repo:${owner}/${repo} is:pr ${QUALIFIER[filter]} sort:updated-desc` },
       )
       return res.search.nodes
     },
   })
+  const isMine = (p: PullNode) => p.headRefName === branch && p.state === 'OPEN'
   // The checked-out branch's pull request comes first, wherever it would have sorted. This never changes the branch.
-  const rows = useMemo(() => [...(pulls.data ?? [])].sort((a, b) => Number(b.headRefName === branch && b.state === 'OPEN') - Number(a.headRefName === branch && a.state === 'OPEN')), [pulls.data, branch])
-  const first = rows[0]?.number
+  const rows = useMemo(() => [...(pulls.data ?? [])].sort((a, b) => Number(isMine(b)) - Number(isMine(a))), [pulls.data, branch]) // eslint-disable-line react-hooks/exhaustive-deps
+  return { ...pulls, rows, isMine }
+}
+
+/** The pull request picked in the header, using the window's full width. The web build keeps its full pages. */
+export function PullsLayout() {
+  const ctx = useRepo()
+  const { owner, repo } = ctx
+  const { number } = useParams()
+  const { pathname } = useLocation()
+  const navigate = useNavigate()
+  const pulls = usePullList(owner, repo, 'all')
+  const first = pulls.rows[0]?.number
+  const base = `/${owner}/${repo}`
   // Opening a pull request the list doesn't have, such as one just created, means the list is behind.
   const { refetch } = pulls
   const missing = !!number && !!pulls.data && !pulls.data.some((p) => String(p.number) === number)
   useEffect(() => {
-    if (missing && filter === 'all') void refetch()
-  }, [missing, filter, number, refetch])
+    if (isNative && missing) void refetch()
+  }, [missing, number, refetch])
   useEffect(() => {
-    if (first && pathname.replace(/\/$/, '') === `${base}/pulls`) navigate(`${base}/pull/${first}`, { replace: true })
+    if (isNative && first && pathname.replace(/\/$/, '') === `${base}/pulls`) navigate(`${base}/pull/${first}`, { replace: true })
   }, [first, pathname, base, navigate])
-
-  const filters: Array<[PullFilter, string]> = [
-    ['all', 'All'],
-    ['review', 'To review'],
-    ['mine', 'Mine'],
-  ]
-  return (
-    <div className="ws-list">
-      <div className="ws-list-head ws-filters" role="group" aria-label="Filter pull requests">
-        {filters.map(([id, label]) => (
-          <button key={id} type="button" className="ws-filter" aria-pressed={filter === id} onClick={() => setFilter(id)}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="ws-scroll">
-        {pulls.isLoading ? (
-          <Loading />
-        ) : pulls.error ? (
-          <div className="p-3">
-            <ErrorBox error={pulls.error} />
-          </div>
-        ) : rows.length ? (
-          rows.map((p) => {
-            const check = p.commits.nodes[0]?.commit.statusCheckRollup?.state.toLowerCase() as 'success' | 'failure' | 'pending' | 'error' | undefined
-            const review = p.reviewDecision ? REVIEW_NOTE[p.reviewDecision] : ''
-            return (
-              <Link key={p.number} className={`ws-list-row ${String(p.number) === number ? 'is-selected' : ''}`} to={`${base}/pull/${p.number}`} aria-current={String(p.number) === number ? 'page' : undefined}>
-                <PullStateIcon pull={{ state: p.state === 'OPEN' ? 'open' : 'closed', merged: p.state === 'MERGED', draft: p.isDraft }} />
-                <span className="ws-list-text">
-                  <span className="ws-list-title">{firstLine(p.title)}</span>
-                  <span className="ws-row-sub">
-                    #{p.number} · {p.author?.login ?? 'ghost'}
-                    {review && ` · ${review}`}
-                  </span>
-                  {p.headRefName === branch && p.state === 'OPEN' && <span className="ws-tag ws-tag-ok ws-list-tag">Current branch</span>}
-                </span>
-                {check && <CommitStatusMark state={check} />}
-              </Link>
-            )
-          })
-        ) : (
-          <p className="ws-note p-3">{filter === 'review' ? 'Nothing waiting for your review.' : filter === 'mine' ? 'You have no open pull requests here.' : 'No pull requests yet. Push a branch to open one.'}</p>
-        )}
-      </div>
-      <div className="ws-list-foot">
-        <Link to={`${base}/pulls/all`}>Search and filter all</Link>
-        <Button size="small" as={Link} to={`${base}/compare`} leadingVisual={GitPullRequestIcon}>
-          New
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-/** Pull requests on the left and the chosen one on the right. The web build keeps its full pages. */
-export function PullsLayout() {
-  const ctx = useRepo()
   if (!isNative) return <Outlet context={ctx} />
   return (
     <div className="ws-page">
-      <SplitPane id="pulls" firstLabel="Pull requests" secondLabel="Pull request" defaultWidth={280} min={180} max={600} first={<PullList />} second={<Outlet context={ctx} />} />
+      <Outlet context={ctx} />
     </div>
   )
 }
 
 export function PullsHome() {
-  return isNative ? <div className="ws-empty">Choose a pull request to see it here.</div> : <PullsPage />
+  const { owner, repo } = useRepo()
+  const pulls = usePullList(owner, repo, 'all')
+  if (!isNative) return <PullsPage />
+  const base = `/${owner}/${repo}`
+  return (
+    <div className="ws-empty">
+      {pulls.isLoading ? (
+        <Loading />
+      ) : pulls.error ? (
+        <ErrorBox error={pulls.error} />
+      ) : (
+        <div className="ws-empty-body">
+          <p>{pulls.rows.length ? 'Choose a pull request from the menu at the top.' : 'No pull requests yet. Push a branch to open one.'}</p>
+          <div className="ws-empty-actions">
+            <Button as={Link} to={`${base}/compare`} leadingVisual={GitPullRequestIcon}>
+              New pull request
+            </Button>
+            <Button as={Link} to={`${base}/pulls/all`}>
+              Search and filter all
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 /** Everything that decides whether this can merge, always in view. */

@@ -16,6 +16,7 @@ import { repoKeyFromUrl } from '../lib/tabs'
 import { CloneDialog } from '../pages/Local'
 import { AccountMenu } from './AppHeader'
 import { InboxMenu } from './InboxMenu'
+import { TabItemPicker } from './HeaderPickers'
 
 const SYNC_LABEL: Record<SyncKind, string> = {
   clone: 'Clone repository',
@@ -308,7 +309,7 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   return (
     <nav className="ws-tabs" aria-label="Repository">
       <Link className="ws-tab" to={home} aria-current={section === '' ? 'page' : undefined}>
-        Branches
+        Branch
         {changes > 0 && <span className="ws-pill">{changes}</span>}
       </Link>
       <Link className="ws-tab" to={base ? `${base}/pulls` : `${home}/pulls`} aria-current={['pulls', 'pull', 'compare'].includes(section) ? 'page' : undefined}>
@@ -364,6 +365,7 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
 export function WorkspaceHeader() {
   const repo = useCurrentRepo()
   const agent = useAgent()
+  const { account } = useGitHub()
   const navigate = useNavigate()
   const [cloning, setCloning] = useState(false)
   // A folder's tab goes by the folder on all of its pages, not only the one that names it.
@@ -376,6 +378,7 @@ export function WorkspaceHeader() {
           <>
             <BranchMenu key={`branch-${repo.key}`} repo={repo} />
             <SyncButton key={`sync-${repo.key}`} repo={repo} />
+            {repo.github && repo.github.host.toLowerCase() === account.host.toLowerCase() && <TabItemPicker owner={repo.github.owner} repo={repo.github.repo} />}
           </>
         )}
         <div className="ws-toolbar-end">

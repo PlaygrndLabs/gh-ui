@@ -110,17 +110,29 @@ exports.steps = [
     `,
   },
   {
-    name: 'pull requests: list beside chat beside code, with every state in view',
+    name: 'pull requests: picked in the top menu, with chat beside code and every state in view',
     screenshot: 'pull-request',
     js: `${helpers}
       clickLink('/jqlang/jq/pulls')
-      const row = await until(() => main()?.querySelector('.ws-list-row'), 20000)
-      if (!row) return { fail: true, error: 'no pull request list', text: main()?.innerText.slice(0, 200) }
+      const pick = () => [...document.querySelectorAll('.ws-header .ws-seg-pick')].find((s) => s.getClientRects().length)
+      const opened = await until(() => pick()?.innerText.includes('#'), 20000)
+      if (!opened) return { fail: true, error: 'no pull request opened', seg: pick()?.innerText, text: main()?.innerText.slice(0, 200) }
+      const first = pick().innerText
+      pick().click()
+      const items = await until(() => { const l = [...document.querySelectorAll('[role=menuitemradio]')]; return l.length > 1 && l }, 15000)
+      const other = items && items.find((i) => i.getAttribute('aria-checked') !== 'true')
+      other?.click()
+      const moved = await until(() => pick()?.innerText.includes('#') && pick().innerText !== first, 8000)
+      const menuClosed = await until(() => !document.querySelector('[role=menuitemradio]'), 3000)
       await until(() => main()?.querySelector('.ws-pr-thread .timeline-comment'), 20000)
       await until(() => main()?.querySelector('.ws-pr-files .file-diff'), 20000)
       const m = main()
       const r = {
-        pulls: m.querySelectorAll('.ws-list-row').length,
+        pulls: items ? items.length : 0,
+        moved: !!moved,
+        menuClosed: !!menuClosed,
+        sideList: m.querySelectorAll('.ws-list').length,
+        seg: pick()?.innerText.replace(/\\s+/g, ' '),
         chat: !!m.querySelector('.ws-pr-thread .timeline-comment'),
         merge: !!m.querySelector('#pr-merge .merge-box'),
         files: !!m.querySelector('.ws-pr-files .file-diff'),
@@ -129,7 +141,7 @@ exports.steps = [
         status: m.querySelector('.ws-status-bar')?.innerText.replace(/\\s+/g, ' '),
         copyLink: m.innerHTML.includes('Copy pull request link'),
       }
-      r.fail = !(r.pulls > 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /files viewed/.test(r.status) && r.copyLink)
+      r.fail = !(r.pulls > 1 && r.moved && r.menuClosed && r.sideList === 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /files viewed/.test(r.status) && r.copyLink)
       return r
     `,
   },
@@ -148,14 +160,15 @@ exports.steps = [
     `,
   },
   {
-    name: 'actions: runs beside the chosen run',
+    name: 'actions: the top menu picks a run, shown at full width',
     screenshot: 'actions',
     js: `${helpers}
       ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Actions')).click()
-      const row = await until(() => main()?.querySelector('.ws-list-row.is-selected'), 20000)
+      const pick = () => [...document.querySelectorAll('.ws-header .ws-seg-pick')].find((s) => s.getClientRects().length)
+      const row = await until(() => pick() && !pick().innerText.includes('Choose a run') && pick().innerText.includes('Run'), 20000)
       await until(() => main()?.querySelector('.run-title'), 20000)
-      const r = { selected: !!row, title: main()?.querySelector('.run-title')?.innerText.slice(0, 80), copy: !!main()?.innerHTML.includes('Copy link to this run') }
-      r.fail = !(r.selected && r.title && r.copy)
+      const r = { selected: !!row, seg: pick()?.innerText.replace(/\\s+/g, ' '), sideList: main()?.querySelectorAll('.ws-list').length, title: main()?.querySelector('.run-title')?.innerText.slice(0, 80), copy: !!main()?.innerHTML.includes('Copy link to this run') }
+      r.fail = !(r.selected && r.sideList === 0 && r.title && r.copy)
       return r
     `,
   },
@@ -500,7 +513,7 @@ exports.steps = [
         commitButton: !!byText('button', 'Commit to main'),
         branch: !!byText('.ws-seg-value', 'main'),
         sync: !!byText('.ws-seg-value', 'Publish repository'),
-        navigation: [...document.querySelectorAll('.ws-tabs')].filter((n) => n.getClientRects().length).map((n) => n.innerText.includes('Branches'))[0],
+        navigation: [...document.querySelectorAll('.ws-tabs')].filter((n) => n.getClientRects().length).map((n) => /^Branch\\b/.test(n.innerText))[0],
       }
       r.fail = !(r.showsUntracked && r.commitButton && r.branch && r.sync && r.navigation)
       return r
@@ -608,7 +621,7 @@ exports.steps = [
       const shown = await until(() => main()?.innerText.includes('to use pull requests'), 5000)
       const r = { shown: !!shown, button: !!byText('button', 'Publish repository') }
       r.fail = !(r.shown && r.button)
-      ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Branches')).click()
+      ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => /^Branch(\\d*)$/.test(a.textContent.trim())).click()
       await until(() => main()?.querySelector('.ws-branch-head'), 5000)
       return r
     `,
@@ -743,11 +756,11 @@ exports.steps = [
       const pane = await until(() => [...document.querySelectorAll('.ws-pr-files')].find((p) => p.getClientRects().length && p.querySelector('.file-diff')), 30000)
       if (!pane) return { fail: true, error: 'no files pane' }
       const current = () => pane.querySelector('[role=treeitem][aria-current=true]')?.id
-      const before = await until(current, 8000)
+      const before = await until(current, 20000)
       const diffs = [...pane.querySelectorAll('.file-diff')]
       const target = diffs[Math.floor(diffs.length / 2)]
       pane.scrollTop += target.getBoundingClientRect().top - pane.getBoundingClientRect().top - 100
-      const after = await until(() => current() !== before && current(), 5000)
+      const after = await until(() => current() !== before && current(), 10000)
       await sleep(300)
       // Nothing shows above the sticky toolbar, and the file header sits right under it.
       const paneTop = pane.getBoundingClientRect().top
