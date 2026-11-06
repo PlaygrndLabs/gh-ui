@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { ActionList, ActionMenu, Button, ButtonGroup, SegmentedControl, TextInput } from '@primer/react'
-import { ArrowLeftIcon, CheckIcon, GitCommitIcon, GitCompareIcon, PeopleIcon, SparkleFillIcon, TriangleDownIcon, FileDiffIcon, DiffAddedIcon, DiffModifiedIcon, DiffRemovedIcon, DiffRenamedIcon } from '@primer/octicons-react'
+import { ActionList, ActionMenu, Button, ButtonGroup, RelativeTime, SegmentedControl, TextInput } from '@primer/react'
+import { ArrowLeftIcon, GitBranchIcon, CheckIcon, GitCommitIcon, GitCompareIcon, PeopleIcon, SparkleFillIcon, TriangleDownIcon, FileDiffIcon, DiffAddedIcon, DiffModifiedIcon, DiffRemovedIcon, DiffRenamedIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage } from '../../lib/github'
 import { useRepo, useBranches, encodePath } from '../../lib/repo'
 import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
@@ -25,6 +25,77 @@ function DocsLink({ children }: { children: ReactNode }) {
     <a href={DIFF_DOCS} onClick={(e) => (e.preventDefault(), openExternal(DIFF_DOCS))}>
       {children}
     </a>
+  )
+}
+
+type RecentBranch = { name: string; date: string; pr: number | null }
+type RecentRefs = { repository: { refs: { nodes: Array<{ name: string; target: { committedDate?: string } | null; associatedPullRequests: { nodes: Array<{ number: number }> } }> } } }
+
+/** The branches with the newest commits, the ones most likely to need a pull request. */
+function useRecentBranches(owner: string, repo: string, skip: string) {
+  const { octokit, key } = useGitHub()
+  return useQuery({
+    queryKey: [key, 'recent-branches', owner, repo],
+    staleTime: 30_000,
+    queryFn: async (): Promise<RecentBranch[]> => {
+      const res: RecentRefs = await octokit.graphql(
+        `query($owner:String!,$repo:String!){ repository(owner:$owner,name:$repo){ refs(refPrefix:"refs/heads/", first:100){ nodes{ name target{ ... on Commit { committedDate } } associatedPullRequests(states:OPEN, first:1){ nodes{ number } } } } } }`,
+        { owner, repo },
+      )
+      return res.repository.refs.nodes.map((n) => ({ name: n.name, date: n.target?.committedDate ?? '', pr: n.associatedPullRequests.nodes[0]?.number ?? null })).sort((a, b) => b.date.localeCompare(a.date))
+    },
+    select: (rows) => rows.filter((r) => r.name !== skip).slice(0, 6),
+  })
+}
+
+/** Where a new pull request starts: pick the branch with the changes. */
+function ChooseHead({ owner, repo, base, onPick }: { owner: string; repo: string; base: string; onPick: (head: string) => void }) {
+  const recent = useRecentBranches(owner, repo, base)
+  return (
+    <>
+      <div className="compare-hint">
+        <span>
+          Choose a branch to compare with <strong>{base}</strong> to discuss and review its changes.
+        </span>
+        <Button variant="primary" disabled>
+          Create pull request
+        </Button>
+      </div>
+      {recent.isLoading ? (
+        <Loading />
+      ) : recent.data?.length ? (
+        <div className="compare-recent">
+          <h2>Recently updated branches</h2>
+          <ul>
+            {recent.data.map((b) => (
+              <li key={b.name}>
+                <GitBranchIcon className="fg-muted" />
+                <strong className="compare-recent-name">{b.name}</strong>
+                {b.date && (
+                  <span className="fg-muted text-small">
+                    updated <RelativeTime date={new Date(b.date)} />
+                  </span>
+                )}
+                <span className="flex-1" />
+                {b.pr ? (
+                  <Button size="small" as={Link} to={`/${owner}/${repo}/pull/${b.pr}`}>
+                    View pull request #{b.pr}
+                  </Button>
+                ) : (
+                  <Button size="small" onClick={() => onPick(b.name)}>
+                    Compare & pull request
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <Blankslate icon={<GitCompareIcon size={24} />} title="No other branches yet">
+          Push a branch with your changes, then come back to open a pull request.
+        </Blankslate>
+      )}
+    </>
   )
 }
 
@@ -160,9 +231,7 @@ function CompareForm() {
       </div>
 
       {!head ? (
-        <Blankslate icon={<GitCompareIcon size={24} />} title="Compare and review just about anything">
-          Branches, tags, commit ranges, and time ranges. In the same repository and across forks.
-        </Blankslate>
+        <ChooseHead owner={owner} repo={repo} base={base} onPick={(h) => go(base, h)} />
       ) : head === base ? (
         <Blankslate icon={<GitCompareIcon size={24} />} title="There isn’t anything to compare.">
           You’ll need to use two different branch names to get a valid comparison.

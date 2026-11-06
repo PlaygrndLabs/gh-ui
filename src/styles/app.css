@@ -1373,6 +1373,12 @@ a.commit-author:hover { text-decoration: underline; }
 .compare-range-editor > svg:first-child { margin-right: 8px; }
 .compare-range-arrow { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; color: var(--fgColor-muted); padding: 0 4px; }
 .compare-range-arrow span { margin-top: -6px; font-size: 16px; }
+.compare-hint { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; margin-bottom: 16px; background: var(--bgColor-attention-muted); border: 1px solid var(--borderColor-attention-muted); border-radius: 6px; }
+.compare-recent h2 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.compare-recent ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--borderColor-default); border-radius: 6px; }
+.compare-recent li { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-top: 1px solid var(--borderColor-muted); min-width: 0; }
+.compare-recent li:first-child { border-top: 0; }
+.compare-recent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .compare-stats { display: flex; list-style: none; margin: 0; padding: 0 8px; }
 .compare-stats li { flex: 1; text-align: center; margin: 8px 0; padding: 0 8px; }
 .compare-stats strong { font-weight: 600; color: var(--fgColor-default); }

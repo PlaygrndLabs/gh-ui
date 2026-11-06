@@ -353,6 +353,8 @@ function createWindow() {
 // menu item with that shortcut, the way pressing it does; waitMs lets navigations settle.
 function e2eTest(win, file) {
   const { steps } = require(path.resolve(file))
+  // The run goes on behind other windows; a covered window would otherwise stop drawing frames and steps would time out.
+  win.webContents.setBackgroundThrottling(false)
   const errors = []
   win.webContents.on('console-message', (event) => {
     if (event.level === 'error') errors.push(event.message)

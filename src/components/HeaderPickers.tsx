@@ -327,7 +327,7 @@ export function TabItemPicker({ owner, repo }: { owner: string; repo: string }) 
   const parts = pathname.split('/').filter(Boolean)
   const [section, a, b] = [parts[2] ?? '', parts[3] ?? '', parts[4] ?? '']
   const props = { key: `${owner}/${repo}/${section}`, owner, repo }
-  if (section === 'pull' || (section === 'pulls' && a !== 'all')) return <PullPicker {...props} current={section === 'pull' ? a : null} />
+  if (section === 'pull' || section === 'compare' || (section === 'pulls' && a !== 'all')) return <PullPicker {...props} current={section === 'pull' ? a : null} />
   if (section === 'actions' && (a === '' || a === 'runs')) return <RunPicker {...props} current={a === 'runs' ? b : null} />
   if (section === 'issues' && isOn('issues') && a !== 'new') return <IssuePicker {...props} current={/^\d+$/.test(a) ? a : null} />
   if (section === 'releases' && (a === '' || a === 'tag')) return <ReleasePicker {...props} current={a === 'tag' ? safeDecode(parts.slice(4).join('/')) : null} />

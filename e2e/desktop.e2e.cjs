@@ -141,7 +141,14 @@ exports.steps = [
         status: m.querySelector('.ws-status-bar')?.innerText.replace(/\\s+/g, ' '),
         copyLink: m.innerHTML.includes('Copy pull request link'),
       }
-      r.fail = !(r.pulls > 1 && r.moved && r.menuClosed && r.sideList === 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /files viewed/.test(r.status) && r.copyLink)
+      const nav = [...document.querySelectorAll('.ws-tabs')].find((n) => n.getClientRects().length)
+      r.tabLink = [...nav.querySelectorAll('.ws-tabs-end button')].some((b) => /^Copy link to pull request #\\d+/.test(b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent || ''))
+      // Clicking the tab you're on keeps the pull request open.
+      const shown = pick().innerText
+      ;[...nav.querySelectorAll('a.ws-tab')].find((a) => a.textContent.includes('Pull requests')).click()
+      await new Promise((res) => setTimeout(res, 1500))
+      r.stayed = pick()?.innerText === shown && !!main()?.querySelector('.ws-pr-thread')
+      r.fail = !(r.pulls > 1 && r.moved && r.menuClosed && r.sideList === 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /files viewed/.test(r.status) && r.copyLink && r.tabLink && r.stayed)
       return r
     `,
   },
@@ -168,7 +175,22 @@ exports.steps = [
       const row = await until(() => pick() && !pick().innerText.includes('Choose a run') && pick().innerText.includes('Run'), 20000)
       await until(() => main()?.querySelector('.run-title'), 20000)
       const r = { selected: !!row, seg: pick()?.innerText.replace(/\\s+/g, ' '), sideList: main()?.querySelectorAll('.ws-list').length, title: main()?.querySelector('.run-title')?.innerText.slice(0, 80), copy: !!main()?.innerHTML.includes('Copy link to this run') }
-      r.fail = !(r.selected && r.sideList === 0 && r.title && r.copy)
+      // Going back to Pull requests opens the one that was open.
+      const lastPull = pick()?.innerText
+      ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Pull requests')).click()
+      r.backToPull = !!(await until(() => pick()?.innerText.includes('#') && main()?.querySelector('.ws-pr-thread'), 15000))
+      r.fail = !(r.selected && r.sideList === 0 && r.title && r.copy && r.backToPull && lastPull)
+      return r
+    `,
+  },
+  {
+    name: 'new pull request: suggests recent branches to compare',
+    screenshot: 'new-pull-request',
+    js: `${helpers}
+      clickLink('/jqlang/jq/compare')
+      const rows = await until(() => { const l = main()?.querySelectorAll('.compare-recent li'); return l && l.length > 0 && l }, 20000)
+      const r = { hint: !!main()?.querySelector('.compare-hint'), rows: rows ? rows.length : 0, picker: !![...document.querySelectorAll('.ws-header .ws-seg-pick')].find((s) => s.getClientRects().length) }
+      r.fail = !(r.hint && r.rows > 0 && r.picker)
       return r
     `,
   },
@@ -186,8 +208,9 @@ exports.steps = [
       // The default branch takes pull requests; it never has one of its own.
       const nav = [...document.querySelectorAll('.ws-tabs')].find((n) => n.getClientRects().length)
       r.repoTabs = [...nav.querySelectorAll('.ws-tab')].map((t) => t.textContent.trim())
+      r.ends = [...nav.querySelectorAll('.ws-tabs-end button')].map((b) => b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent.trim() || b.textContent.trim())
       // Every page is a tab of its own; nothing hides behind More.
-      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && r.repoTabs.includes('Open on GitHub') && !r.repoTabs.some((t) => t.startsWith('More')))
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && r.ends.includes('Copy link to branch'))
       return r
     `,
   },

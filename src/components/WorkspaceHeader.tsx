@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, TextInput } from '@primer/react'
-import { GitBranchIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
+import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, IconButton, TextInput } from '@primer/react'
+import { GitBranchIcon, LinkExternalIcon, LinkIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { useAgent } from '../lib/agent/AgentProvider'
 import { useFeatures } from '../lib/features'
 import { errorMessage, useGitHub } from '../lib/github'
+import { plural } from '../lib/format'
 import { webUrl } from '../lib/links'
 import { native, openExternal } from '../lib/platform'
 import { useRepoCounts, useRepoQuery } from '../lib/repo'
@@ -17,6 +18,7 @@ import { CloneDialog } from '../pages/Local'
 import { AccountMenu } from './AppHeader'
 import { InboxMenu } from './InboxMenu'
 import { TabItemPicker } from './HeaderPickers'
+import { CopyButton } from './Bits'
 
 const SYNC_LABEL: Record<SyncKind, string> = {
   clone: 'Clone repository',
@@ -267,6 +269,23 @@ function Search({ repo }: { repo: WorkspaceRepo | null }) {
   )
 }
 
+/** What the page shows, for the link buttons' labels. */
+function itemName(section: string, parts: string[]) {
+  if (section === 'pull' && parts[3]) return `pull request #${parts[3]}`
+  if (section === 'issues' && /^\d+$/.test(parts[3] ?? '')) return `issue #${parts[3]}`
+  if (section === 'actions' && parts[3] === 'runs' && parts[4]) return 'workflow run'
+  if (section === 'releases' && parts[3] === 'tag' && parts[4]) return `release ${safeDecode(parts[4])}`
+  if (section === 'pulls' || section === 'actions' || section === 'issues' || section === 'releases') return section === 'pulls' ? 'pull requests' : section
+  return section ? 'page' : 'branch'
+}
+
+/** Refetches what the page shows, for when you don't want to wait for it to check again. */
+function RefreshButton() {
+  const qc = useQueryClient()
+  const fetching = useIsFetching() > 0
+  return <IconButton size="small" variant="invisible" icon={SyncIcon} className={fetching ? 'ws-refreshing' : undefined} aria-label="Refresh" onClick={() => void qc.invalidateQueries({ type: 'active' })} />
+}
+
 function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const { pathname } = useLocation()
   const { account, octokit, key } = useGitHub()
@@ -292,6 +311,20 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const changes = local.status.data?.entries.length ?? 0
 
   const home = path ?? '/'
+  // Coming back to Pull requests, Actions, Issues or Releases opens what was open there before.
+  const [lastIn, setLastIn] = useState<Record<string, string>>({})
+  const group = ['pulls', 'pull', 'compare'].includes(section) ? 'pulls' : section
+  useEffect(() => {
+    if (base && ['pulls', 'actions', 'issues', 'releases'].includes(group)) setLastIn((m) => (m[group] === pathname ? m : { ...m, [group]: pathname }))
+  }, [base, group, pathname])
+  const tabTo = (g: string, fallback: string) => lastIn[g] ?? fallback
+  // The tab you're on is already open: clicking it again leaves the page as it is.
+  const stay = (current: boolean) => (e: React.MouseEvent) => {
+    if (current) e.preventDefault()
+  }
+  const branchName = local.status.data?.branch
+  const link = base ? webUrl(account.host, section ? pathname : `${base}${branchName ? `/tree/${branchName}` : ''}`) : null
+  const name = itemName(section, parts)
   // Every page the repository has is one click away, so none hides behind a More menu.
   const more: Array<{ label: string; to: string; show: boolean; current: string[] }> = base
     ? [
@@ -308,15 +341,19 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
     : []
   return (
     <nav className="ws-tabs" aria-label="Repository">
-      <Link className="ws-tab" to={home} aria-current={section === '' ? 'page' : undefined}>
+      <Link className="ws-tab" to={home} aria-current={section === '' ? 'page' : undefined} onClick={stay(section === '')}>
         Branch
-        {changes > 0 && <span className="ws-pill">{changes}</span>}
+        {changes > 0 && (
+          <span className="ws-pill" title={plural(changes, 'changed file')}>
+            {changes}
+          </span>
+        )}
       </Link>
-      <Link className="ws-tab" to={base ? `${base}/pulls` : `${home}/pulls`} aria-current={['pulls', 'pull', 'compare'].includes(section) ? 'page' : undefined}>
+      <Link className="ws-tab" to={base ? tabTo('pulls', `${base}/pulls`) : `${home}/pulls`} aria-current={group === 'pulls' ? 'page' : undefined} onClick={stay(group === 'pulls')}>
         Pull requests
-        {counts.data && counts.data.pulls > 0 && <span className="ws-pill">{counts.data.pulls}</span>}
+        {counts.data && counts.data.pulls > 0 && <span className="ws-pill" title={plural(counts.data.pulls, 'open pull request')}>{counts.data.pulls}</span>}
       </Link>
-      <Link className="ws-tab" to={base ? `${base}/actions` : `${home}/actions`} aria-current={section === 'actions' ? 'page' : undefined}>
+      <Link className="ws-tab" to={base ? tabTo('actions', `${base}/actions`) : `${home}/actions`} aria-current={section === 'actions' ? 'page' : undefined} onClick={stay(section === 'actions')}>
         Actions
         {runMark && (
           <span className={`ws-mark ${runMark.cls}`} title={runMark.label}>
@@ -327,30 +364,30 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
       {more
         .filter((m) => m.show)
         .map((m) => (
-          <Link key={m.label} className="ws-tab" to={m.to} aria-current={m.current.includes(section) ? 'page' : undefined}>
+          <Link key={m.label} className="ws-tab" to={tabTo(m.current[0], m.to)} aria-current={m.current.includes(section) ? 'page' : undefined} onClick={stay(m.current.includes(section))}>
             {m.label}
-            {m.label === 'Issues' && counts.data && counts.data.issues > 0 && <span className="ws-pill">{counts.data.issues}</span>}
+            {m.label === 'Issues' && counts.data && counts.data.issues > 0 && <span className="ws-pill" title={plural(counts.data.issues, 'open issue')}>{counts.data.issues}</span>}
           </Link>
         ))}
-      {(repo.local || base) && (
-        <div className="ws-tabs-end">
-          {base && (
-            <button type="button" className="ws-tab" onClick={() => openExternal(webUrl(account.host, base))}>
-              Open on GitHub
+      <div className="ws-tabs-end">
+        <RefreshButton />
+        {link && (
+          <>
+            <CopyButton text={link} icon={LinkIcon} label={`Copy link to ${name}`} />
+            <IconButton size="small" variant="invisible" icon={LinkExternalIcon} aria-label={`Open ${name} in browser`} onClick={() => openExternal(link)} />
+          </>
+        )}
+        {repo.local && (
+          <>
+            <button type="button" className="ws-tab" onClick={() => void native!.openInEditor(repo.local!.id)}>
+              Open in editor
             </button>
-          )}
-          {repo.local && (
-            <>
-              <button type="button" className="ws-tab" onClick={() => void native!.openInEditor(repo.local!.id)}>
-                Open in editor
-              </button>
-              <button type="button" className="ws-tab" onClick={() => void native!.revealInFinder(repo.local!.id)}>
-                Show in Finder
-              </button>
-            </>
-          )}
-        </div>
-      )}
+            <button type="button" className="ws-tab" onClick={() => void native!.revealInFinder(repo.local!.id)}>
+              Show in Finder
+            </button>
+          </>
+        )}
+      </div>
     </nav>
   )
 }

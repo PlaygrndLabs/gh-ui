@@ -98,7 +98,8 @@ a.ws-tab, .ws-tab { display: inline-flex; align-items: center; gap: 6px; padding
 .ws-tab:hover { color: var(--ws-text); text-decoration: none; }
 .ws-tab:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
 .ws-tab[aria-current='page'], .ws-tab[aria-selected='true'] { font-weight: 600; color: var(--ws-text); border-bottom-color: var(--ws-accent); }
-.ws-tabs-end { display: flex; margin-left: auto; }
+.ws-tabs-end { display: flex; align-items: center; gap: 2px; margin-left: auto; padding-left: 8px; }
+.ws-refreshing svg { animation: gd-spin 1s linear infinite; }
 .ws-pill { padding: 0 6px; font-size: 11px; font-weight: 600; line-height: 17px; color: var(--ws-text); background: var(--ws-hover); border-radius: 9px; }
 .ws-mark { font-size: 12px; font-weight: 700; }
 .ws-ok { color: var(--ws-ok); }
