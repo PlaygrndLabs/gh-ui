@@ -147,6 +147,12 @@ export function parseRemote(remote: string): { host: string; owner: string; repo
 }
 
 /** The HTTPS form of an SSH remote, or null when it isn't one. HTTPS is what a sign-in with a token can authenticate. */
+/** Whether two clone URLs, https or SSH, are the same repository. */
+export function sameRemote(a: string, b: string) {
+  const [x, y] = [parseRemote(a), parseRemote(b)]
+  return !!x && !!y && `${x.host}/${x.owner}/${x.repo}`.toLowerCase() === `${y.host}/${y.owner}/${y.repo}`.toLowerCase()
+}
+
 export function toHttpsRemote(remote: string): string | null {
   if (!/^(?:ssh:\/\/)?git@/.test(remote)) return null
   const parsed = parseRemote(remote)

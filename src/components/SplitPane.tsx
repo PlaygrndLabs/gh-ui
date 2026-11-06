@@ -1,12 +1,11 @@
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
-import { ChevronLeftIcon, ChevronRightIcon } from '@primer/octicons-react'
-import { dragWidth, keyWidth, restorePaneState, type PaneBounds, type PaneSide, type PaneState } from '../lib/panes'
+import { clampWidth, dragCollapse, dragWidth, keyWidth, restorePaneState, type PaneBounds, type PaneSide, type PaneState } from '../lib/panes'
 import { useSharedPref } from '../lib/storage'
 
 interface SplitPaneBase {
   first: ReactNode
   second: ReactNode
-  /** Names the panes on the divider's controls and on a collapsed pane's strip. */
+  /** Names the panes on the divider and on a collapsed pane's strip. */
   firstLabel: string
   secondLabel: string
   min: number
@@ -32,9 +31,28 @@ export function SplitPaneView({ first, second, firstLabel, secondLabel, min, max
     return { className: `ws-pane${isSized ? ' ws-pane-sized' : ''}`, hidden: collapsed, style: isSized ? { width: state.width } : undefined }
   }
   const setCollapsed = (collapsed: PaneSide | null) => onChange({ ...state, collapsed })
+  // Dragging out of the strip keeps going after the strip is gone, so this follows the window rather than the element.
+  const onStripPointerDown = (e: PointerEvent<HTMLButtonElement>, side: PaneSide) => {
+    if (e.button !== 0) return
+    const startX = e.clientX
+    const outward = side === 'first' ? 1 : -1
+    const move = (ev: globalThis.PointerEvent) => {
+      const distance = (ev.clientX - startX) * outward
+      if (distance < 4) return
+      onChange({ width: side === sized ? clampWidth(distance, bounds) : state.width, collapsed: null })
+    }
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+      window.removeEventListener('pointercancel', stop)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    window.addEventListener('pointercancel', stop)
+  }
   const strip = (side: PaneSide, label: string) =>
     state.collapsed === side && (
-      <button type="button" className="ws-pane-strip" aria-label={`Show ${label}`} onClick={() => setCollapsed(null)}>
+      <button type="button" className="ws-pane-strip" aria-label={`Show ${label}`} title={`Drag to show ${label}`} onPointerDown={(e) => onStripPointerDown(e, side)} onClick={() => setCollapsed(null)}>
         <span className="ws-pane-strip-label">{label}</span>
       </button>
     )
@@ -49,13 +67,21 @@ export function SplitPaneView({ first, second, firstLabel, secondLabel, min, max
   }
   // The browser can merge the last move into the release, so the release has the final say.
   const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
-    onPointerMove(e)
+    const start = drag.current
     drag.current = null
+    if (!start) return
+    const collapsed = dragCollapse(start.width, start.x, e.clientX, bounds, sized)
+    // Past the edge, the pane keeps the width it had, to come back at.
+    onChange(collapsed ? { width: start.width, collapsed } : { ...state, width: dragWidth(start.width, start.x, e.clientX, bounds, sized) })
   }
   const onPointerCancel = () => {
     drag.current = null
   }
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      return setCollapsed(sized)
+    }
     const width = keyWidth(state.width, e.key, bounds, sized)
     if (width === null) return
     e.preventDefault()
@@ -77,7 +103,7 @@ export function SplitPaneView({ first, second, firstLabel, secondLabel, min, max
             aria-valuenow={state.width}
             aria-valuemin={min}
             aria-valuemax={max}
-            title="Drag to resize. Double-click to reset."
+            title="Drag to resize, or past the edge to hide. Double-click to reset."
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -86,12 +112,6 @@ export function SplitPaneView({ first, second, firstLabel, secondLabel, min, max
             onKeyDown={onKeyDown}
             onDoubleClick={() => onChange({ ...state, width: defaultWidth })}
           />
-          <button type="button" className="ws-divider-button ws-divider-button-first" aria-label={`Collapse ${firstLabel}`} title={`Collapse ${firstLabel}`} onClick={() => setCollapsed('first')}>
-            <ChevronLeftIcon size={12} />
-          </button>
-          <button type="button" className="ws-divider-button ws-divider-button-second" aria-label={`Collapse ${secondLabel}`} title={`Collapse ${secondLabel}`} onClick={() => setCollapsed('second')}>
-            <ChevronRightIcon size={12} />
-          </button>
         </div>
       )}
       {strip('second', secondLabel)}

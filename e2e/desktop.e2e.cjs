@@ -5,6 +5,7 @@
 // main-process IPC: git runs for real, sign-in goes through the login screen, and
 // the wiki is cloned from GitHub by the Wiki tab itself.
 
+const path = require('node:path')
 const LOCAL = process.env.E2E_LOCAL_REPO
 const PARENT = process.env.E2E_CLONE_PARENT
 const j = JSON.stringify
@@ -32,7 +33,9 @@ const helpers = `
     a.remove()
   }
   const tabs = () => [...document.querySelectorAll('.tab-list [role=tab]')]
-  const tabTitles = () => tabs().map((t) => t.textContent.trim())
+  // A repository's tab reads "repo - branch"; most steps only care which repository.
+  const tabName = (t) => t.textContent.trim().split(' - ')[0]
+  const tabTitles = () => tabs().map(tabName)
   const activeTab = () => document.querySelector('.tab-list [aria-selected=true]')
   const main = () => [...document.querySelectorAll('.app-main')].find((m) => m.getClientRects().length)
   // The page in the active tab, as saved: every tab's URL is written to storage as it changes.
@@ -99,25 +102,37 @@ exports.steps = [
       await until(() => tabs().length === 2)
       clickLink('/jqlang/jq')
       await until(() => tabTitles()[1] === 'jq')
-      await until(() => main()?.querySelector('.ws-branch'))
+      await until(() => main()?.querySelector('.ws-branch-head'))
       // The window's own URL never moves: pages live in each tab's router.
-      const r = { tabs: tabTitles(), active: activeTab().textContent.trim(), windowUrl: location.pathname }
+      const r = { tabs: tabTitles(), active: tabName(activeTab()), windowUrl: location.pathname }
       r.fail = !(r.tabs.length === 2 && r.active === 'jq' && r.windowUrl === '/')
       return r
     `,
   },
   {
-    name: 'pull requests: list beside chat beside code, with every state in view',
+    name: 'pull requests: picked in the top menu, with chat beside code and every state in view',
     screenshot: 'pull-request',
     js: `${helpers}
       clickLink('/jqlang/jq/pulls')
-      const row = await until(() => main()?.querySelector('.ws-list-row'), 20000)
-      if (!row) return { fail: true, error: 'no pull request list', text: main()?.innerText.slice(0, 200) }
+      const pick = () => [...document.querySelectorAll('.ws-header .ws-seg-pick')].find((s) => s.getClientRects().length)
+      const opened = await until(() => pick()?.innerText.includes('#'), 20000)
+      if (!opened) return { fail: true, error: 'no pull request opened', seg: pick()?.innerText, text: main()?.innerText.slice(0, 200) }
+      const first = pick().innerText
+      pick().click()
+      const items = await until(() => { const l = [...document.querySelectorAll('[role=menuitemradio]')]; return l.length > 1 && l }, 15000)
+      const other = items && items.find((i) => i.getAttribute('aria-checked') !== 'true')
+      other?.click()
+      const moved = await until(() => pick()?.innerText.includes('#') && pick().innerText !== first, 8000)
+      const menuClosed = await until(() => !document.querySelector('[role=menuitemradio]'), 3000)
       await until(() => main()?.querySelector('.ws-pr-thread .timeline-comment'), 20000)
       await until(() => main()?.querySelector('.ws-pr-files .file-diff'), 20000)
       const m = main()
       const r = {
-        pulls: m.querySelectorAll('.ws-list-row').length,
+        pulls: items ? items.length : 0,
+        moved: !!moved,
+        menuClosed: !!menuClosed,
+        sideList: m.querySelectorAll('.ws-list').length,
+        seg: pick()?.innerText.replace(/\\s+/g, ' '),
         chat: !!m.querySelector('.ws-pr-thread .timeline-comment'),
         merge: !!m.querySelector('#pr-merge .merge-box'),
         files: !!m.querySelector('.ws-pr-files .file-diff'),
@@ -126,7 +141,14 @@ exports.steps = [
         status: m.querySelector('.ws-status-bar')?.innerText.replace(/\\s+/g, ' '),
         copyLink: m.innerHTML.includes('Copy pull request link'),
       }
-      r.fail = !(r.pulls > 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /files viewed/.test(r.status) && r.copyLink)
+      const nav = [...document.querySelectorAll('.ws-tabs')].find((n) => n.getClientRects().length)
+      r.tabLink = [...nav.querySelectorAll('.ws-tabs-end button')].some((b) => /^Copy link to pull request #\\d+/.test(b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent || ''))
+      // Clicking the tab you're on keeps the pull request open.
+      const shown = pick().innerText
+      ;[...nav.querySelectorAll('a.ws-tab')].find((a) => a.textContent.includes('Pull requests')).click()
+      await new Promise((res) => setTimeout(res, 1500))
+      r.stayed = pick()?.innerText === shown && !!main()?.querySelector('.ws-pr-thread')
+      r.fail = !(r.pulls > 1 && r.moved && r.menuClosed && r.sideList === 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /files viewed/.test(r.status) && r.copyLink && r.tabLink && r.stayed)
       return r
     `,
   },
@@ -145,14 +167,40 @@ exports.steps = [
     `,
   },
   {
-    name: 'actions: runs beside the chosen run',
+    name: 'actions: the top menu picks a run, shown at full width',
     screenshot: 'actions',
     js: `${helpers}
+      // Leave the pull request scrolled, to find it so on coming back.
+      const filesPane = () => [...document.querySelectorAll('.ws-pr-files')].find((p) => p.getClientRects().length)
+      await until(() => filesPane()?.querySelector('.file-diff'), 15000)
+      filesPane().scrollTop = 300
+      await sleep(200)
+      const leftAt = filesPane().scrollTop
       ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Actions')).click()
-      const row = await until(() => main()?.querySelector('.ws-list-row.is-selected'), 20000)
+      const pick = () => [...document.querySelectorAll('.ws-header .ws-seg-pick')].find((s) => s.getClientRects().length)
+      const row = await until(() => pick() && !pick().innerText.includes('Choose a run') && pick().innerText.includes('Run'), 20000)
       await until(() => main()?.querySelector('.run-title'), 20000)
-      const r = { selected: !!row, title: main()?.querySelector('.run-title')?.innerText.slice(0, 80), copy: !!main()?.innerHTML.includes('Copy link to this run') }
-      r.fail = !(r.selected && r.title && r.copy)
+      const r = { selected: !!row, seg: pick()?.innerText.replace(/\\s+/g, ' '), sideList: main()?.querySelectorAll('.ws-list').length, title: main()?.querySelector('.run-title')?.innerText.slice(0, 80), copy: !!main()?.innerHTML.includes('Copy link to this run') }
+      // Going back to Pull requests opens the one that was open.
+      const lastPull = pick()?.innerText
+      ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Pull requests')).click()
+      r.backToPull = !!(await until(() => pick()?.innerText.includes('#') && filesPane(), 15000))
+      // The page was kept as it was left, scrolled where it was.
+      await sleep(300)
+      r.leftAt = leftAt
+      r.backAt = filesPane()?.scrollTop
+      r.fail = !(r.selected && r.sideList === 0 && r.title && r.copy && r.backToPull && lastPull && leftAt > 0 && Math.abs(r.backAt - leftAt) < 2)
+      return r
+    `,
+  },
+  {
+    name: 'new pull request: suggests recent branches to compare',
+    screenshot: 'new-pull-request',
+    js: `${helpers}
+      clickLink('/jqlang/jq/compare')
+      const rows = await until(() => { const l = main()?.querySelectorAll('.compare-recent li'); return l && l.length > 0 && l }, 20000)
+      const r = { hint: !!main()?.querySelector('.compare-hint'), rows: rows ? rows.length : 0, picker: !![...document.querySelectorAll('.ws-header .ws-seg-pick')].find((s) => s.getClientRects().length) }
+      r.fail = !(r.hint && r.rows > 0 && r.picker)
       return r
     `,
   },
@@ -161,12 +209,56 @@ exports.steps = [
     screenshot: 'github-only',
     js: `${helpers}
       clickLink('/jqlang/jq')
-      await until(() => main()?.querySelector('.ws-branch'), 15000)
+      await until(() => main()?.querySelector('.ws-branch-head'), 15000)
       await until(() => main()?.querySelector('.ws-section .ws-row'), 15000)
       await until(() => main()?.querySelector('.file-diff'), 15000)
       const text = main().innerText
-      const r = { branches: main().querySelectorAll('.ws-branch').length, commits: main().querySelectorAll('.ws-section .ws-row').length, diff: !!main().querySelector('.file-diff'), clone: text.includes('Clone jq'), toolbar: !!byText('.ws-seg-value', 'Clone repository') }
-      r.fail = !(r.branches > 0 && r.commits > 0 && r.diff && r.clone && r.toolbar)
+      const tabNames = await until(() => { const n = [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].map((t) => t.textContent.trim()); return n.includes('Checks') && n }, 8000)
+      const r = { sidebar: main().querySelectorAll('.ws-list').length, commits: main().querySelectorAll('.ws-section .ws-row').length, diff: !!main().querySelector('.file-diff'), toolbar: !!byText('.ws-seg-value', 'Clone repository'), tabNames }
+      // The default branch takes pull requests; it never has one of its own.
+      const nav = [...document.querySelectorAll('.ws-tabs')].find((n) => n.getClientRects().length)
+      r.repoTabs = [...nav.querySelectorAll('.ws-tab')].map((t) => t.textContent.trim())
+      // A file's name sticks at the very top of the commit's pane, with no code showing above it.
+      const pane = [...main().querySelectorAll('.ws-diff')].find((p) => p.getClientRects().length && p.querySelector('.file-diff'))
+      const diff = pane && ([...pane.querySelectorAll('.file-diff')].find((d) => d.offsetHeight > pane.clientHeight) || pane.querySelector('.file-diff'))
+      if (diff) {
+        pane.scrollTop = diff.offsetTop - pane.offsetTop + 200
+        await sleep(300)
+        r.stickyGap = Math.round(diff.querySelector('.file-diff-header').getBoundingClientRect().top - pane.getBoundingClientRect().top)
+        // Square while stuck: its corners are the header, not the code scrolling under it.
+        const header = diff.querySelector('.file-diff-header')
+        const h = header.getBoundingClientRect()
+        r.corners = [document.elementFromPoint(h.left + 1, h.top + 1), document.elementFromPoint(h.right - 2, h.top + 1)].every((el) => header.contains(el))
+        pane.scrollTop = 0
+      }
+      // Split view is a drag or a tab's menu away; the strip has no button for it.
+      r.noSplitButton = ![...document.querySelectorAll('.tab-strip-end button')].some((x) => /split/i.test(x.getAttribute('aria-label') || ''))
+      r.ends = [...nav.querySelectorAll('.ws-tabs-end button')].map((b) => b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent.trim() || b.textContent.trim())
+      // Every page is a tab of its own; nothing hides behind More.
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && r.ends.includes('Copy link to branch') && r.stickyGap === 0 && r.corners && r.noSplitButton)
+      return r
+    `,
+  },
+  {
+    name: 'the top menu picks a branch of a repository only on GitHub, and the tab title follows',
+    js: `${helpers}
+      const seg = () => [...document.querySelectorAll('.ws-header .ws-seg-branch')].find((s) => s.getClientRects().length)
+      await until(() => activeTab().textContent.trim().startsWith('jq - '), 10000)
+      const before = activeTab().textContent.trim()
+      seg().click()
+      const items = await until(() => { const l = [...document.querySelectorAll('[role=menuitemradio]')]; return l.length > 1 && l }, 8000)
+      if (!items) return { fail: true, error: 'no branch menu', before }
+      const item = items.find((i) => i.getAttribute('aria-checked') !== 'true')
+      const name = item.textContent.trim().replace(/(Default branch|On GitHub)$/, '').trim()
+      if (!item) return { fail: true, error: 'branch not in menu', name, items: items.length }
+      item.click()
+      const moved = await until(() => activeTab().textContent.trim() === 'jq - ' + name, 5000)
+      const row = await until(() => main()?.querySelector('.ws-branch-title')?.textContent.includes(name), 5000)
+      const pullTab = await until(() => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.trim() === 'Pull request'), 5000)
+      pullTab?.click()
+      const pullPanel = await until(() => main().querySelector('.ws-section[aria-label="Pull request"]'), 3000)
+      const r = { before, name, title: activeTab().textContent.trim(), seg: seg().innerText, row: !!row, pullTab: !!pullTab, pullPanel: !!pullPanel, commitPane: !!main().querySelector('.ws-details') }
+      r.fail = !(moved && row && seg().innerText.includes(name) && pullTab && pullPanel && !r.commitPane)
       return r
     `,
   },
@@ -177,7 +269,7 @@ exports.steps = [
       clickLink('/PlaygrndLabs/gh-ui/pull/2', { metaKey: true, text: 'Some pull request' })
       await until(() => tabs().length === 3)
       await until(() => main()?.innerText.includes('Issues') || location.pathname !== '/', 5000)
-      const r = { tabs: tabTitles(), active: activeTab().textContent.trim() }
+      const r = { tabs: tabTitles(), active: tabName(activeTab()) }
       r.fail = !(r.tabs.length === 3 && r.active === 'jq' && r.tabs[2] === 'gh-ui')
       return r
     `,
@@ -208,7 +300,7 @@ exports.steps = [
       window.dispatchEvent(new KeyboardEvent('keydown', { key: '/', bubbles: true }))
       const inputs = [...document.querySelectorAll('input[aria-label="Search or jump to"]')]
       const focused = inputs.filter((i) => i === document.activeElement)
-      const r = { active: activeTab().textContent.trim(), shown, header, searchBoxes: inputs.length, focusVisible: focused[0]?.getClientRects().length > 0 }
+      const r = { active: tabName(activeTab()), shown, header, searchBoxes: inputs.length, focusVisible: focused[0]?.getClientRects().length > 0 }
       r.fail = !(r.active === 'New tab' && shown === 1 && header === 1 && r.focusVisible)
       focused[0]?.blur(); before?.focus?.()
       return r
@@ -218,9 +310,12 @@ exports.steps = [
     name: 'a new tab offers repositories to open',
     screenshot: 'start-page',
     js: `${helpers}
-      await until(() => main()?.querySelector('.ws-start .ws-picker-row'), 10000)
-      const r = { title: main()?.querySelector('.ws-start-title')?.textContent, rows: main()?.querySelectorAll('.ws-picker-row').length }
-      r.fail = !(r.title && r.rows > 0)
+      await until(() => main()?.querySelector('.ws-home .ws-picker-row'), 10000)
+      const r = { title: main()?.querySelector('.ws-home-title')?.textContent, rows: main()?.querySelectorAll('.ws-picker-row').length, top: main()?.innerText.includes('Top repositories'), home: !!main()?.querySelector('.dashboard-main'), clone: !![...main().querySelectorAll('.ws-picker-actions button')].find((b) => b.textContent.includes('Clone')) }
+      const box = main().querySelector('.home-columns').getBoundingClientRect()
+      r.columns = [...main().querySelectorAll('.home-columns > .feed-card')].map((c) => Math.round(c.getBoundingClientRect().height))
+      r.fill = Math.round(window.innerHeight - box.bottom)
+      r.fail = !(r.title && r.rows > 0 && !r.top && r.home && !r.clone && new Set(r.columns).size === 1 && r.fill <= 40)
       return r
     `,
   },
@@ -254,7 +349,7 @@ exports.steps = [
     js: `${helpers}
       await until(() => activeTab() === tabs()[tabs().length - 1])
       await until(() => (main()?.innerText.length ?? 0) > 50, 15000)
-      const r = { active: activeTab().textContent.trim(), chars: main()?.innerText.length }
+      const r = { active: tabName(activeTab()), chars: main()?.innerText.length }
       r.fail = !(r.active === 'gh-ui' && r.chars > 50)
       return r
     `,
@@ -274,8 +369,48 @@ exports.steps = [
     accelerator: 'CmdOrCtrl+Shift+T',
     js: `${helpers}
       await until(() => tabs().length === 3)
-      const r = { tabs: tabTitles(), active: activeTab().textContent.trim() }
+      const r = { tabs: tabTitles(), active: tabName(activeTab()) }
       r.fail = !(r.tabs.length === 3 && r.active === 'gh-ui')
+      return r
+    `,
+  },
+  {
+    name: 'tabs: right-click opens the system menu, and Pin tab keeps the tab first with no close button',
+    js: `${helpers}
+      const firstItem = () => tabs()[0].closest('.tab-item')
+      const name = tabName(tabs()[0])
+      window.__e2eMenuPick = 'Pin tab'
+      firstItem().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      const pinned = await until(() => firstItem().classList.contains('is-pinned'), 5000)
+      const r = { menu: (window.__e2eMenuItems || []).map((i) => i.label || '---'), pinned: !!pinned, first: tabName(tabs()[0]) === name, closeButton: !!firstItem().querySelector('.tab-close'), pinMark: !!firstItem().querySelector('.tab-pin') }
+      tabs()[0].click()
+      r.selected = !!(await until(() => activeTab() === tabs()[0], 3000))
+      r.fail = !(r.pinned && r.first && !r.closeButton && r.pinMark && r.selected && r.menu.includes('Pin tab') && r.menu.includes('Close tab'))
+      return r
+    `,
+  },
+  {
+    name: 'tabs: Cmd+W leaves a pinned tab open',
+    accelerator: 'CmdOrCtrl+W',
+    js: `${helpers}
+      await sleep(500)
+      const r = { tabs: tabTitles(), pinned: tabs()[0].closest('.tab-item').classList.contains('is-pinned'), active: activeTab() === tabs()[0] }
+      r.fail = !(r.tabs.length === 3 && r.pinned && r.active)
+      return r
+    `,
+  },
+  {
+    name: 'tabs: Unpin tab brings the close button back',
+    js: `${helpers}
+      const firstItem = () => tabs()[0].closest('.tab-item')
+      window.__e2eMenuPick = 'Unpin tab'
+      firstItem().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      const unpinned = await until(() => !firstItem().classList.contains('is-pinned'), 5000)
+      window.__e2eMenuPick = null
+      const r = { unpinned: !!unpinned, menu: (window.__e2eMenuItems || []).map((i) => i.label || '---'), closeButton: !!firstItem().querySelector('.tab-close') }
+      tabs().find((t) => tabName(t) === 'gh-ui').click()
+      r.back = !!(await until(() => tabName(activeTab()) === 'gh-ui', 3000))
+      r.fail = !(r.unpinned && r.closeButton && r.back && r.menu.includes('Unpin tab'))
       return r
     `,
   },
@@ -294,7 +429,7 @@ exports.steps = [
     accelerator: 'CmdOrCtrl+[',
     js: `${helpers}
       const url = await until(() => savedActiveUrl().endsWith('/pull/2') && savedActiveUrl(), 5000)
-      const r = { url, tabs: tabTitles(), active: activeTab().textContent.trim() }
+      const r = { url, tabs: tabTitles(), active: tabName(activeTab()) }
       r.fail = !(url && r.active === 'gh-ui' && r.tabs[0] === 'New tab' && r.tabs[1] === 'jq')
       return r
     `,
@@ -303,11 +438,11 @@ exports.steps = [
     name: 'tabs: a link to another repository moves to its tab instead of opening another',
     js: `${helpers}
       clickLink('/jqlang/jq/releases')
-      await until(() => activeTab().textContent.trim() === 'jq', 5000)
-      const r = { tabs: tabTitles(), active: activeTab().textContent.trim(), url: await until(() => savedActiveUrl() === '/jqlang/jq/releases' && savedActiveUrl(), 5000) }
+      await until(() => tabName(activeTab()) === 'jq', 5000)
+      const r = { tabs: tabTitles(), active: tabName(activeTab()), url: await until(() => savedActiveUrl() === '/jqlang/jq/releases' && savedActiveUrl(), 5000) }
       r.fail = !(r.tabs.length === 3 && r.active === 'jq' && r.url)
       clickLink('/PlaygrndLabs/gh-ui/pull/2')
-      await until(() => activeTab().textContent.trim() === 'gh-ui', 5000)
+      await until(() => tabName(activeTab()) === 'gh-ui', 5000)
       return r
     `,
   },
@@ -381,9 +516,9 @@ exports.steps = [
     name: 'tabs: the page navigated while it was hidden',
     accelerator: 'Ctrl+Shift+Tab',
     js: `${helpers}
-      await until(() => activeTab().textContent.trim() === 'gh-ui', 3000)
+      await until(() => tabName(activeTab()) === 'gh-ui', 3000)
       await until(() => !main()?.querySelector('input[aria-label="Title"]'), 3000)
-      const r = { form: !!main().querySelector('input[aria-label="Title"]'), posts: window.__posts, active: activeTab().textContent.trim() }
+      const r = { form: !!main().querySelector('input[aria-label="Title"]'), posts: window.__posts, active: tabName(activeTab()) }
       window.fetch = window.__fetch
       r.fail = r.form || r.posts !== 1 || r.active !== 'gh-ui'
       return r
@@ -429,7 +564,7 @@ exports.steps = [
       const button = byText('button', 'Clone wiki')
       if (!button || button.disabled) return { fail: true, error: 'clone button not ready' }
       button.click()
-      return { cloning: true, tab: activeTab().textContent.trim() }
+      return { cloning: true, tab: tabName(activeTab()) }
     `,
   },
   {
@@ -469,7 +604,7 @@ exports.steps = [
         commitButton: !!byText('button', 'Commit to main'),
         branch: !!byText('.ws-seg-value', 'main'),
         sync: !!byText('.ws-seg-value', 'Publish repository'),
-        navigation: [...document.querySelectorAll('.ws-tabs')].filter((n) => n.getClientRects().length).map((n) => n.innerText.includes('Branches'))[0],
+        navigation: [...document.querySelectorAll('.ws-tabs')].filter((n) => n.getClientRects().length).map((n) => /^Branch\\b/.test(n.innerText))[0],
       }
       r.fail = !(r.showsUntracked && r.commitButton && r.branch && r.sync && r.navigation)
       return r
@@ -507,7 +642,7 @@ exports.steps = [
     `,
   },
   {
-    name: 'branches: create a branch, and pick another without checking it out',
+    name: 'branches: create a branch, and switch back from the top menu',
     js: `${helpers}
       const seg = [...document.querySelectorAll('button.ws-seg-branch')].find((b) => b.getClientRects().length)
       seg.click()
@@ -516,14 +651,12 @@ exports.steps = [
       const create = await until(() => byText('[role^=menuitem]', 'Create branch side'), 3000)
       create.click()
       const created = await until(() => byText('.ws-seg-value', 'side'), 10000)
-      const main0 = await until(() => [...main().querySelectorAll('.ws-branch')].find((b) => b.textContent.includes('main')), 10000)
-      main0.click()
-      await until(() => byText('button', 'Check out'), 3000)
-      const r = { created: !!created, canCheckOut: !!byText('button', 'Check out'), stillOnSide: !!byText('.ws-seg-value', 'side') }
-      r.fail = !(r.created && r.canCheckOut && r.stillOnSide)
-      byText('button', 'Check out').click()
+      ;[...document.querySelectorAll('.ws-header .ws-seg-branch')].find((x) => x.getClientRects().length).click()
+      const main0 = await until(() => byText('[role^=menuitem]', 'main'), 5000)
+      main0?.click()
+      const r = { created: !!created, sidebar: !main()?.querySelector('.ws-branch') }
       r.switched = !!(await until(() => byText('.ws-seg-value', 'main'), 10000))
-      r.fail = r.fail || !r.switched
+      r.fail = !(r.created && r.switched)
       return r
     `,
   },
@@ -561,12 +694,11 @@ exports.steps = [
       handle().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
       await sleep(100)
       const after = Number(handle().getAttribute('aria-valuenow'))
-      const collapse = document.querySelector('[aria-label="Collapse Branches"]')
-      collapse.click()
-      const strip = await until(() => document.querySelector('[aria-label="Show Branches"]'), 2000)
-      const saved = JSON.parse(localStorage.getItem('gh-ui:pane:branches'))
+      handle().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      const strip = await until(() => document.querySelector('[aria-label="Show Timeline"]'), 2000)
+      const saved = JSON.parse(localStorage.getItem('gh-ui:pane:branch-timeline'))
       strip?.click()
-      await until(() => !document.querySelector('[aria-label="Show Branches"]'), 2000)
+      await until(() => !document.querySelector('[aria-label="Show Timeline"]'), 2000)
       const r = { before, after, strip: !!strip, saved }
       r.fail = !(after === before + 20 && r.strip && saved.collapsed === 'first')
       return r
@@ -580,8 +712,8 @@ exports.steps = [
       const shown = await until(() => main()?.innerText.includes('to use pull requests'), 5000)
       const r = { shown: !!shown, button: !!byText('button', 'Publish repository') }
       r.fail = !(r.shown && r.button)
-      ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Branches')).click()
-      await until(() => main()?.querySelector('.ws-branch'), 5000)
+      ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => /^Branch(\\d*)$/.test(a.textContent.trim())).click()
+      await until(() => main()?.querySelector('.ws-branch-head'), 5000)
       return r
     `,
   },
@@ -597,6 +729,138 @@ exports.steps = [
       await until(() => !document.querySelector('.ws-picker'), 3000)
       r.tabs = tabTitles()
       r.fail = r.fail || r.tabs.length !== 2
+      return r
+    `,
+  },
+  {
+    name: 'a folder’s tab reads repo - branch',
+    js: `${helpers}
+      const title = await until(() => activeTab().textContent.trim() === 'e2e-local - main', 8000)
+      return { title: activeTab().textContent.trim(), fail: !title }
+    `,
+  },
+  {
+    name: 'a branch’s sections are tabs, and the details follow them',
+    screenshot: 'branch-tabs',
+    js: `${helpers}
+      const tab = (name) => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes(name))
+      const names = [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].map((t) => t.textContent.trim())
+      const opened = main().querySelector('.ws-branch-tabs [aria-selected=true]')?.textContent
+      tab('On GitHub').click()
+      const github = await until(() => main().innerText.includes('isn’t on GitHub yet'), 3000)
+      tab('On this Mac').click()
+      const rows = await until(() => main().querySelectorAll('.ws-section[aria-label="Only on this Mac"] .ws-row').length, 3000)
+      const sections = main().querySelectorAll('.ws-section').length
+      const title = await until(() => activeTab().textContent.trim() === 'e2e-local - main', 3000)
+      const clone = [...document.querySelectorAll('.ws-tool')].some((t) => t.getClientRects().length && t.textContent.includes('Clone'))
+      const publish = !![...main().querySelectorAll('.ws-branch-head button')].find((b) => b.textContent.includes('Publish repository'))
+      const r = { names, opened, github: !!github, rows, sections, title: activeTab().textContent.trim(), clone, publish }
+      r.fail = !(names.length === 3 && github && rows > 0 && sections === 1 && title && !clone && publish)
+      return r
+    `,
+  },
+  {
+    name: 'panes: dragging well past the edge hides a pane, with the real pointer',
+    inputJs: `${helpers}
+      const box = [...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length).getBoundingClientRect()
+      const x = Math.round(box.left + box.width / 2), y = Math.round(box.top + 40)
+      window.__width = Number([...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length).getAttribute('aria-valuenow'))
+      const end = Math.max(2, x - 400)
+      window.__log = []
+      const h = [...document.querySelectorAll('.ws-divider-handle')].find((el) => el.getClientRects().length)
+      for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture']) h.addEventListener(type, (e) => window.__log.push(type + ':' + e.clientX))
+      return [
+        { type: 'mouseMove', x, y },
+        { type: 'mouseDown', x, y, button: 'left', clickCount: 1 },
+        { type: 'mouseMove', x: end + 40, y, button: 'left' },
+        { type: 'mouseMove', x: end, y, button: 'left' },
+        { type: 'mouseUp', x: end, y, button: 'left', clickCount: 1 },
+        { type: 'mouseMove', x: end + 1, y },
+      ]
+    `,
+    js: `${helpers}
+      // A window that isn't on screen can hold back the real release, so send it if it hasn't come.
+      await sleep(500)
+      if (!window.__log.some((l) => l.startsWith('pointerup'))) [...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)?.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX: 2 }))
+      const strip = await until(() => document.querySelector('[aria-label="Show Timeline"]'), 4000)
+      return { strip: !!strip, buttons: document.querySelectorAll('.ws-divider-button').length, width: window.__width, log: window.__log, handles: [...document.querySelectorAll('.ws-divider-handle')].filter((h) => h.getClientRects().length).map((h) => h.getAttribute('aria-label') + '=' + h.getAttribute('aria-valuenow')), fail: !strip }
+    `,
+  },
+  {
+    name: 'panes: dragging out of the strip brings the pane back',
+    js: `${helpers}
+      const strip = document.querySelector('[aria-label="Show Timeline"]')
+      const box = strip.getBoundingClientRect()
+      strip.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientX: box.left }))
+      window.dispatchEvent(new PointerEvent('pointermove', { clientX: box.left + 240 }))
+      window.dispatchEvent(new PointerEvent('pointerup', { clientX: box.left + 240 }))
+      const gone = await until(() => !document.querySelector('[aria-label="Show Timeline"]'), 4000)
+      const width = Number([...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)?.getAttribute('aria-valuenow'))
+      return { gone: !!gone, width, fail: !(gone && width >= 180) }
+    `,
+  },
+  {
+    name: 'the toolbar clones, and a folder that already holds the repository opens instead',
+    screenshot: 'clone-existing',
+    accelerator: 'CmdOrCtrl+T',
+    js: `${helpers}
+      const repo = (await g.repos.list()).find((r) => r.name === 'e2e-local')
+      await g.git(repo.id, ['remote', 'add', 'origin', 'https://github.com/acme/e2e.git'])
+      const tool = await until(() => [...document.querySelectorAll('.ws-tool')].find((t) => t.getClientRects().length && t.textContent.includes('Clone')), 5000)
+      tool.click()
+      const dlg = await until(() => document.querySelector('[role=dialog]'), 5000)
+      if (!dlg) return { fail: true, error: 'no clone dialog' }
+      const inputs = [...dlg.querySelectorAll('input')]
+      setInput(inputs.find((i) => i.placeholder.startsWith('Choose a parent')), ${j(path.dirname(LOCAL || '/'))})
+      setInput(inputs[inputs.length - 1], 'e2e-local')
+      setInput(inputs.find((i) => i.placeholder.startsWith('https://')), 'https://github.com/other/thing.git')
+      const other = await until(() => dlg.innerText.includes('clone of another repository'), 5000)
+      const disabled = byText('[role=dialog] button', 'Clone')?.disabled
+      setInput(inputs.find((i) => i.placeholder.startsWith('https://')), 'git@github.com:acme/e2e.git')
+      const same = await until(() => dlg.innerText.includes('already cloned at'), 5000)
+      const open = byText('[role=dialog] button', 'Open existing folder')
+      open?.click()
+      const closed = await until(() => !document.querySelector('[role=dialog]'), 5000)
+      // Its origin now makes this folder a GitHub repository, so the tab moved there and keeps its branch.
+      const title = await until(() => activeTab().textContent.trim() === 'e2e - main', 8000)
+      const r = { other: !!other, disabled, same: !!same, open: !!open, closed: !!closed, title: activeTab().textContent.trim() }
+      r.fail = !(other && disabled && same && open && closed && title)
+      return r
+    `,
+  },
+  {
+    name: 'a run’s graph joins its jobs with lines',
+    screenshot: 'run-graph',
+    js: `${helpers}
+      clickLink('/PlaygrndLabs/gh-ui/actions/runs/42027302260')
+      const paths = await until(() => document.querySelectorAll('.run-graph-lines path').length, 20000)
+      const r = { paths, cards: document.querySelectorAll('.graph-card').length }
+      r.fail = paths !== 3
+      return r
+    `,
+  },
+  {
+    name: 'the file tree follows the code as it scrolls in its pane',
+    screenshot: 'files-sticky',
+    js: `${helpers}
+      clickLink('/PlaygrndLabs/gh-ui/pull/10/files')
+      const pane = await until(() => [...document.querySelectorAll('.ws-pr-files')].find((p) => p.getClientRects().length && p.querySelector('.file-diff')), 30000)
+      if (!pane) return { fail: true, error: 'no files pane' }
+      const current = () => pane.querySelector('[role=treeitem][aria-current=true]')?.id
+      const before = await until(current, 20000)
+      const diffs = [...pane.querySelectorAll('.file-diff')]
+      const target = diffs[Math.floor(diffs.length / 2)]
+      pane.scrollTop += target.getBoundingClientRect().top - pane.getBoundingClientRect().top - 100
+      const after = await until(() => current() !== before && current(), 10000)
+      await sleep(300)
+      // Nothing shows above the sticky toolbar, and the file header sits right under it.
+      const paneTop = pane.getBoundingClientRect().top
+      const bar = pane.querySelector('.files-toolbar').getBoundingClientRect()
+      const stuck = [...pane.querySelectorAll('.file-diff-header')].map((h) => h.getBoundingClientRect()).find((h) => h.bottom > bar.bottom)
+      const gap = Math.round(bar.top - paneTop)
+      const under = stuck ? Math.round(stuck.top - bar.bottom) : null
+      const r = { before, after, files: diffs.length, shownDiff: target.id, gap, under, barHeight: Math.round(bar.height) }
+      r.fail = !after || gap !== 0
       return r
     `,
   },

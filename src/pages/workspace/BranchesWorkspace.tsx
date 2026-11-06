@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
-import { CheckIcon, DotFillIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
+import { CheckIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
 import { useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { generateCommitMessage } from '../../lib/agent/oneshot'
 import type { FileDiff } from '../../lib/diff'
@@ -13,20 +13,17 @@ import { openExternal } from '../../lib/platform'
 import { firstLine, shortSha } from '../../lib/format'
 import { readPref } from '../../lib/storage'
 import { useLocalRepo } from '../../lib/useLocalRepo'
-import type { WorkspaceRepo } from '../../lib/workspace'
+import { useRepoQuery } from '../../lib/repo'
+import { useRemoteBranches, type WorkspaceRepo } from '../../lib/workspace'
 import { CopyButton, Loading } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
 import { SplitPane } from '../../components/SplitPane'
 import { PublishDialog } from '../../components/WorkspaceHeader'
-import { CloneDialog } from '../Local'
+import { useTabBranch } from '../../lib/TabsProvider'
 
 const PLACE: Record<BranchState['location'], string> = { both: 'On this Mac and GitHub', local: 'Only on this Mac', remote: 'Only on GitHub' }
 
 type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | null
-
-function branchHint(b: BranchState, pull?: { number: number }) {
-  return [PLACE[b.location], b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : '', b.gone ? 'Deleted on GitHub' : '', pull ? `#${pull.number}` : ''].filter(Boolean).join(' · ')
-}
 
 function ChangeBadge({ e }: { e: StatusEntry }) {
   const code = isUnmerged(e) ? '!' : e.index === '?' ? 'U' : e.index !== ' ' ? e.index : e.worktree
@@ -38,14 +35,13 @@ function ChangeBadge({ e }: { e: StatusEntry }) {
   )
 }
 
-function Section({ title, count, action, children }: { title: string; count?: number; action?: ReactNode; children: ReactNode }) {
+type BranchTab = 'changes' | 'local' | 'github' | 'pull' | 'checks'
+
+/** One tab's content. The tab names it, so a heading only appears when there's an action to hold. */
+function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="ws-section" aria-label={title}>
-      <div className="ws-section-head">
-        <h3 className="ws-section-title">{title}</h3>
-        {count !== undefined && <span className="ws-pill">{count}</span>}
-        {action && <span className="ws-section-action">{action}</span>}
-      </div>
+      {action && <div className="ws-section-head">{action}</div>}
       {children}
     </section>
   )
@@ -61,33 +57,30 @@ function CommitRow({ commit, selected, mark, onSelect }: { commit: LogEntry; sel
   )
 }
 
-/** A repository's front page in the desktop app: every branch, and everything about the one you pick, local or not. */
+/** A repository's front page in the desktop app: everything about the branch chosen in the top menu, a tab at a time. */
 export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const { octokit, key, account } = useGitHub()
   const local = useLocalRepo(repo.local)
   const confirm = useConfirm()
   const github = repo.github && repo.github.host.toLowerCase() === account.host.toLowerCase() ? repo.github : null
-  const [picked, setPicked] = useState<string | null>(null)
+  const { picked } = useTabBranch()
   const [selection, setSelection] = useState<Selection>(null)
   const [summary, setSummary] = useState('')
   const [description, setDescription] = useState('')
-  const [dialog, setDialog] = useState<'clone' | 'publish' | null>(null)
+  const [dialog, setDialog] = useState<'publish' | null>(null)
+  const [chosenTab, setChosenTab] = useState<{ branch: string; tab: BranchTab } | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
   const split = readPref('diffSplit', false)
 
-  const remoteBranches = useQuery({
-    queryKey: [key, 'workspace-branches', github?.owner, github?.repo],
-    enabled: !repo.local && !!github,
-    queryFn: async () => {
-      const [info, list] = await Promise.all([octokit.rest.repos.get({ owner: github!.owner, repo: github!.repo }), octokit.rest.repos.listBranches({ owner: github!.owner, repo: github!.repo, per_page: 100 })])
-      const toState = (b: (typeof list.data)[number]): BranchState => ({ name: b.name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha: b.commit.sha, date: '' })
-      return list.data.map(toState).sort((a, b) => Number(b.name === info.data.default_branch) - Number(a.name === info.data.default_branch))
-    },
-  })
+  const remoteBranches = useRemoteBranches(repo)
   const branches = (repo.local ? local.branches.data : remoteBranches.data) ?? []
   const status = local.status.data
-  const branch = branches.find((b) => b.name === picked) ?? branches.find((b) => b.current) ?? branches[0] ?? null
+  // The top menu chooses: in a folder by checking out, without one by picking.
+  const branch = (repo.local ? undefined : branches.find((b) => b.name === picked)) ?? branches.find((b) => b.current) ?? branches[0] ?? null
   const isCurrent = !!branch?.current
+  const info = useRepoQuery(github?.owner ?? '', github?.repo ?? '', !!github)
+  // Pull requests merge into the default branch, so it never has one of its own.
+  const isDefault = !!branch && branch.name === info.data?.default_branch
 
   const commits = useQuery({
     queryKey: repo.local ? ['local-log', repo.local.id, branch?.name, branch?.sha, branch?.upstream, branch?.behind] : [key, 'workspace-commits', github?.owner, github?.repo, branch?.name],
@@ -123,8 +116,13 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const conflictCount = entries.filter(isUnmerged).length
   const data = commits.data
   const shown = [...(data?.local ?? []), ...(data?.incoming ?? []), ...(data?.remote ?? [])]
-  const entry = selection?.kind !== 'commit' ? (entries.find((e) => selection?.kind === 'file' && e.path === selection.path) ?? entries[0] ?? null) : null
-  const commit = entry ? null : (shown.find((c) => selection?.kind === 'commit' && c.sha === selection.sha) ?? shown[0] ?? null)
+  // Until you choose a tab, this branch opens on whichever has something to do.
+  const tab: BranchTab = chosenTab && chosenTab.branch === branch?.name && !(chosenTab.tab === 'pull' && isDefault) ? chosenTab.tab : !repo.local ? 'github' : entries.length || stashes.data?.length ? 'changes' : data?.local.length ? 'local' : github ? 'github' : 'changes'
+  // The pull request and checks tabs link elsewhere, so they leave the commit pane out.
+  const commitTab = tab === 'changes' || tab === 'local' || tab === 'github'
+  const tabCommits = tab === 'local' ? (data?.local ?? []) : tab === 'github' ? [...(data?.incoming ?? []), ...(data?.remote ?? [])] : tab === 'changes' ? shown : []
+  const entry = tab === 'changes' ? (entries.find((e) => selection?.kind === 'file' && e.path === selection.path) ?? entries[0] ?? null) : null
+  const commit = entry ? null : (tabCommits.find((c) => selection?.kind === 'commit' && c.sha === selection.sha) ?? tabCommits[0] ?? null)
 
   const diff = useQuery({
     queryKey: ['local-diff', repo.local?.id ?? '', entry?.path, entry?.index, entry?.worktree],
@@ -198,160 +196,154 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       setSelection(null)
     })
 
-  const branchList = (
-    <div className="ws-list">
-      <div className="ws-list-head">
-        {branches.length} branch{branches.length === 1 ? '' : 'es'}
-      </div>
-      <div className="ws-scroll">
-        {!branch && (local.branches.isLoading || remoteBranches.isLoading) ? (
-          <Loading />
-        ) : (
-          branches.map((b) => (
+  const localCount = isCurrent ? (data?.local.length ?? 0) : branch?.ahead ?? 0
+  const githubCount = (data?.remote.length ?? 0) + (data?.incoming.length ?? 0)
+  const tabs: Array<{ id: BranchTab; label: string; count?: number; show: boolean }> = [
+    { id: 'changes', label: 'Changes', count: entries.length, show: !!repo.local },
+    { id: 'local', label: 'On this Mac', count: localCount, show: !!repo.local },
+    { id: 'github', label: 'On GitHub', count: githubCount, show: true },
+    { id: 'pull', label: 'Pull request', show: !!github && !isDefault },
+    { id: 'checks', label: 'Checks', show: !!github },
+  ]
+
+  const timeline = branch && (
+    <div className="ws-branch-timeline">
+      <div className="ws-subtabs ws-branch-tabs" role="tablist" aria-label={`About ${branch.name}`}>
+        {tabs
+          .filter((t) => t.show)
+          .map((t) => (
             <button
-              key={b.name}
+              key={t.id}
               type="button"
-              className={`ws-branch ${b.name === branch?.name ? 'is-selected' : ''}`}
-              aria-pressed={b.name === branch?.name}
+              role="tab"
+              className="ws-tab"
+              aria-selected={tab === t.id}
               onClick={() => {
-                setPicked(b.name)
+                setChosenTab({ branch: branch.name, tab: t.id })
                 setSelection(null)
               }}
             >
-              <span className="ws-branch-name">
-                {b.current && <DotFillIcon className="fg-success" aria-label="Current branch" />}
-                {b.name}
-              </span>
-              <span className="ws-row-sub">{branchHint(b, github ? pullFor(b.name) : undefined)}</span>
+              {t.label}
+              {!!t.count && <span className="ws-pill">{t.count}</span>}
             </button>
-          ))
+          ))}
+      </div>
+      <div className="ws-scroll" role="tabpanel">
+        {tab === 'changes' && (
+          <Section title="Changes">
+            {isCurrent && entries.length > 0 && (
+              <>
+                <label className="ws-row ws-row-check">
+                  <Checkbox checked={stagedCount === entries.length} indeterminate={stagedCount > 0 && stagedCount < entries.length} onChange={() => void toggleAll()} aria-label="Stage all" />
+                  <span className="ws-row-sub">
+                    {stagedCount} of {entries.length} staged{conflictCount ? `, ${conflictCount} with conflicts` : ''}
+                  </span>
+                </label>
+                {entries.map((e) => (
+                  <div key={e.path} className={`ws-row ws-row-file ${entry?.path === e.path ? 'is-selected' : ''}`}>
+                    <Checkbox checked={isStaged(e)} aria-label={isUnmerged(e) ? `Mark ${e.path} as resolved` : `Stage ${e.path}`} onChange={() => local.op.mutate(() => (isStaged(e) ? local.git!.unstage(e) : local.git!.stage(e)))} />
+                    <button type="button" className="ws-row-link text-mono" title={e.path} onClick={() => setSelection({ kind: 'file', path: e.path })}>
+                      {e.path}
+                    </button>
+                    <ChangeBadge e={e} />
+                  </div>
+                ))}
+                <div className="ws-commit">
+                  <div className="ws-commit-line">
+                    <TextInput block placeholder="Summary (required)" aria-label="Commit summary" value={summary} onChange={(e) => setSummary(e.target.value)} />
+                    <IconButton icon={SparkleFillIcon} aria-label="Write commit message with Claude" description={stagedCount ? 'Write it with Claude' : 'Stage some changes first'} loading={generate.isPending} disabled={!stagedCount} onClick={() => generate.mutate()} />
+                  </div>
+                  <Textarea block rows={2} placeholder="Description" aria-label="Commit description" value={description} onChange={(e) => setDescription(e.target.value)} />
+                  {genError && <div className="error-box">{genError}</div>}
+                  <Button variant="primary" block disabled={!summary.trim() || !stagedCount || conflictCount > 0} loading={local.op.isPending} onClick={commitWork}>
+                    Commit {stagedCount ? `${stagedCount} file${stagedCount === 1 ? '' : 's'} ` : ''}to {branch.name}
+                  </Button>
+                </div>
+              </>
+            )}
+            {isCurrent && !entries.length && <p className="ws-note">No uncommitted changes.</p>}
+            {!!stashes.data?.length && (
+              <div className="ws-row">
+                <span className="ws-row-main">
+                  {stashes.data.length} stashed change{stashes.data.length === 1 ? '' : 's'}: {stashes.data[0]}
+                </span>
+                <Button size="small" onClick={() => local.op.mutate(() => local.git!.stashPop())}>
+                  Restore
+                </Button>
+              </div>
+            )}
+          </Section>
+        )}
+
+        {tab === 'local' && (
+          <Section
+            title="Only on this Mac"
+            action={
+              isCurrent && data?.local.length ? (
+                <Button size="small" leadingVisual={UndoIcon} onClick={() => undo(data.local[0].subject)}>
+                  Undo last commit
+                </Button>
+              ) : undefined
+            }
+          >
+            {data?.local.map((c) => <CommitRow key={c.sha} commit={c} mark="↑" selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
+            {data && !data.local.length && <p className="ws-note">Everything on this branch is pushed.</p>}
+          </Section>
+        )}
+
+        {tab === 'github' && (
+          <Section title="On GitHub">
+            {!github && (
+              <>
+                <p className="ws-note">This repository isn’t on GitHub yet.</p>
+              </>
+            )}
+            {data?.incoming.map((c) => <CommitRow key={c.sha} commit={c} mark="↓" selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
+            {data?.remote.map((c) => <CommitRow key={c.sha} commit={c} selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
+            {github && branch.location === 'local' && <p className="ws-note">This branch isn’t on GitHub yet.</p>}
+          </Section>
+        )}
+
+        {github && tab === 'pull' && (
+          <Section title="Pull request">
+            {pull ? (
+              <Link className="ws-row ws-row-link-block" to={`/${github.owner}/${github.repo}/pull/${pull.number}`}>
+                <span className="ws-row-main">{pull.title}</span>
+                <span className="ws-row-sub">#{pull.number}{pull.draft ? ' · Draft' : ''}</span>
+              </Link>
+            ) : (
+              <>
+                <p className="ws-note">No open pull request for this branch.</p>
+                {branch.location !== 'local' && (
+                  <Button size="small" as={Link} to={`/${github.owner}/${github.repo}/compare/${encodeURIComponent(branch.name)}`}>
+                    Create pull request
+                  </Button>
+                )}
+              </>
+            )}
+          </Section>
+        )}
+
+        {github && tab === 'checks' && (
+          <Section title="Checks">
+            {runs.data?.map((run) => (
+              <Link key={run.id} className="ws-row ws-row-link-block" to={`/${github.owner}/${github.repo}/actions/runs/${run.id}`}>
+                <span className={`ws-mark ${run.status !== 'completed' ? 'ws-run' : run.conclusion === 'success' ? 'ws-ok' : run.conclusion === 'failure' ? 'ws-bad' : ''}`} title={run.conclusion ?? run.status ?? ''}>
+                  {run.status !== 'completed' ? '●' : run.conclusion === 'success' ? '✓' : run.conclusion === 'failure' ? '✕' : '–'}
+                </span>
+                <span className="ws-row-main">
+                  {run.name}: {firstLine(run.display_title)}
+                </span>
+                <span className="ws-row-sub">
+                  <RelativeTime date={new Date(run.created_at)} />
+                </span>
+              </Link>
+            ))}
+            {runs.data && !runs.data.length && <p className="ws-note">No workflow runs on this branch.</p>}
+            {branch.location === 'local' && <p className="ws-note">No workflow runs on this branch.</p>}
+          </Section>
         )}
       </div>
-    </div>
-  )
-
-  const timeline = branch && (
-    <div className="ws-scroll">
-      <Section title="Uncommitted" count={entries.length}>
-        {isCurrent && entries.length > 0 && (
-          <>
-            <label className="ws-row ws-row-check">
-              <Checkbox checked={stagedCount === entries.length} indeterminate={stagedCount > 0 && stagedCount < entries.length} onChange={() => void toggleAll()} aria-label="Stage all" />
-              <span className="ws-row-sub">
-                {stagedCount} of {entries.length} staged{conflictCount ? `, ${conflictCount} with conflicts` : ''}
-              </span>
-            </label>
-            {entries.map((e) => (
-              <div key={e.path} className={`ws-row ws-row-file ${entry?.path === e.path ? 'is-selected' : ''}`}>
-                <Checkbox checked={isStaged(e)} aria-label={isUnmerged(e) ? `Mark ${e.path} as resolved` : `Stage ${e.path}`} onChange={() => local.op.mutate(() => (isStaged(e) ? local.git!.unstage(e) : local.git!.stage(e)))} />
-                <button type="button" className="ws-row-link text-mono" title={e.path} onClick={() => setSelection({ kind: 'file', path: e.path })}>
-                  {e.path}
-                </button>
-                <ChangeBadge e={e} />
-              </div>
-            ))}
-            <div className="ws-commit">
-              <div className="ws-commit-line">
-                <TextInput block placeholder="Summary (required)" aria-label="Commit summary" value={summary} onChange={(e) => setSummary(e.target.value)} />
-                <IconButton icon={SparkleFillIcon} aria-label="Write commit message with Claude" description={stagedCount ? 'Write it with Claude' : 'Stage some changes first'} loading={generate.isPending} disabled={!stagedCount} onClick={() => generate.mutate()} />
-              </div>
-              <Textarea block rows={2} placeholder="Description" aria-label="Commit description" value={description} onChange={(e) => setDescription(e.target.value)} />
-              {genError && <div className="error-box">{genError}</div>}
-              <Button variant="primary" block disabled={!summary.trim() || !stagedCount || conflictCount > 0} loading={local.op.isPending} onClick={commitWork}>
-                Commit {stagedCount ? `${stagedCount} file${stagedCount === 1 ? '' : 's'} ` : ''}to {branch.name}
-              </Button>
-            </div>
-          </>
-        )}
-        {isCurrent && !entries.length && <p className="ws-note">No uncommitted changes.</p>}
-        {!isCurrent && repo.local && <p className="ws-note">Uncommitted changes are on the current branch. Check out {branch.name} to work on it.</p>}
-        {!repo.local && <p className="ws-note">This repository isn’t on your Mac yet.</p>}
-        {!repo.local && (
-          <Button size="small" onClick={() => setDialog('clone')}>
-            Clone {repo.name}
-          </Button>
-        )}
-        {!!stashes.data?.length && (
-          <div className="ws-row">
-            <span className="ws-row-main">
-              {stashes.data.length} stashed change{stashes.data.length === 1 ? '' : 's'}: {stashes.data[0]}
-            </span>
-            <Button size="small" onClick={() => local.op.mutate(() => local.git!.stashPop())}>
-              Restore
-            </Button>
-          </div>
-        )}
-      </Section>
-
-      <Section
-        title="Only on this Mac"
-        count={isCurrent ? (data?.local.length ?? 0) : branch.ahead}
-        action={
-          isCurrent && data?.local.length ? (
-            <Button size="small" leadingVisual={UndoIcon} onClick={() => undo(data.local[0].subject)}>
-              Undo last commit
-            </Button>
-          ) : undefined
-        }
-      >
-        {data?.local.map((c) => <CommitRow key={c.sha} commit={c} mark="↑" selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
-        {!repo.local && <p className="ws-note">Nothing here until you clone.</p>}
-        {repo.local && data && !data.local.length && <p className="ws-note">Everything on this branch is pushed.</p>}
-      </Section>
-
-      <Section title="On GitHub" count={(data?.remote.length ?? 0) + (data?.incoming.length ?? 0)}>
-        {!github && (
-          <>
-            <p className="ws-note">This repository isn’t on GitHub yet.</p>
-            <Button size="small" onClick={() => setDialog('publish')}>
-              Publish {repo.name}
-            </Button>
-          </>
-        )}
-        {data?.incoming.map((c) => <CommitRow key={c.sha} commit={c} mark="↓" selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
-        {data?.remote.map((c) => <CommitRow key={c.sha} commit={c} selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
-        {github && branch.location === 'local' && <p className="ws-note">This branch isn’t on GitHub yet.</p>}
-      </Section>
-
-      {github && (
-        <Section title="Pull request">
-          {pull ? (
-            <Link className="ws-row ws-row-link-block" to={`/${github.owner}/${github.repo}/pull/${pull.number}`}>
-              <span className="ws-row-main">{pull.title}</span>
-              <span className="ws-row-sub">#{pull.number}{pull.draft ? ' · Draft' : ''}</span>
-            </Link>
-          ) : (
-            <>
-              <p className="ws-note">No open pull request for this branch.</p>
-              {branch.location !== 'local' && (
-                <Button size="small" as={Link} to={`/${github.owner}/${github.repo}/compare/${encodeURIComponent(branch.name)}`}>
-                  Create pull request
-                </Button>
-              )}
-            </>
-          )}
-        </Section>
-      )}
-
-      {github && (
-        <Section title="Checks">
-          {runs.data?.map((run) => (
-            <Link key={run.id} className="ws-row ws-row-link-block" to={`/${github.owner}/${github.repo}/actions/runs/${run.id}`}>
-              <span className={`ws-mark ${run.status !== 'completed' ? 'ws-run' : run.conclusion === 'success' ? 'ws-ok' : run.conclusion === 'failure' ? 'ws-bad' : ''}`} title={run.conclusion ?? run.status ?? ''}>
-                {run.status !== 'completed' ? '●' : run.conclusion === 'success' ? '✓' : run.conclusion === 'failure' ? '✕' : '–'}
-              </span>
-              <span className="ws-row-main">
-                {run.name}: {firstLine(run.display_title)}
-              </span>
-              <span className="ws-row-sub">
-                <RelativeTime date={new Date(run.created_at)} />
-              </span>
-            </Link>
-          ))}
-          {runs.data && !runs.data.length && <p className="ws-note">No workflow runs on this branch.</p>}
-          {branch.location === 'local' && <p className="ws-note">No workflow runs on this branch.</p>}
-        </Section>
-      )}
     </div>
   )
 
@@ -419,16 +411,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           }
         />
       )}
-      <SplitPane
-        id="branches"
-        firstLabel="Branches"
-        secondLabel="Branch"
-        defaultWidth={280}
-        min={180}
-        max={600}
-        first={branchList}
-        second={
-          branch ? (
+      <div className="ws-pane">
+          {branch ? (
             <>
               <div className="ws-branch-head">
                 <div className="ws-branch-title">
@@ -440,22 +424,20 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
                     </span>
                   )}
                 </div>
-                {repo.local && !isCurrent && (
-                  <Button size="small" variant="primary" onClick={() => local.switchBranch(branch.name)}>
-                    Check out
+                {repo.location === 'local' && (
+                  <Button size="small" variant="primary" onClick={() => setDialog('publish')}>
+                    Publish repository
                   </Button>
                 )}
               </div>
               <div className="ws-branch-body">
-                <SplitPane id="branch-timeline" firstLabel="Timeline" secondLabel="Details" defaultWidth={420} min={280} max={800} first={timeline} second={details} />
+                {commitTab ? <SplitPane id="branch-timeline" firstLabel="Timeline" secondLabel="Details" defaultWidth={420} min={280} max={800} first={timeline} second={details} /> : timeline}
               </div>
             </>
           ) : (
             <div className="ws-empty">{commits.isLoading ? <Loading /> : 'No branches yet. Make the first commit to start one.'}</div>
-          )
-        }
-      />
-      {dialog === 'clone' && github && <CloneDialog initial={`${github.owner}/${github.repo}`} onClose={() => setDialog(null)} onCloned={() => setDialog(null)} />}
+          )}
+      </div>
       {dialog === 'publish' && <PublishDialog repo={repo} onClose={() => setDialog(null)} />}
     </div>
   )

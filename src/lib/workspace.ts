@@ -2,8 +2,9 @@
 // origin remote. The workspace's tabs and repository list work from these and don't care which kind they have.
 
 import { useQuery } from '@tanstack/react-query'
+import { useGitHub } from './github'
 import { parseRemote } from './links'
-import { localGit } from './git'
+import { localGit, type BranchState } from './git'
 import { native, type LocalRepo } from './platform'
 import { useSharedPref } from './storage'
 
@@ -103,4 +104,19 @@ export function useWorkspaceRepos() {
     addGitHubRepo: (ref: GitHubRepoRef) => setGitHubOnly((list) => addGitHubRepo(list, ref)),
     removeGitHubRepo: (key: string) => setGitHubOnly((list) => removeGitHubRepo(list, key)),
   }
+}
+
+/** Branches of a repository that has no folder here, default branch first. */
+export function useRemoteBranches(repo: WorkspaceRepo) {
+  const { octokit, key, account } = useGitHub()
+  const github = repo.github && repo.github.host.toLowerCase() === account.host.toLowerCase() ? repo.github : null
+  return useQuery({
+    queryKey: [key, 'workspace-branches', github?.owner, github?.repo],
+    enabled: !repo.local && !!github,
+    queryFn: async () => {
+      const [info, list] = await Promise.all([octokit.rest.repos.get({ owner: github!.owner, repo: github!.repo }), octokit.rest.repos.listBranches({ owner: github!.owner, repo: github!.repo, per_page: 100 })])
+      const toState = (b: (typeof list.data)[number]): BranchState => ({ name: b.name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha: b.commit.sha, date: '' })
+      return list.data.map(toState).sort((a, b) => Number(b.name === info.data.default_branch) - Number(a.name === info.data.default_branch))
+    },
+  })
 }

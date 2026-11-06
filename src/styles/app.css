@@ -208,6 +208,9 @@ body:has(.app-shell) { overflow: hidden; }
   color: var(--fgColor-muted);
 }
 .tab-item:hover .tab-close, .tab-item.is-active .tab-close { visibility: visible; }
+/* A pinned tab has no close button: a pin sits in its place. */
+.tab-pin { flex-shrink: 0; margin: 0 10px 0 4px; color: var(--fgColor-muted); opacity: 0.7; }
+.tab-item.is-pinned { flex-basis: 170px; }
 /* Its room stays reserved, so titles don't re-truncate under a passing mouse, until a narrow tab needs it for the title. */
 @container (max-width: 140px) {
   .tab-close { display: none; }
@@ -218,15 +221,13 @@ body:has(.app-shell) { overflow: hidden; }
 .tab-close:hover { background: var(--control-transparent-bgColor-hover); color: var(--fgColor-default); }
 .tab-new { flex-shrink: 0; }
 .tab-strip-end { display: flex; align-items: center; gap: 4px; flex-shrink: 0; margin-left: auto; }
-.tab-split { flex-shrink: 0; }
 .update-notice { color: var(--fgColor-accent); }
 .update-heading { padding: 12px 16px 4px; font-size: 12px; font-weight: 600; color: var(--fgColor-muted); }
 .update-copied { padding: 0 8px; font-size: 12px; color: var(--fgColor-success); white-space: nowrap; }
-.tab-split[aria-pressed='true'] { color: var(--fgColor-accent); }
 .tab-item.in-split:not(.is-active) { color: var(--fgColor-default); box-shadow: inset 0 0 0 1px var(--borderColor-muted); }
 /* The strip's empty area drags the window, like the title bar it replaces. */
 .is-native-mac .tab-strip { -webkit-app-region: drag; }
-.is-native-mac .tab-item, .is-native-mac .tab-new, .is-native-mac .tab-split, .is-native-mac .update-notice { -webkit-app-region: no-drag; }
+.is-native-mac .tab-item, .is-native-mac .tab-new, .is-native-mac .update-notice { -webkit-app-region: no-drag; }
 
 /* ---------- Containers ---------- */
 .container-xl { max-width: 1280px; margin: 0 auto; padding: 24px 32px; }
@@ -456,6 +457,9 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 
 /* ---------- Diff ---------- */
 .file-diff { margin-bottom: 16px; }
+/* The box rounds the header while it sits at the top of its file; once it sticks further down it's square, so no code
+   shows through its corners. clip, not hidden: hidden would make the box a scroller and stop the header sticking. */
+.Box.file-diff { overflow: clip; }
 .file-diff-header {
   position: sticky;
   top: 0;
@@ -466,11 +470,10 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
   padding: 6px 8px 6px 12px;
   background: var(--bgColor-muted);
   border-bottom: 1px solid var(--borderColor-default);
-  border-radius: 6px 6px 0 0;
   font-size: 12px;
   min-height: 44px;
 }
-.file-diff.collapsed .file-diff-header { border-bottom: 0; border-radius: 6px; }
+.file-diff.collapsed .file-diff-header { border-bottom: 0; }
 .file-diff-name { font-family: var(--fontStack-monospace); font-size: 12px; font-weight: 400; color: var(--fgColor-default); overflow-wrap: anywhere; }
 .diff-scroll { overflow-x: auto; }
 .diff-table {
@@ -745,6 +748,7 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 /* ---------- Dashboard ---------- */
 .dashboard-sidebar { background: var(--bgColor-default); border-right: 1px solid var(--borderColor-muted); padding: 24px 16px; }
 .dashboard-main { padding: 24px 32px; background: var(--bgColor-default); }
+.home-columns { align-items: flex-start; }
 .repo-list-item { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 14px; }
 .repo-list-item a { color: var(--fgColor-default); font-weight: 600; }
 .feed-card { border: 1px solid var(--borderColor-default); border-radius: 6px; margin-bottom: 16px; background: var(--bgColor-default); }
@@ -938,11 +942,14 @@ a.run-parent-link:hover { color: var(--fgColor-accent); }
 .run-graph-head { padding: 12px; }
 .run-graph-head h2 { margin: 0; font-size: 16px; font-weight: 600; line-height: 1.5; }
 .run-graph-head h2 a { color: var(--fgColor-default); }
-.run-graph { display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 40px; padding: 8px 12px 12px; max-height: 600px; overflow: auto; background: transparent; }
+.run-graph { position: relative; display: flex; flex-wrap: nowrap; align-items: flex-start; gap: 56px; padding: 8px 12px 12px; max-height: 600px; overflow: auto; background: transparent; }
 .run-graph.wrap { flex-wrap: wrap; gap: 16px; }
+.run-graph-lines { position: absolute; top: 0; left: 0; pointer-events: none; }
+.run-graph-lines path { fill: none; stroke: var(--borderColor-default); stroke-width: 2; }
+.run-graph-lines circle { fill: var(--bgColor-neutral-emphasis, var(--fgColor-muted)); stroke: var(--bgColor-inset); stroke-width: 1; }
 .graph-stage { display: flex; flex-direction: column; gap: 40px; padding-top: 24px; flex-shrink: 0; }
 .graph-card { position: relative; width: 260px; border: 1px solid var(--borderColor-default); border-radius: 6px; background: var(--bgColor-muted); }
-.graph-card.group { width: 292px; padding: 16px; }
+.graph-card.group { width: 292px; padding: 0 4px 4px; }
 .graph-card.has-heading { border-top-left-radius: 0; }
 .graph-card-heading { position: absolute; left: -1px; bottom: 100%; max-width: 220px; padding: 4px 16px 0; font-size: 12px; font-weight: 600; line-height: 18px; background: var(--bgColor-muted); border: 1px solid var(--borderColor-default); border-bottom: 0; border-radius: 6px 6px 0 0; }
 .run-graph a.graph-job { display: flex; align-items: center; gap: 8px; padding: 12px; border-radius: 6px; font-size: 14px; color: var(--fgColor-default); }
@@ -1369,6 +1376,12 @@ a.commit-author:hover { text-decoration: underline; }
 .compare-range-editor > svg:first-child { margin-right: 8px; }
 .compare-range-arrow { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; color: var(--fgColor-muted); padding: 0 4px; }
 .compare-range-arrow span { margin-top: -6px; font-size: 16px; }
+.compare-hint { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px; margin-bottom: 16px; background: var(--bgColor-attention-muted); border: 1px solid var(--borderColor-attention-muted); border-radius: 6px; }
+.compare-recent h2 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.compare-recent ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--borderColor-default); border-radius: 6px; }
+.compare-recent li { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-top: 1px solid var(--borderColor-muted); min-width: 0; }
+.compare-recent li:first-child { border-top: 0; }
+.compare-recent-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .compare-stats { display: flex; list-style: none; margin: 0; padding: 0 8px; }
 .compare-stats li { flex: 1; text-align: center; margin: 8px 0; padding: 0 8px; }
 .compare-stats strong { font-weight: 600; color: var(--fgColor-default); }

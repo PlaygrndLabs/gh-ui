@@ -1,20 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, TextInput } from '@primer/react'
-import { GitBranchIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
+import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, IconButton, TextInput } from '@primer/react'
+import { GitBranchIcon, LinkExternalIcon, LinkIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { useAgent } from '../lib/agent/AgentProvider'
 import { useFeatures } from '../lib/features'
 import { errorMessage, useGitHub } from '../lib/github'
+import { plural } from '../lib/format'
 import { webUrl } from '../lib/links'
 import { native, openExternal } from '../lib/platform'
 import { useRepoCounts, useRepoQuery } from '../lib/repo'
 import { useLocalRepo } from '../lib/useLocalRepo'
-import { syncAction, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
+import { useTabBranch, useTabTitle } from '../lib/TabsProvider'
+import { syncAction, useRemoteBranches, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
 import { repoKeyFromUrl } from '../lib/tabs'
 import { CloneDialog } from '../pages/Local'
 import { AccountMenu } from './AppHeader'
 import { InboxMenu } from './InboxMenu'
+import { TabItemPicker } from './HeaderPickers'
+import { CopyButton } from './Bits'
 
 const SYNC_LABEL: Record<SyncKind, string> = {
   clone: 'Clone repository',
@@ -60,21 +64,31 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const info = useRepoQuery(repo.github?.owner ?? '', repo.github?.repo ?? '', !repo.local && !!repo.github)
   const [filter, setFilter] = useState('')
   const [open, setOpen] = useState(false)
-  const current = local.status.data?.branch ?? info.data?.default_branch ?? '…'
+  const remote = useRemoteBranches(repo)
+  const { picked, setPicked, showBranch, shownBranch } = useTabBranch()
+  const all = (repo.local ? local.branches.data : remote.data) ?? []
+  const isPicked = (name: string | null): name is string => !!name && all.some((b) => b.name === name)
+  // A folder's menu says what's checked out. Without a folder, picking a branch is all there is to do with it.
+  const current = local.status.data?.branch ?? (!repo.local && isPicked(picked) ? picked : info.data?.default_branch) ?? '…'
+  const shown = current === '…' ? null : current
+  useEffect(() => {
+    // Compared with the tab's, because moving to the repository's other address clears that.
+    if (shown && shown !== shownBranch) showBranch(shown)
+  }, [shown, shownBranch, showBranch])
   const name = filter.trim().replace(/\s+/g, '-')
-  const branches = (local.branches.data ?? []).filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()))
+  const branches = all.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()))
   const exists = local.branches.data?.some((b) => b.name === name)
 
   const label = (
     <>
       <GitBranchIcon />
       <span className="ws-seg-text">
-        <span className="ws-seg-key">{repo.local ? 'Current branch' : 'Default branch'}</span>
+        <span className="ws-seg-key">{repo.local ? 'Current branch' : current === info.data?.default_branch ? 'Default branch' : 'Branch'}</span>
         <span className="ws-seg-value">{current}</span>
       </span>
     </>
   )
-  if (!repo.local) return <div className="ws-seg ws-seg-branch">{label}</div>
+  if (!repo.local && !repo.github) return <div className="ws-seg ws-seg-branch">{label}</div>
   return (
     <>
       <ActionMenu open={open} onOpenChange={setOpen}>
@@ -86,29 +100,32 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
         </ActionMenu.Anchor>
         <ActionMenu.Overlay width="medium">
           <div className="ws-menu-filter">
-            <TextInput block autoFocus aria-label="Filter or name a new branch" placeholder="Filter or name a new branch" value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+            <TextInput block autoFocus aria-label={repo.local ? 'Filter or name a new branch' : 'Filter branches'} placeholder={repo.local ? 'Filter or name a new branch' : 'Filter branches'} value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
           </div>
           <ActionList selectionVariant="single" className="ws-menu-list">
             {branches.map((b) => (
               <ActionList.Item
                 key={b.name}
-                selected={b.current}
+                selected={b.name === current}
                 onSelect={() => {
-                  if (!b.current) local.switchBranch(b.name)
+                  // What's checked out is what the page should show from here on.
+                  setPicked(repo.local ? null : b.name)
+                  if (repo.local && !b.current) local.switchBranch(b.name)
                   setFilter('')
                 }}
               >
                 {b.name}
                 <ActionList.Description variant="block">
-                  {[b.location === 'remote' ? 'Only on GitHub' : b.location === 'local' ? 'Only on this Mac' : 'On this Mac and GitHub', b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : ''].filter(Boolean).join(' · ')}
+                  {!repo.local ? (b.name === info.data?.default_branch ? 'Default branch' : 'On GitHub') : [b.location === 'remote' ? 'Only on GitHub' : b.location === 'local' ? 'Only on this Mac' : 'On this Mac and GitHub', b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : ''].filter(Boolean).join(' · ')}
                 </ActionList.Description>
               </ActionList.Item>
             ))}
-            {name && !exists && (
+            {repo.local && name && !exists && (
               <>
                 {branches.length > 0 && <ActionList.Divider />}
                 <ActionList.Item
                   onSelect={() => {
+                    setPicked(null)
                     local.op.mutate(() => local.git!.createBranch(name))
                     setFilter('')
                   }}
@@ -252,6 +269,23 @@ function Search({ repo }: { repo: WorkspaceRepo | null }) {
   )
 }
 
+/** What the page shows, for the link buttons' labels. */
+function itemName(section: string, parts: string[]) {
+  if (section === 'pull' && parts[3]) return `pull request #${parts[3]}`
+  if (section === 'issues' && /^\d+$/.test(parts[3] ?? '')) return `issue #${parts[3]}`
+  if (section === 'actions' && parts[3] === 'runs' && parts[4]) return 'workflow run'
+  if (section === 'releases' && parts[3] === 'tag' && parts[4]) return `release ${safeDecode(parts[4])}`
+  if (section === 'pulls' || section === 'actions' || section === 'issues' || section === 'releases') return section === 'pulls' ? 'pull requests' : section
+  return section ? 'page' : 'branch'
+}
+
+/** Refetches what the page shows, for when you don't want to wait for it to check again. */
+function RefreshButton() {
+  const qc = useQueryClient()
+  const fetching = useIsFetching() > 0
+  return <IconButton size="small" variant="invisible" icon={SyncIcon} className={fetching ? 'ws-refreshing' : undefined} aria-label="Refresh" onClick={() => void qc.invalidateQueries({ type: 'active' })} />
+}
+
 function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const { pathname } = useLocation()
   const { account, octokit, key } = useGitHub()
@@ -277,6 +311,21 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const changes = local.status.data?.entries.length ?? 0
 
   const home = path ?? '/'
+  // Coming back to Pull requests, Actions, Issues or Releases opens what was open there before.
+  const [lastIn, setLastIn] = useState<Record<string, string>>({})
+  const group = ['pulls', 'pull', 'compare'].includes(section) ? 'pulls' : section
+  useEffect(() => {
+    if (base && ['pulls', 'actions', 'issues', 'releases'].includes(group)) setLastIn((m) => (m[group] === pathname ? m : { ...m, [group]: pathname }))
+  }, [base, group, pathname])
+  const tabTo = (g: string, fallback: string) => lastIn[g] ?? fallback
+  // The tab you're on is already open: clicking it again leaves the page as it is.
+  const stay = (current: boolean) => (e: React.MouseEvent) => {
+    if (current) e.preventDefault()
+  }
+  const branchName = local.status.data?.branch
+  const link = base ? webUrl(account.host, section ? pathname : `${base}${branchName ? `/tree/${branchName}` : ''}`) : null
+  const name = itemName(section, parts)
+  // Every page the repository has is one click away, so none hides behind a More menu.
   const more: Array<{ label: string; to: string; show: boolean; current: string[] }> = base
     ? [
         { label: 'Code', to: `${base}/tree/${info.data?.default_branch ?? 'HEAD'}`, show: true, current: ['tree', 'blob', 'blame', 'commits', 'commit', 'branches', 'tags'] },
@@ -290,18 +339,21 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
         { label: 'Repository settings', to: `${base}/settings`, show: isOn('repoSettings') && !!info.data?.permissions?.admin, current: ['settings'] },
       ]
     : []
-  const inMore = more.find((m) => m.current.includes(section))
   return (
     <nav className="ws-tabs" aria-label="Repository">
-      <Link className="ws-tab" to={home} aria-current={section === '' ? 'page' : undefined}>
-        Branches
-        {changes > 0 && <span className="ws-pill">{changes}</span>}
+      <Link className="ws-tab" to={home} aria-current={section === '' ? 'page' : undefined} onClick={stay(section === '')}>
+        Branch
+        {changes > 0 && (
+          <span className="ws-pill" title={plural(changes, 'changed file')}>
+            {changes}
+          </span>
+        )}
       </Link>
-      <Link className="ws-tab" to={base ? `${base}/pulls` : `${home}/pulls`} aria-current={['pulls', 'pull', 'compare'].includes(section) ? 'page' : undefined}>
+      <Link className="ws-tab" to={base ? tabTo('pulls', `${base}/pulls`) : `${home}/pulls`} aria-current={group === 'pulls' ? 'page' : undefined} onClick={stay(group === 'pulls')}>
         Pull requests
-        {counts.data && counts.data.pulls > 0 && <span className="ws-pill">{counts.data.pulls}</span>}
+        {counts.data && counts.data.pulls > 0 && <span className="ws-pill" title={plural(counts.data.pulls, 'open pull request')}>{counts.data.pulls}</span>}
       </Link>
-      <Link className="ws-tab" to={base ? `${base}/actions` : `${home}/actions`} aria-current={section === 'actions' ? 'page' : undefined}>
+      <Link className="ws-tab" to={base ? tabTo('actions', `${base}/actions`) : `${home}/actions`} aria-current={section === 'actions' ? 'page' : undefined} onClick={stay(section === 'actions')}>
         Actions
         {runMark && (
           <span className={`ws-mark ${runMark.cls}`} title={runMark.label}>
@@ -309,39 +361,33 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
           </span>
         )}
       </Link>
-      {base && (
-        <ActionMenu>
-          <ActionMenu.Anchor>
-            <button type="button" className="ws-tab ws-tab-more" aria-current={inMore ? 'page' : undefined}>
-              {inMore?.label ?? 'More'}
-              <TriangleDownIcon />
+      {more
+        .filter((m) => m.show)
+        .map((m) => (
+          <Link key={m.label} className="ws-tab" to={tabTo(m.current[0], m.to)} aria-current={m.current.includes(section) ? 'page' : undefined} onClick={stay(m.current.includes(section))}>
+            {m.label}
+            {m.label === 'Issues' && counts.data && counts.data.issues > 0 && <span className="ws-pill" title={plural(counts.data.issues, 'open issue')}>{counts.data.issues}</span>}
+          </Link>
+        ))}
+      <div className="ws-tabs-end">
+        <RefreshButton />
+        {link && (
+          <>
+            <CopyButton text={link} icon={LinkIcon} label={`Copy link to ${name}`} />
+            <IconButton size="small" variant="invisible" icon={LinkExternalIcon} aria-label={`Open ${name} in browser`} onClick={() => openExternal(link)} />
+          </>
+        )}
+        {repo.local && (
+          <>
+            <button type="button" className="ws-tab" onClick={() => void native!.openInEditor(repo.local!.id)}>
+              Open in editor
             </button>
-          </ActionMenu.Anchor>
-          <ActionMenu.Overlay>
-            <ActionList>
-              {more
-                .filter((m) => m.show)
-                .map((m) => (
-                  <ActionList.LinkItem key={m.to} as={Link} to={m.to}>
-                    {m.label}
-                  </ActionList.LinkItem>
-                ))}
-              <ActionList.Divider />
-              <ActionList.Item onSelect={() => openExternal(webUrl(account.host, base))}>Open on GitHub</ActionList.Item>
-            </ActionList>
-          </ActionMenu.Overlay>
-        </ActionMenu>
-      )}
-      {repo.local && (
-        <div className="ws-tabs-end">
-          <button type="button" className="ws-tab" onClick={() => void native!.openInEditor(repo.local!.id)}>
-            Open in editor
-          </button>
-          <button type="button" className="ws-tab" onClick={() => void native!.revealInFinder(repo.local!.id)}>
-            Show in Finder
-          </button>
-        </div>
-      )}
+            <button type="button" className="ws-tab" onClick={() => void native!.revealInFinder(repo.local!.id)}>
+              Show in Finder
+            </button>
+          </>
+        )}
+      </div>
     </nav>
   )
 }
@@ -350,6 +396,11 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
 export function WorkspaceHeader() {
   const repo = useCurrentRepo()
   const agent = useAgent()
+  const { account } = useGitHub()
+  const navigate = useNavigate()
+  const [cloning, setCloning] = useState(false)
+  // A folder's tab goes by the folder on all of its pages, not only the one that names it.
+  useTabTitle(repo?.name)
   const content = useMemo(() => repo && <RepoTabs key={repo.key} repo={repo} />, [repo])
   return (
     <header className="ws-header">
@@ -358,10 +409,17 @@ export function WorkspaceHeader() {
           <>
             <BranchMenu key={`branch-${repo.key}`} repo={repo} />
             <SyncButton key={`sync-${repo.key}`} repo={repo} />
+            {repo.github && repo.github.host.toLowerCase() === account.host.toLowerCase() && <TabItemPicker owner={repo.github.owner} repo={repo.github.repo} />}
           </>
         )}
         <div className="ws-toolbar-end">
           <Search repo={repo} />
+          {/* Inside a repository the sync button offers what applies: Clone, or Publish for a folder not on GitHub. */}
+          {!repo && (
+            <button type="button" className="ws-tool" onClick={() => setCloning(true)}>
+              <RepoCloneIcon /> Clone
+            </button>
+          )}
           <InboxMenu />
           <button type="button" className="ws-tool" aria-pressed={agent.open} onClick={agent.toggle}>
             <SparkleFillIcon /> Claude
@@ -370,6 +428,7 @@ export function WorkspaceHeader() {
         </div>
       </div>
       {content}
+      {cloning && <CloneDialog initial="" onClose={() => setCloning(false)} onCloned={(r) => navigate(`/local/${r.id}`)} />}
     </header>
   )
 }

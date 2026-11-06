@@ -19,6 +19,7 @@ import {
   selectTab,
   selectTabNumber,
   serializeTabs,
+  setTabBranch,
   setTabTitle,
   setTabUrl,
   tabsToUnload,
@@ -33,6 +34,9 @@ import {
   splitTab,
   toggleSplit,
   visibleTabs,
+  pinTab,
+  pinnedCount,
+  repoSectionKey,
 } from './tabs'
 
 const ids = (s: TabsState) => s.tabs.map((t) => t.id)
@@ -355,6 +359,9 @@ describe('one tab per repository', () => {
     expect(tabTitle({ url: '/acme/web/pull/2', title: '#2 Fix' })).toBe('web')
     expect(tabTitle({ url: '/local/abc', title: 'notes' })).toBe('notes')
     expect(tabTitle({ url: '/settings', title: null })).toBe('Settings')
+    expect(tabTitle({ url: '/acme/web/pull/2', title: '#2 Fix', branch: 'main' })).toBe('web - main')
+    expect(tabTitle({ url: '/local/abc', title: 'notes', branch: 'dev' })).toBe('notes - dev')
+    expect(tabTitle({ url: '/settings', title: null, branch: 'main' })).toBe('Settings')
   })
 
   it('keeps a repository’s pages in its tab', () => {
@@ -513,5 +520,82 @@ describe('split view', () => {
     const restored = parseSavedTabs(JSON.parse(JSON.stringify(old)), 'fresh')
     expect(restored.split).toBeNull()
     expect(restored.splitRatio).toBe(0.5)
+  })
+})
+
+describe('a tab\'s branch', () => {
+  it('stays across the repository\'s pages and goes with the repository', () => {
+    let s = setTabBranch(initialTabs('a', '/o/r'), 'a', { branch: 'dev' })
+    s = setTabBranch(s, 'a', { pickedBranch: 'dev' })
+    s = setTabUrl(s, 'a', '/o/r/pulls')
+    expect(s.tabs[0]).toMatchObject({ branch: 'dev', pickedBranch: 'dev' })
+    s = setTabUrl(s, 'a', '/x/y')
+    expect(s.tabs[0]).toMatchObject({ branch: null, pickedBranch: null })
+  })
+
+  it('keeps the state when nothing changed', () => {
+    const s = setTabBranch(initialTabs('a', '/o/r'), 'a', { branch: 'dev' })
+    expect(setTabBranch(s, 'a', { branch: 'dev' })).toBe(s)
+  })
+
+  it('is saved and restored', () => {
+    const s = setTabBranch(initialTabs('a', '/o/r'), 'a', { branch: 'dev' })
+    expect(parseSavedTabs(JSON.parse(JSON.stringify(serializeTabs(s))), 'fresh').tabs[0].branch).toBe('dev')
+  })
+})
+
+describe('repoSectionKey', () => {
+  it('puts a repository page under its tab', () => {
+    expect(repoSectionKey('/Owner/Repo')).toBe('owner/repo#')
+    expect(repoSectionKey('/owner/repo/pull/3/files')).toBe('owner/repo#pulls')
+    expect(repoSectionKey('/owner/repo/compare/main...x')).toBe('owner/repo#pulls')
+    expect(repoSectionKey('/owner/repo/blob/main/a.ts')).toBe('owner/repo#code')
+    expect(repoSectionKey('/owner/repo/actions/runs/1?x=1')).toBe('owner/repo#actions')
+    expect(repoSectionKey('/owner/repo/issues/4')).toBe('owner/repo#issues')
+  })
+  it('has none for pages outside a GitHub repository', () => {
+    expect(repoSectionKey('/notifications')).toBeNull()
+    expect(repoSectionKey('/local/abc/changes')).toBeNull()
+    expect(repoSectionKey('/owner')).toBeNull()
+  })
+})
+
+describe('pinned tabs', () => {
+  const three = (): TabsState => ({
+    tabs: [
+      { id: 'a', url: '/a/a', title: null },
+      { id: 'b', url: '/b/b', title: null },
+      { id: 'c', url: '/c/c', title: null },
+    ],
+    activeId: 'a',
+    closed: [],
+    live: ['a'],
+    split: null,
+    splitRatio: 0.5,
+  })
+  const ids = (s: TabsState) => s.tabs.map((t) => `${t.id}${t.pinned ? '*' : ''}`).join(' ')
+
+  it('pins to the end of the pinned tabs and unpins to just after them', () => {
+    let s = pinTab(three(), 'c', true)
+    expect(ids(s)).toBe('c* a b')
+    s = pinTab(s, 'b', true)
+    expect(ids(s)).toBe('c* b* a')
+    expect(pinnedCount(s.tabs)).toBe(2)
+    expect(ids(pinTab(s, 'c', false))).toBe('b* c a')
+  })
+  it('opens links from a pinned tab after the pinned ones', () => {
+    const s = openTabNext(pinTab(pinTab(three(), 'a', true), 'b', true), { id: 'n', url: '/n/n' })
+    expect(ids(s)).toBe('a* b* n c')
+  })
+  it('keeps pinned and unpinned tabs apart when dragging', () => {
+    const s = pinTab(three(), 'a', true)
+    expect(ids(moveTab(s, 'c', 0))).toBe('a* c b')
+    expect(ids(moveTab(s, 'a', 2))).toBe('a* b c')
+  })
+  it('is saved and restored, pinned first', () => {
+    const s = pinTab(three(), 'b', true)
+    const saved = serializeTabs(s)
+    saved.tabs.reverse()
+    expect(ids(parseSavedTabs(saved, 'fresh'))).toBe('b* c a')
   })
 })

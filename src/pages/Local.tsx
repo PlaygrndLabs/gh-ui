@@ -5,7 +5,7 @@ import { ActionList, ActionMenu, Button, Dialog, FormControl, IconButton, NavLis
 import { DeviceDesktopIcon, RepoIcon, PlusIcon, FileDirectoryIcon, TrashIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage } from '../lib/github'
 import { native, type LocalRepo } from '../lib/platform'
-import { toHttpsRemote } from '../lib/links'
+import { parseRemote, sameRemote, toHttpsRemote } from '../lib/links'
 import { readPref, writePref } from '../lib/storage'
 import { useEffectOnChange } from '../lib/activity'
 import { useWorkspaceRepos, workspacePath } from '../lib/workspace'
@@ -159,6 +159,7 @@ export function CloneDialog({ initial, onClose, onCloned }: { initial: string; o
   const [parent, setParent] = useState(() => readPref('cloneParent', ''))
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const { repos } = useWorkspaceRepos()
   const mine = useQuery({
     queryKey: [key, 'clone-repos'],
     queryFn: async () => (await octokit.rest.repos.listForAuthenticatedUser({ sort: 'pushed', per_page: 100 })).data,
@@ -181,6 +182,27 @@ export function CloneDialog({ initial, onClose, onCloned }: { initial: string; o
     },
     onError: (e) => setError(errorMessage(e)),
   })
+  const target = useQuery({
+    queryKey: ['clone-target', parent, name],
+    enabled: !!parent && !!name,
+    staleTime: 0,
+    queryFn: () => native!.repos.cloneTarget(parent, name),
+  })
+  const taken = target.data?.exists ? target.data : null
+  const isThisRepo = !!taken?.origin && sameRemote(taken.origin, url)
+  const remote = parseRemote(url)
+  const elsewhere = repos.find((r) => r.local && !!remote && r.github?.host.toLowerCase() === remote.host.toLowerCase() && `${r.github.owner}/${r.github.repo}`.toLowerCase() === `${remote.owner}/${remote.repo}`.toLowerCase())?.local
+  const finish = async (r: LocalRepo) => {
+    await qc.invalidateQueries({ queryKey: ['local-repos'] })
+    await qc.invalidateQueries({ queryKey: ['workspace-folders'] })
+    onCloned(r)
+    onClose()
+  }
+  const openExisting = useMutation({
+    mutationFn: () => native!.repos.add(taken!.path!),
+    onSuccess: finish,
+    onError: (e) => setError(errorMessage(e)),
+  })
   const sshUrl = !!toHttpsRemote(url)
   const shown = (mine.data ?? []).filter((r) => r.full_name.toLowerCase().includes(filter.toLowerCase())).slice(0, 50)
   return (
@@ -190,7 +212,9 @@ export function CloneDialog({ initial, onClose, onCloned }: { initial: string; o
       onClose={onClose}
       footerButtons={[
         { content: 'Cancel', onClick: onClose },
-        { content: clone.isPending ? 'Cloning…' : 'Clone', buttonType: 'primary', onClick: () => clone.mutate(), disabled: !url || !parent || !name || clone.isPending },
+        isThisRepo
+          ? { content: openExisting.isPending ? 'Opening…' : 'Open existing folder', buttonType: 'primary', onClick: () => openExisting.mutate(), disabled: openExisting.isPending }
+          : { content: clone.isPending ? 'Cloning…' : 'Clone', buttonType: 'primary', onClick: () => clone.mutate(), disabled: !url || !parent || !name || !!taken || clone.isPending },
       ]}
     >
       <TextInput block placeholder="Filter your repositories" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter repositories" />
@@ -244,6 +268,19 @@ export function CloneDialog({ initial, onClose, onCloned }: { initial: string; o
         <FormControl.Label>Folder name</FormControl.Label>
         <TextInput block value={name} onChange={(e) => setName(e.target.value)} />
       </FormControl>
+      {taken && (
+        <p className={`text-small mt-3 mb-0 ${isThisRepo ? 'fg-muted' : 'fg-danger'}`}>
+          {isThisRepo ? `This repository is already cloned at ${taken.path}.` : taken.origin ? `${taken.path} is a clone of another repository (${taken.origin}). Choose another folder name.` : taken.isRepo ? `${taken.path} is a git repository with no origin. Choose another folder name, or add it with Add local folder.` : `${taken.path} already exists. Choose another folder name.`}
+        </p>
+      )}
+      {!taken && elsewhere && (
+        <p className="text-small fg-muted mt-3 mb-0">
+          Already on this Mac at {elsewhere.path}.{' '}
+          <button type="button" className="linkish" onClick={() => void finish(elsewhere)}>
+            Open it
+          </button>
+        </p>
+      )}
       {error && <div className="error-box mt-3">{error}</div>}
     </Dialog>
   )

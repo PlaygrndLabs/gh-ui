@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Avatar, Button, RelativeTime, TextInput } from '@primer/react'
@@ -27,7 +27,8 @@ const ITEM = `__typename
   ... on PullRequest { number title state isDraft updatedAt repository{nameWithOwner} author{login} reviewDecision commits(last:1){nodes{commit{statusCheckRollup{state}}}} }
   ... on Issue { number title state updatedAt repository{nameWithOwner} author{login} }`
 
-export function Dashboard() {
+/** `repositories` replaces the list of top repositories, for a page that has a fuller one. */
+export function Dashboard({ repositories }: { repositories?: ReactNode }) {
   const activity = useFeature('activityFeed')
   const assigned = useFeature('assignedIssues')
   const actionsOn = useFeature('homeActions')
@@ -70,36 +71,40 @@ export function Dashboard() {
   return (
     <div className="layout-dashboard">
       <aside className="dashboard-sidebar">
-        <div className="flex-center mb-2">
-          <h2 className="text-bold flex-1" style={{ fontSize: 14, margin: 0 }}>
-            Top repositories
-          </h2>
-        </div>
-        <TextInput block size="small" placeholder="Find a repository…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Find a repository" className="mb-2" />
-        {repos.isLoading ? (
-          <Loading />
-        ) : (
-          shownRepos.slice(0, 30).map((r) => (
-            <div key={r.id} className="repo-list-item">
-              <Avatar src={r.owner.avatar_url} size={16} square={r.owner.type === 'Organization'} />
-              <Link to={`/${r.full_name}`} className="text-truncate">
-                {r.full_name}
-              </Link>
-              {r.private && <LockIcon size={12} className="fg-muted" />}
+        {repositories ?? (
+          <>
+            <div className="flex-center mb-2">
+              <h2 className="text-bold flex-1" style={{ fontSize: 14, margin: 0 }}>
+                Top repositories
+              </h2>
             </div>
-          ))
+            <TextInput block size="small" placeholder="Find a repository…" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Find a repository" className="mb-2" />
+            {repos.isLoading ? (
+              <Loading />
+            ) : (
+              shownRepos.slice(0, 30).map((r) => (
+                <div key={r.id} className="repo-list-item">
+                  <Avatar src={r.owner.avatar_url} size={16} square={r.owner.type === 'Organization'} />
+                  <Link to={`/${r.full_name}`} className="text-truncate">
+                    {r.full_name}
+                  </Link>
+                  {r.private && <LockIcon size={12} className="fg-muted" />}
+                </div>
+              ))
+            )}
+          </>
         )}
       </aside>
-      <main className="dashboard-main">
+      <main className={`dashboard-main ${activity ? '' : 'home-full'}`}>
         <div className="flex-center gap-2 mb-3">
           <h2 className="section-title flex-1" style={{ margin: 0 }}>
             Home
           </h2>
-          <Button leadingVisual={SparkleFillIcon} variant="primary" onClick={() => agent.ask('Look at the pull requests waiting on my review, my own open pull requests (CI state, unresolved review comments) and issues assigned to me. Give me a prioritized to-do list for today.')}>
+          <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask('Look at the pull requests waiting on my review, my own open pull requests (CI state, unresolved review comments) and issues assigned to me. Give me a prioritized to-do list for today.')}>
             What needs my attention?
           </Button>
         </div>
-        <div className="flex wrap" style={{ gap: 16, alignItems: 'flex-start' }}>
+        <div className="flex wrap home-columns" style={{ gap: 16 }}>
           <FocusCard title="Review requests" icon={<EyeIcon />} items={focus.data?.reviews.nodes} total={focus.data?.reviews.issueCount} loading={focus.isLoading} to="/pulls?f=3" empty="No pull requests are waiting on your review." />
           <FocusCard title="Your pull requests" icon={<GitPullRequestIcon />} items={focus.data?.mine.nodes} total={focus.data?.mine.issueCount} loading={focus.isLoading} to="/pulls" empty="You have no open pull requests." />
           {assigned && <FocusCard title="Assigned issues" icon={<IssueOpenedIcon />} items={focus.data?.assigned.nodes} total={focus.data?.assigned.issueCount} loading={focus.isLoading} to="/issues?f=1" empty="No open issues are assigned to you." />}
