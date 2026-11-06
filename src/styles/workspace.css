@@ -161,6 +161,8 @@ button.ws-row:hover, a.ws-row:hover { color: var(--ws-text); text-decoration: no
 .ws-details-head { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 48px; padding: 8px 16px; border-bottom: 1px solid var(--ws-line); }
 .ws-details-title { flex: 1 1 180px; min-width: 0; overflow-wrap: anywhere; }
 .ws-diff { padding: 12px 20px 12px 12px; }
+/* Sticky headers stop at the scroller's padding: pull them up over it, so no code shows above a file's name. */
+.ws-diff .file-diff-header { top: -12px; }
 .ws-commit-message { margin: 0 0 12px; font-family: inherit; white-space: pre-wrap; }
 .ws-empty { display: flex; flex: 1; align-items: center; justify-content: center; padding: 32px; color: var(--ws-muted); text-align: center; }
 .ws-empty-body { display: flex; flex-direction: column; align-items: center; gap: 12px; }

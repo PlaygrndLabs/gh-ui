@@ -218,9 +218,18 @@ exports.steps = [
       // The default branch takes pull requests; it never has one of its own.
       const nav = [...document.querySelectorAll('.ws-tabs')].find((n) => n.getClientRects().length)
       r.repoTabs = [...nav.querySelectorAll('.ws-tab')].map((t) => t.textContent.trim())
+      // A file's name sticks at the very top of the commit's pane, with no code showing above it.
+      const pane = [...main().querySelectorAll('.ws-diff')].find((p) => p.getClientRects().length && p.querySelector('.file-diff'))
+      const diff = pane && ([...pane.querySelectorAll('.file-diff')].find((d) => d.offsetHeight > pane.clientHeight) || pane.querySelector('.file-diff'))
+      if (diff) {
+        pane.scrollTop = diff.offsetTop - pane.offsetTop + 200
+        await sleep(300)
+        r.stickyGap = Math.round(diff.querySelector('.file-diff-header').getBoundingClientRect().top - pane.getBoundingClientRect().top)
+        pane.scrollTop = 0
+      }
       r.ends = [...nav.querySelectorAll('.ws-tabs-end button')].map((b) => b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent.trim() || b.textContent.trim())
       // Every page is a tab of its own; nothing hides behind More.
-      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && r.ends.includes('Copy link to branch'))
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && r.ends.includes('Copy link to branch') && r.stickyGap === 0)
       return r
     `,
   },
