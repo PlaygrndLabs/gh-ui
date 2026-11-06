@@ -143,7 +143,12 @@ exports.steps = [
         pageLink: m.innerHTML.includes('Copy pull request link'),
       }
       const nav = [...document.querySelectorAll('.ws-tabs')].find((n) => n.getClientRects().length)
-      r.tabLink = [...nav.querySelectorAll('.ws-tabs-end button')].some((b) => /^Copy link to pull request #\\d+/.test(b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent || ''))
+      // The tab's right-click menu copies or opens the page on GitHub.
+      window.__e2eMenuPick = null
+      window.__e2eMenuItems = null
+      activeTab().closest('.tab-item').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      const menu = await until(() => window.__e2eMenuItems, 3000)
+      r.tabLink = !!menu && menu.some((i) => i.label === 'Copy link') && menu.some((i) => i.label === 'Open in browser')
       // Clicking the tab you're on keeps the pull request open.
       const shown = pick().innerText
       ;[...nav.querySelectorAll('a.ws-tab')].find((a) => a.textContent.includes('Pull requests')).click()
@@ -243,11 +248,17 @@ exports.steps = [
       await g.secrets.delete('anthropic-api-key')
       window.dispatchEvent(new Event('gh-ui:anthropic-key'))
       r.agentHiddenAgain = !!(await until(() => !claude(), 3000))
+      // The update notice, when there is one, sits in the middle of the strip's height.
+      const notice = document.querySelector('.tab-strip-end .update-notice')
+      if (notice) {
+        const n = notice.getBoundingClientRect(), strip = document.querySelector('.tab-strip').getBoundingClientRect()
+        r.noticeOffset = Math.round((n.top + n.bottom) / 2 - (strip.top + strip.bottom) / 2)
+      }
       // Split view is a drag or a tab's menu away; the strip has no button for it.
       r.noSplitButton = ![...document.querySelectorAll('.tab-strip-end button')].some((x) => /split/i.test(x.getAttribute('aria-label') || ''))
       r.ends = [...nav.querySelectorAll('.ws-tabs-end button')].map((b) => b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent.trim() || b.textContent.trim())
       // Every page is a tab of its own; nothing hides behind More.
-      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && !r.ends.some((e) => /^(Copy link|Open .* in browser)/.test(e)) && r.commitLinks && r.agentHiddenWithoutKey && r.agentShownWithKey && r.agentHiddenAgain && r.stickyGap === 0 && r.corners && r.noSplitButton)
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && !r.ends.some((e) => /^(Copy link|Open .* in browser)/.test(e)) && r.commitLinks && (r.noticeOffset === undefined || Math.abs(r.noticeOffset) <= 1) && r.agentHiddenWithoutKey && r.agentShownWithKey && r.agentHiddenAgain && r.stickyGap === 0 && r.corners && r.noSplitButton)
       return r
     `,
   },

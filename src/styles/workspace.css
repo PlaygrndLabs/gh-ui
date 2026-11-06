@@ -234,6 +234,8 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 /* ---------- Tabs, the way Chrome draws them: the active one is part of the toolbar under it ---------- */
 .tabbed > .tab-strip { align-items: flex-end; gap: 0; padding-top: 8px; padding-right: 8px; color: var(--ws-chrome-muted); background: var(--ws-chrome-bg-deep); border-bottom: 0; }
 .tabbed .tab-list { align-items: flex-end; gap: 0; padding: 0 8px; }
+/* The tabs sit on the strip's bottom edge; the update notice is centred in the whole strip, like the window buttons. */
+.tabbed > .tab-strip > .tab-strip-end { align-self: stretch; margin-top: -8px; }
 .tabbed .tab-item { flex: 0 1 220px; width: 220px; height: 36px; color: var(--ws-chrome-muted); border-radius: 9px 9px 0 0; }
 .tabbed .tab-item:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-bg-hover, #1a1e23); }
 .tabbed .tab-item.is-active, .tabbed .tab-item.is-active:hover { z-index: 1; color: var(--ws-chrome-text); background: var(--ws-chrome-bg); box-shadow: none; }

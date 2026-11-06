@@ -2,13 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, IconButton, TextInput } from '@primer/react'
-import { GitBranchIcon, LinkExternalIcon, LinkIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
+import { GitBranchIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgent } from '../lib/agent/AgentProvider'
 import { useFeatures } from '../lib/features'
 import { errorMessage, useGitHub } from '../lib/github'
 import { plural } from '../lib/format'
-import { webUrl } from '../lib/links'
-import { native, openExternal } from '../lib/platform'
+import { native } from '../lib/platform'
 import { useRepoCounts, useRepoQuery } from '../lib/repo'
 import { useLocalRepo } from '../lib/useLocalRepo'
 import { useTabBranch, useTabTitle } from '../lib/TabsProvider'
@@ -18,7 +17,6 @@ import { CloneDialog } from '../pages/Local'
 import { AccountMenu } from './AppHeader'
 import { InboxMenu } from './InboxMenu'
 import { TabItemPicker } from './HeaderPickers'
-import { CopyButton } from './Bits'
 
 const SYNC_LABEL: Record<SyncKind, string> = {
   clone: 'Clone repository',
@@ -269,16 +267,6 @@ function Search({ repo }: { repo: WorkspaceRepo | null }) {
   )
 }
 
-/** What the page shows, for the link buttons' labels. */
-function itemName(section: string, parts: string[]) {
-  if (section === 'pull' && parts[3]) return `pull request #${parts[3]}`
-  if (section === 'issues' && /^\d+$/.test(parts[3] ?? '')) return `issue #${parts[3]}`
-  if (section === 'actions' && parts[3] === 'runs' && parts[4]) return 'workflow run'
-  if (section === 'releases' && parts[3] === 'tag' && parts[4]) return `release ${safeDecode(parts[4])}`
-  if (section === 'pulls' || section === 'actions' || section === 'issues' || section === 'releases') return section === 'pulls' ? 'pull requests' : section
-  return section ? 'page' : 'branch'
-}
-
 /** Refetches what the page shows, for when you don't want to wait for it to check again. */
 function RefreshButton() {
   const qc = useQueryClient()
@@ -322,9 +310,6 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const stay = (current: boolean) => (e: React.MouseEvent) => {
     if (current) e.preventDefault()
   }
-  // The Branch tab links to the commit picked in it, from its own pane, not from here.
-  const link = base && section ? webUrl(account.host, pathname) : null
-  const name = itemName(section, parts)
   // Every page the repository has is one click away, so none hides behind a More menu.
   const more: Array<{ label: string; to: string; show: boolean; current: string[] }> = base
     ? [
@@ -370,13 +355,8 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
           </Link>
         ))}
       <div className="ws-tabs-end">
+        {/* Copy link and Open in browser are in the tab's right-click menu. */}
         <RefreshButton />
-        {link && (
-          <>
-            <CopyButton text={link} icon={LinkIcon} label={`Copy link to ${name}`} />
-            <IconButton size="small" variant="invisible" icon={LinkExternalIcon} aria-label={`Open ${name} in browser`} onClick={() => openExternal(link)} />
-          </>
-        )}
         {repo.local && (
           <>
             <button type="button" className="ws-tab" onClick={() => void native!.openInEditor(repo.local!.id)}>
