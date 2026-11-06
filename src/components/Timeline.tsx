@@ -1,4 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react'
+import { AgentOnly } from '../lib/agent/AgentProvider'
 import { Link } from 'react-router-dom'
 import { ActionList, ActionMenu, Button, IconButton, Label, RelativeTime, Tooltip, useConfirm } from '@primer/react'
 import {
@@ -148,11 +149,11 @@ export function CommentCard(p: CommentCardProps) {
             {p.association && ASSOCIATION_LABEL[p.association] && !bot && <Label size="small">{ASSOCIATION_LABEL[p.association]}</Label>}
             {p.isIssueAuthor && <Label size="small">Author</Label>}
             {bot && p.onAskAgent && p.agentPrompt && (
-              <Tooltip text={`Have the agent verify and address this ${botName(p.author ?? '')} comment`}>
+              <AgentOnly><Tooltip text={`Have the agent verify and address this ${botName(p.author ?? '')} comment`}>
                 <Button size="small" variant="invisible" leadingVisual={SparkleFillIcon} onClick={() => p.onAskAgent!(p.agentPrompt!)}>
                   Address
                 </Button>
-              </Tooltip>
+              </Tooltip></AgentOnly>
             )}
             <ActionMenu>
               <ActionMenu.Anchor>
@@ -426,9 +427,9 @@ export function ReviewThread({ thread, context, showHunk, viewerLogin, replyLabe
                   Reply
                 </Button>
                 {onAskAgent && (
-                  <Button size="small" leadingVisual={SparkleFillIcon} onClick={() => onAskAgent(agentPrompt ?? '')}>
+                  <AgentOnly><Button size="small" leadingVisual={SparkleFillIcon} onClick={() => onAskAgent(agentPrompt ?? '')}>
                     {bot ? `Address ${botName(thread.root.user?.login ?? '')} comment` : 'Ask agent'}
-                  </Button>
+                  </Button></AgentOnly>
                 )}
                 {onResolve && thread.info && (resolved ? thread.info.viewerCanUnresolve : thread.info.viewerCanResolve) && (
                   <Button

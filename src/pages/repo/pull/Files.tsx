@@ -33,7 +33,7 @@ import {
   type PullRequest,
 } from '../../../lib/github'
 import { useRepo, encodePath } from '../../../lib/repo'
-import { useAgent } from '../../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent } from '../../../lib/agent/AgentProvider'
 import { readPref, useSharedPref, writePref } from '../../../lib/storage'
 import { plural } from '../../../lib/format'
 import { contentElementById, cssId } from '../../../lib/scroll'
@@ -442,9 +442,9 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
           </span>
           {viewedCount} / {all.length} files viewed
         </span>
-        <Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Review the changed files in ${owner}/${repo}#${pr.number}. Report findings with file:line; I may ask you to post them as a review.`)}>
+        <AgentOnly><Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Review the changed files in ${owner}/${repo}#${pr.number}. Report findings with file:line; I may ask you to post them as a review.`)}>
           Agent review
-        </Button>
+        </Button></AgentOnly>
         <Button variant="primary" size="small" trailingAction={TriangleDownIcon} onClick={() => setReviewOpen(true)}>
           {reviewing ? 'Finish your review' : 'Review changes'} {pendingCount > 0 && <CounterLabel>{pendingCount}</CounterLabel>}
         </Button>
@@ -504,13 +504,13 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
                 }}
                 actions={
                   <>
-                    <IconButton description="Ask the agent about this file’s changes"
+                    <AgentOnly><IconButton description="Ask the agent about this file’s changes"
                         size="small"
                         variant="invisible"
                         icon={SparkleFillIcon}
                         aria-label="Ask agent about this file"
                         onClick={() => agent.ask(`Review the changes to ${f.filename} in ${owner}/${repo}#${pr.number}. Point out problems with line numbers.`)}
-                      />
+                      /></AgentOnly>
                     <label className="flex-center gap-1 text-small" style={{ cursor: 'pointer', padding: '0 6px', border: '1px solid var(--borderColor-default)', borderRadius: 6, lineHeight: '26px' }}>
                       <Checkbox
                         checked={isViewed}

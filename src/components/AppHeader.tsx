@@ -37,7 +37,7 @@ import { useAuth, useAccount } from '../lib/auth'
 import { useSwitchAccount, useIsFocusedPane } from '../lib/TabsProvider'
 import { canReadNotifications } from '../lib/hosts'
 import { useGitHub } from '../lib/github'
-import { useAgent } from '../lib/agent/AgentProvider'
+import { AgentOnly, useAgent } from '../lib/agent/AgentProvider'
 import { isNative, openExternal } from '../lib/platform'
 import { useRepoAdvisoryCount, useRepoCounts, useRepoQuery } from '../lib/repo'
 import { webUrl } from '../lib/links'
@@ -166,9 +166,9 @@ export function AppHeader() {
             />
           </div>
           <Tooltip text={agent.open ? 'Close agent' : 'Open agent'}>
-            <Button leadingVisual={SparkleFillIcon} variant={agent.open ? 'primary' : 'default'} onClick={agent.toggle} aria-pressed={agent.open}>
+            <AgentOnly><Button leadingVisual={SparkleFillIcon} variant={agent.open ? 'primary' : 'default'} onClick={agent.toggle} aria-pressed={agent.open}>
               Agent
-            </Button>
+            </Button></AgentOnly>
           </Tooltip>
           <ActionMenu>
             <ActionMenu.Anchor>

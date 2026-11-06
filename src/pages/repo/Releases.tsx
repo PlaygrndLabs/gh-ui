@@ -21,7 +21,7 @@ import {
 import { useGitHub, errorMessage, FULL_BODY } from '../../lib/github'
 import { useRepo, useTags, encodePath } from '../../lib/repo'
 import { useLatestRelease, useReleaseByTag, type Release } from '../../lib/releases'
-import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { formatBytes, compactNumber, shortSha } from '../../lib/format'
 import { openExternal } from '../../lib/platform'
 import { Blankslate, CopyButton, ErrorBox, Loading, UserAvatar, botName, isBot } from '../../components/Bits'
@@ -127,9 +127,9 @@ function ReleaseListPage() {
       <div className="release-head">
         <ReleasesSubnav current="releases" />
         <div className="flex-center gap-2">
-          <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(draftNotes)}>
+          <AgentOnly><Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(draftNotes)}>
             Draft notes with agent
-          </Button>
+          </Button></AgentOnly>
           {canPush && (
             <Button as={Link} to={`/${owner}/${repo}/releases/new`}>
               Draft a new release

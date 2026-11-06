@@ -1,9 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
-import { CheckIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
-import { useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
+import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { generateCommitMessage } from '../../lib/agent/oneshot'
 import type { FileDiff } from '../../lib/diff'
 import { changePaths, isStaged, isUnmerged, type BranchState, type LogEntry, type StatusEntry } from '../../lib/git'
@@ -47,12 +47,26 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
   )
 }
 
-function CommitRow({ commit, selected, mark, onSelect }: { commit: LogEntry; selected: boolean; mark?: string; onSelect(): void }) {
+function CommitRow({ commit, selected, mark, onSelect }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; onSelect(): void }) {
   return (
-    <button type="button" className={`ws-row ${selected ? 'is-selected' : ''}`} aria-pressed={selected} onClick={onSelect}>
-      {mark && <span className="ws-pill" title={mark === '↑' ? 'Not pushed yet' : 'Not pulled yet'}>{mark}</span>}
-      <span className="ws-row-main">{firstLine(commit.subject)}</span>
-      <span className="ws-row-sub text-mono">{shortSha(commit.sha)}</span>
+    <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''}`} aria-pressed={selected} title={`${shortSha(commit.sha)} · ${firstLine(commit.subject)}`} onClick={onSelect}>
+      <span className="ws-commit-text">
+        <span className="ws-commit-subject">{firstLine(commit.subject)}</span>
+        <span className="ws-row-sub">
+          {commit.author}
+          {commit.date && (
+            <>
+              {' · '}
+              <RelativeTime date={new Date(commit.date)} />
+            </>
+          )}
+        </span>
+      </span>
+      {mark && (
+        <span className="ws-commit-mark" title={mark === '↑' ? 'Not pushed yet' : 'Not pulled yet'}>
+          {mark === '↑' ? <ArrowUpIcon size={14} /> : <ArrowDownIcon size={14} />}
+        </span>
+      )}
     </button>
   )
 }
@@ -251,7 +265,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
                 <div className="ws-commit">
                   <div className="ws-commit-line">
                     <TextInput block placeholder="Summary (required)" aria-label="Commit summary" value={summary} onChange={(e) => setSummary(e.target.value)} />
-                    <IconButton icon={SparkleFillIcon} aria-label="Write commit message with Claude" description={stagedCount ? 'Write it with Claude' : 'Stage some changes first'} loading={generate.isPending} disabled={!stagedCount} onClick={() => generate.mutate()} />
+                    <AgentOnly><IconButton icon={SparkleFillIcon} aria-label="Write commit message with Claude" description={stagedCount ? 'Write it with Claude' : 'Stage some changes first'} loading={generate.isPending} disabled={!stagedCount} onClick={() => generate.mutate()} /></AgentOnly>
                   </div>
                   <Textarea block rows={2} placeholder="Description" aria-label="Commit description" value={description} onChange={(e) => setDescription(e.target.value)} />
                   {genError && <div className="error-box">{genError}</div>}
@@ -375,24 +389,25 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
         </div>
         {github && !data?.local.some((c) => c.sha === commit.sha) && (
           <>
-            <CopyButton text={webUrl(account.host, `/${github.owner}/${github.repo}/commit/${commit.sha}`)} label="Copy link" />
-            <Button size="small" onClick={() => openExternal(webUrl(account.host, `/${github.owner}/${github.repo}/commit/${commit.sha}`))}>
-              Open on GitHub
-            </Button>
+            {/* The same icons as the tab row, which has none of its own on this tab. */}
+            <CopyButton text={webUrl(account.host, `/${github.owner}/${github.repo}/commit/${commit.sha}`)} icon={LinkIcon} label="Copy link to commit" />
+            <IconButton size="small" variant="invisible" icon={LinkExternalIcon} aria-label="Open commit in browser" onClick={() => openExternal(webUrl(account.host, `/${github.owner}/${github.repo}/commit/${commit.sha}`))} />
           </>
         )}
       </div>
-      <div className="ws-scroll ws-diff">
-        {shownCommit.isLoading ? (
+      {shownCommit.isLoading ? (
+        <div className="ws-scroll ws-diff">
           <Loading />
-        ) : (
-          <>
-            {shownCommit.data && shownCommit.data.message.includes('\n') && <pre className="ws-commit-message">{shownCommit.data.message.split('\n').slice(1).join('\n').trim()}</pre>}
-            {shownCommit.data?.files.map((f) => <LocalFileDiff key={f.newPath} file={f} split={split} />)}
-            {shownCommit.error ? <div className="error-box">{errorMessage(shownCommit.error)}</div> : null}
-          </>
-        )}
-      </div>
+        </div>
+      ) : shownCommit.data?.files.length ? (
+        <CommitFiles key={commit.sha} files={shownCommit.data.files} split={split} message={shownCommit.data.message} />
+      ) : (
+        <div className="ws-scroll ws-diff">
+          {shownCommit.data && shownCommit.data.message.includes('\n') && <pre className="ws-commit-message">{shownCommit.data.message.split('\n').slice(1).join('\n').trim()}</pre>}
+          {shownCommit.data && <p className="ws-note">No file changes in this commit.</p>}
+          {shownCommit.error ? <div className="error-box">{errorMessage(shownCommit.error)}</div> : null}
+        </div>
+      )}
     </div>
   ) : (
     <div className="ws-empty">Pick a file or commit to see it here.</div>
@@ -450,4 +465,83 @@ function LocalFileDiff({ file, split }: { file: FileDiff; split: boolean }) {
       split={split}
     />
   )
+}
+
+const STATUS_MARK: Partial<Record<FileDiff['status'], { code: string; color: string; title: string }>> = {
+  added: { code: 'A', color: 'fg-success', title: 'Added' },
+  removed: { code: 'D', color: 'fg-danger', title: 'Deleted' },
+  renamed: { code: 'R', color: 'fg-accent', title: 'Renamed' },
+  copied: { code: 'C', color: 'fg-accent', title: 'Copied' },
+}
+
+/** A commit's changed files beside all of their diffs, as in GitHub Desktop: picking a file scrolls to it, and scrolling marks the file in view. */
+function CommitFiles({ files, split, message }: { files: FileDiff[]; split: boolean; message: string }) {
+  const scroller = useRef<HTMLDivElement>(null)
+  const [current, setCurrent] = useState(0)
+  // Where a click scrolled to: until you scroll away from it, the clicked file stays marked, even one too short to reach the top.
+  const jumpedTo = useRef<number | null>(null)
+  const body = message.includes('\n') ? message.split('\n').slice(1).join('\n').trim() : ''
+
+  useEffect(() => {
+    const el = scroller.current
+    if (!el) return
+    const onScroll = () => {
+      if (jumpedTo.current !== null && Math.abs(el.scrollTop - jumpedTo.current) < 2) return
+      jumpedTo.current = null
+      const top = el.getBoundingClientRect().top + 24
+      const boxes = [...el.querySelectorAll<HTMLElement>('[data-file-index]')]
+      let at = 0
+      for (const b of boxes) if (b.getBoundingClientRect().top <= top) at = Number(b.dataset.fileIndex)
+      setCurrent(at)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  const show = (i: number) => {
+    const el = scroller.current
+    const box = el?.querySelector<HTMLElement>(`[data-file-index="${i}"]`)
+    if (!el || !box) return
+    el.scrollTop += box.getBoundingClientRect().top - el.getBoundingClientRect().top - 12
+    jumpedTo.current = el.scrollTop
+    setCurrent(i)
+  }
+
+  const list = (
+    <div className="ws-commit-files">
+      <div className="ws-commit-files-head">
+        {files.length} changed {files.length === 1 ? 'file' : 'files'}
+      </div>
+      <div className="ws-scroll">
+        {files.map((f, i) => {
+          const mark = STATUS_MARK[f.status] ?? { code: 'M', color: 'fg-attention', title: 'Modified' }
+          const slash = f.newPath.lastIndexOf('/')
+          return (
+            <button key={f.newPath} type="button" className={`ws-row ws-file-row ${i === current ? 'is-selected' : ''}`} aria-pressed={i === current} title={f.newPath} onClick={() => show(i)}>
+              <span className="ws-file-path">
+                {slash > 0 && <span className="ws-file-dir">{f.newPath.slice(0, slash + 1)}</span>}
+                <span className="ws-file-name">{f.newPath.slice(slash + 1)}</span>
+              </span>
+              <span className={`text-mono text-small text-bold ${mark.color}`} title={mark.title}>
+                {mark.code}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+
+  const diffs = (
+    <div className="ws-scroll ws-diff" ref={scroller}>
+      {body && <pre className="ws-commit-message">{body}</pre>}
+      {files.map((f, i) => (
+        <div key={f.newPath} data-file-index={i}>
+          <LocalFileDiff file={f} split={split} />
+        </div>
+      ))}
+    </div>
+  )
+
+  return <SplitPane id="commit-files" firstLabel="Changed files" secondLabel="Diff" defaultWidth={260} min={160} max={520} first={list} second={diffs} />
 }

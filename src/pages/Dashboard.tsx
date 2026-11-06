@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Avatar, Button, RelativeTime, TextInput } from '@primer/react'
 import { PlayIcon, RepoIcon, SparkleFillIcon, EyeIcon, GitPullRequestIcon, IssueOpenedIcon, StarIcon, RepoForkedIcon, GitBranchIcon, TagIcon, CommentIcon, RepoPushIcon, LockIcon } from '@primer/octicons-react'
 import { useGitHub } from '../lib/github'
-import { useAgent, useAgentPageContext } from '../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../lib/agent/AgentProvider'
 import { CheckStatusIcon, CommitStatusMark, IssueStateIcon, PullStateIcon } from '../components/Status'
 import { Blankslate, Loading } from '../components/Bits'
 import { useFeature } from '../lib/features'
@@ -100,9 +100,9 @@ export function Dashboard({ repositories }: { repositories?: ReactNode }) {
           <h2 className="section-title flex-1" style={{ margin: 0 }}>
             Home
           </h2>
-          <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask('Look at the pull requests waiting on my review, my own open pull requests (CI state, unresolved review comments) and issues assigned to me. Give me a prioritized to-do list for today.')}>
+          <AgentOnly><Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask('Look at the pull requests waiting on my review, my own open pull requests (CI state, unresolved review comments) and issues assigned to me. Give me a prioritized to-do list for today.')}>
             What needs my attention?
-          </Button>
+          </Button></AgentOnly>
         </div>
         <div className="flex wrap home-columns" style={{ gap: 16 }}>
           <FocusCard title="Review requests" icon={<EyeIcon />} items={focus.data?.reviews.nodes} total={focus.data?.reviews.issueCount} loading={focus.isLoading} to="/pulls?f=3" empty="No pull requests are waiting on your review." />
