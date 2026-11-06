@@ -292,6 +292,7 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const changes = local.status.data?.entries.length ?? 0
 
   const home = path ?? '/'
+  // Every page the repository has is one click away, so none hides behind a More menu.
   const more: Array<{ label: string; to: string; show: boolean; current: string[] }> = base
     ? [
         { label: 'Code', to: `${base}/tree/${info.data?.default_branch ?? 'HEAD'}`, show: true, current: ['tree', 'blob', 'blame', 'commits', 'commit', 'branches', 'tags'] },
@@ -305,7 +306,6 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
         { label: 'Repository settings', to: `${base}/settings`, show: isOn('repoSettings') && !!info.data?.permissions?.admin, current: ['settings'] },
       ]
     : []
-  const inMore = more.find((m) => m.current.includes(section))
   return (
     <nav className="ws-tabs" aria-label="Repository">
       <Link className="ws-tab" to={home} aria-current={section === '' ? 'page' : undefined}>
@@ -324,37 +324,31 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
           </span>
         )}
       </Link>
-      {base && (
-        <ActionMenu>
-          <ActionMenu.Anchor>
-            <button type="button" className="ws-tab ws-tab-more" aria-current={inMore ? 'page' : undefined}>
-              {inMore?.label ?? 'More'}
-              <TriangleDownIcon />
-            </button>
-          </ActionMenu.Anchor>
-          <ActionMenu.Overlay>
-            <ActionList>
-              {more
-                .filter((m) => m.show)
-                .map((m) => (
-                  <ActionList.LinkItem key={m.to} as={Link} to={m.to}>
-                    {m.label}
-                  </ActionList.LinkItem>
-                ))}
-              <ActionList.Divider />
-              <ActionList.Item onSelect={() => openExternal(webUrl(account.host, base))}>Open on GitHub</ActionList.Item>
-            </ActionList>
-          </ActionMenu.Overlay>
-        </ActionMenu>
-      )}
-      {repo.local && (
+      {more
+        .filter((m) => m.show)
+        .map((m) => (
+          <Link key={m.label} className="ws-tab" to={m.to} aria-current={m.current.includes(section) ? 'page' : undefined}>
+            {m.label}
+            {m.label === 'Issues' && counts.data && counts.data.issues > 0 && <span className="ws-pill">{counts.data.issues}</span>}
+          </Link>
+        ))}
+      {(repo.local || base) && (
         <div className="ws-tabs-end">
-          <button type="button" className="ws-tab" onClick={() => void native!.openInEditor(repo.local!.id)}>
-            Open in editor
-          </button>
-          <button type="button" className="ws-tab" onClick={() => void native!.revealInFinder(repo.local!.id)}>
-            Show in Finder
-          </button>
+          {base && (
+            <button type="button" className="ws-tab" onClick={() => openExternal(webUrl(account.host, base))}>
+              Open on GitHub
+            </button>
+          )}
+          {repo.local && (
+            <>
+              <button type="button" className="ws-tab" onClick={() => void native!.openInEditor(repo.local!.id)}>
+                Open in editor
+              </button>
+              <button type="button" className="ws-tab" onClick={() => void native!.revealInFinder(repo.local!.id)}>
+                Show in Finder
+              </button>
+            </>
+          )}
         </div>
       )}
     </nav>

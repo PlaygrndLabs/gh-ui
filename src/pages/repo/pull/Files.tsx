@@ -161,6 +161,8 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
     // In the desktop app's chat-beside-code layout the files scroll in their own pane, not with the page.
     const main = treeBox.current?.closest('.ws-pr-files') ?? treeBox.current?.closest('.app-main')
     if (!main || !shownPaths) return
+    // A file picked from another list of files doesn't hold this one.
+    pinnedFile.current = false
     const paths = shownPaths.split('\n')
     let frame = 0
     const update = () => {

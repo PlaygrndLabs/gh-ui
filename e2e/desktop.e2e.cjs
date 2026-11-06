@@ -184,7 +184,10 @@ exports.steps = [
       const tabNames = await until(() => { const n = [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].map((t) => t.textContent.trim()); return n.includes('Checks') && n }, 8000)
       const r = { sidebar: main().querySelectorAll('.ws-list').length, commits: main().querySelectorAll('.ws-section .ws-row').length, diff: !!main().querySelector('.file-diff'), toolbar: !!byText('.ws-seg-value', 'Clone repository'), tabNames }
       // The default branch takes pull requests; it never has one of its own.
-      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request'))
+      const nav = [...document.querySelectorAll('.ws-tabs')].find((n) => n.getClientRects().length)
+      r.repoTabs = [...nav.querySelectorAll('.ws-tab')].map((t) => t.textContent.trim())
+      // Every page is a tab of its own; nothing hides behind More.
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && r.repoTabs.includes('Open on GitHub') && !r.repoTabs.some((t) => t.startsWith('More')))
       return r
     `,
   },
