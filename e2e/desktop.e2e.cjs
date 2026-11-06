@@ -237,6 +237,18 @@ exports.steps = [
         r.corners = [document.elementFromPoint(h.left + 1, h.top + 1), document.elementFromPoint(h.right - 2, h.top + 1)].every((el) => header.contains(el))
         pane.scrollTop = 0
       }
+      // Its changed files are listed beside the diffs; picking one scrolls to that file's diff.
+      const fileRows = [...main().querySelectorAll('.ws-file-row')].filter((b) => b.getClientRects().length)
+      r.fileList = fileRows.length > 0 && /changed files?$/.test(main().querySelector('.ws-commit-files-head')?.textContent.trim() ?? '')
+      if (pane && fileRows.length > 1) {
+        const last = fileRows[fileRows.length - 1]
+        last.click()
+        await sleep(300)
+        const box = pane.querySelector('[data-file-index="' + (fileRows.length - 1) + '"]')
+        r.fileJump = last.getAttribute('aria-pressed') === 'true' && (Math.abs(box.getBoundingClientRect().top - pane.getBoundingClientRect().top) < 40 || pane.scrollTop + pane.clientHeight >= pane.scrollHeight - 2)
+        pane.scrollTop = 0
+      } else r.fileJump = !!r.fileList
+      r.commitRows = [...main().querySelectorAll('.ws-commit-row')].filter((b) => b.getClientRects().length).every((b) => b.querySelector('.ws-commit-subject') && b.querySelector('.ws-row-sub'))
       // The picked commit's links are in its pane, as the same icons as the tab row's; the tab row has none here.
       r.commitLinks = main().innerHTML.includes('Copy link to commit') && main().innerHTML.includes('Open commit in browser') && !byText('.ws-details-head button', 'Open on GitHub')
       // The agent shows only with an API key: none in this profile, so no Claude button until one is saved.
@@ -258,7 +270,7 @@ exports.steps = [
       r.noSplitButton = ![...document.querySelectorAll('.tab-strip-end button')].some((x) => /split/i.test(x.getAttribute('aria-label') || ''))
       r.ends = [...nav.querySelectorAll('.ws-tabs-end button')].map((b) => b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent.trim() || b.textContent.trim())
       // Every page is a tab of its own; nothing hides behind More.
-      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && !r.ends.some((e) => /^(Copy link|Open .* in browser)/.test(e)) && r.commitLinks && (r.noticeOffset === undefined || Math.abs(r.noticeOffset) <= 1) && r.agentHiddenWithoutKey && r.agentShownWithKey && r.agentHiddenAgain && r.stickyGap === 0 && r.corners && r.noSplitButton)
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && !r.ends.some((e) => /^(Copy link|Open .* in browser)/.test(e)) && r.commitLinks && (r.noticeOffset === undefined || Math.abs(r.noticeOffset) <= 1) && r.agentHiddenWithoutKey && r.agentShownWithKey && r.agentHiddenAgain && r.stickyGap === 0 && r.corners && r.noSplitButton && r.fileList && r.fileJump && r.commitRows)
       return r
     `,
   },

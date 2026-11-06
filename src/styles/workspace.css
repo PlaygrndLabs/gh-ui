@@ -163,6 +163,18 @@ button.ws-row:hover, a.ws-row:hover { color: var(--ws-text); text-decoration: no
 .ws-diff { padding: 12px 20px 12px 12px; }
 /* Sticky headers stop at the scroller's padding: pull them up over it, so no code shows above a file's name. */
 .ws-diff .file-diff-header { top: -12px; }
+.ws-commit-files { display: flex; flex: 1; flex-direction: column; min-height: 0; border-right: 1px solid var(--ws-line); }
+.ws-commit-files-head { flex: none; padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--ws-muted); border-bottom: 1px solid var(--ws-line); }
+.ws-commit-files .ws-scroll { padding: 4px; }
+.ws-file-row { font-size: 12px; }
+.ws-file-path { display: flex; flex: 1; min-width: 0; white-space: nowrap; }
+.ws-file-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ws-muted); }
+.ws-file-name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.ws-commit-row { align-items: center; padding: 6px 8px; }
+.ws-commit-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.ws-commit-subject { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
+.ws-commit-text .ws-row-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ws-commit-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; color: var(--ws-muted); border: 1px solid var(--ws-line); border-radius: 50%; }
 .ws-commit-message { margin: 0 0 12px; font-family: inherit; white-space: pre-wrap; }
 .ws-empty { display: flex; flex: 1; align-items: center; justify-content: center; padding: 32px; color: var(--ws-muted); text-align: center; }
 .ws-empty-body { display: flex; flex-direction: column; align-items: center; gap: 12px; }
