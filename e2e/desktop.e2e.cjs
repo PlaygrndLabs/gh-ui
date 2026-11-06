@@ -234,11 +234,20 @@ exports.steps = [
       }
       // The picked commit's links are in its pane, as the same icons as the tab row's; the tab row has none here.
       r.commitLinks = main().innerHTML.includes('Copy link to commit') && main().innerHTML.includes('Open commit in browser') && !byText('.ws-details-head button', 'Open on GitHub')
+      // The agent shows only with an API key: none in this profile, so no Claude button until one is saved.
+      const claude = () => [...document.querySelectorAll('.ws-tool')].find((b) => b.getClientRects().length && b.textContent.includes('Claude'))
+      r.agentHiddenWithoutKey = !claude()
+      await g.secrets.set('anthropic-api-key', 'e2e-placeholder-key')
+      window.dispatchEvent(new Event('gh-ui:anthropic-key'))
+      r.agentShownWithKey = !!(await until(claude, 3000))
+      await g.secrets.delete('anthropic-api-key')
+      window.dispatchEvent(new Event('gh-ui:anthropic-key'))
+      r.agentHiddenAgain = !!(await until(() => !claude(), 3000))
       // Split view is a drag or a tab's menu away; the strip has no button for it.
       r.noSplitButton = ![...document.querySelectorAll('.tab-strip-end button')].some((x) => /split/i.test(x.getAttribute('aria-label') || ''))
       r.ends = [...nav.querySelectorAll('.ws-tabs-end button')].map((b) => b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent.trim() || b.textContent.trim())
       // Every page is a tab of its own; nothing hides behind More.
-      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && !r.ends.some((e) => /^(Copy link|Open .* in browser)/.test(e)) && r.commitLinks && r.stickyGap === 0 && r.corners && r.noSplitButton)
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && !r.ends.some((e) => /^(Copy link|Open .* in browser)/.test(e)) && r.commitLinks && r.agentHiddenWithoutKey && r.agentShownWithKey && r.agentHiddenAgain && r.stickyGap === 0 && r.corners && r.noSplitButton)
       return r
     `,
   },

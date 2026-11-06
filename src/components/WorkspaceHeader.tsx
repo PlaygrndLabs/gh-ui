@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, IconButton, TextInput } from '@primer/react'
 import { GitBranchIcon, LinkExternalIcon, LinkIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
-import { useAgent } from '../lib/agent/AgentProvider'
+import { AgentOnly, useAgent } from '../lib/agent/AgentProvider'
 import { useFeatures } from '../lib/features'
 import { errorMessage, useGitHub } from '../lib/github'
 import { plural } from '../lib/format'
@@ -421,9 +421,9 @@ export function WorkspaceHeader() {
             </button>
           )}
           <InboxMenu />
-          <button type="button" className="ws-tool" aria-pressed={agent.open} onClick={agent.toggle}>
+          <AgentOnly><button type="button" className="ws-tool" aria-pressed={agent.open} onClick={agent.toggle}>
             <SparkleFillIcon /> Claude
-          </button>
+          </button></AgentOnly>
           <AccountMenu />
         </div>
       </div>

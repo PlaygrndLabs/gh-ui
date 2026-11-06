@@ -6,7 +6,7 @@ import { KebabHorizontalIcon, PlayIcon, SyncIcon, StopIcon, TrashIcon, FileCodeI
 import { parse as parseYaml } from 'yaml'
 import { useGitHub, decodeBase64, errorMessage, type WorkflowRun, type Workflow } from '../../lib/github'
 import { useRepo, useBranches, encodePath } from '../../lib/repo'
-import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { durationBetween } from '../../lib/format'
 import { BranchPicker } from '../../components/BranchPicker'
 import { CheckStatusIcon } from '../../components/Status'
@@ -123,9 +123,9 @@ export function ActionsPage() {
             <h2 style={{ margin: 0, fontSize: 24, fontWeight: 400 }} className="flex-1">
               {selected ? selected.name : 'All workflows'}
             </h2>
-            <Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Summarize the health of ${selected ? `the "${selected.name}" workflow` : 'GitHub Actions'} in ${fullName}: recent pass rate, the failures and their causes.`)}>
+            <AgentOnly><Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Summarize the health of ${selected ? `the "${selected.name}" workflow` : 'GitHub Actions'} in ${fullName}: recent pass rate, the failures and their causes.`)}>
               Ask agent
-            </Button>
+            </Button></AgentOnly>
             {/* Keyed so the chosen ref, inputs and open state don't carry over to another workflow. */}
             {selected && canWrite && <DispatchButton key={selected.id} owner={owner} repo={repo} workflow={selected} onDone={refresh} />}
           </div>

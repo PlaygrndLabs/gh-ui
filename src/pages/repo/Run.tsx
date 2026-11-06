@@ -27,7 +27,7 @@ import {
 import { parse as parseYaml } from 'yaml'
 import { useGitHub, decodeBase64, errorMessage, type Job } from '../../lib/github'
 import { useRepo, encodePath } from '../../lib/repo'
-import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { fetchJobLogs, parseLog, splitLogBySteps, type LogLine, type StepLog } from '../../lib/logs'
 import { durationBetween, shortSha, copyText } from '../../lib/format'
 import { graphEdges } from '../../lib/runGraph'
@@ -140,9 +140,9 @@ export function RunPage() {
           </h1>
           {!isNative && <CopyButton text={r.html_url} label="Copy link to this run" size="medium" />}
           {failedJobs.length > 0 && (
-            <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Explain why workflow run ${r.id} in ${fullName} failed and propose a fix. Failed jobs: ${failedJobs.map((j) => `${j.name} (${j.id})`).join(', ')}.`)}>
+            <AgentOnly><Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Explain why workflow run ${r.id} in ${fullName} failed and propose a fix. Failed jobs: ${failedJobs.map((j) => `${j.name} (${j.id})`).join(', ')}.`)}>
               Explain failure
-            </Button>
+            </Button></AgentOnly>
           )}
           {canWrite && r.status === 'completed' && (
             <ActionMenu>
@@ -814,9 +814,9 @@ function JobLogs({ job, canWrite, onChanged }: { job: Job; canWrite: boolean; on
           </div>
           <TextInput leadingVisual={SearchIcon} placeholder="Search logs" size="small" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search logs" />
           {failed && (
-            <Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Job "${job.name}" (job id ${job.id}) failed in ${fullName}. Read its logs with get_job_logs, explain the root cause, and propose a fix.`)}>
+            <AgentOnly><Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Job "${job.name}" (job id ${job.id}) failed in ${fullName}. Read its logs with get_job_logs, explain the root cause, and propose a fix.`)}>
               Explain
-            </Button>
+            </Button></AgentOnly>
           )}
           {canWrite && job.status === 'completed' && (
             <IconButton description="Re-run this job" size="small" icon={SyncIcon} aria-label="Re-run this job" onClick={() => rerun.mutate()} />

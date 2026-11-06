@@ -5,7 +5,7 @@ import { ActionList, ActionMenu, Button, IconButton, TextInput, UnderlineNav } f
 import { CommentDiscussionIcon, GitCommitIcon, ChecklistIcon, FileDiffIcon, SparkleFillIcon, TriangleDownIcon, LinkExternalIcon, PencilIcon, LinkIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage } from '../../lib/github'
 import { useRepo } from '../../lib/repo'
-import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { webUrl } from '../../lib/links'
 import { isNative, openExternal } from '../../lib/platform'
 import { plural } from '../../lib/format'
@@ -137,7 +137,7 @@ function PullRequestView() {
               )}
               <span style={{ width: 4 }} />
               <CheckoutMenu pr={pr} owner={owner} repo={repo} />
-              <ActionMenu>
+              <AgentOnly><ActionMenu>
                 <ActionMenu.Anchor>
                   <Button size="small" leadingVisual={SparkleFillIcon} trailingVisual={TriangleDownIcon}>
                     Agent
@@ -161,7 +161,7 @@ function PullRequestView() {
                     <ActionList.Item onSelect={() => agent.ask(prompts!.description)}>Draft a description</ActionList.Item>
                   </ActionList>
                 </ActionMenu.Overlay>
-              </ActionMenu>
+              </ActionMenu></AgentOnly>
             </span>
           </div>
         )}

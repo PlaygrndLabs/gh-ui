@@ -5,7 +5,7 @@ import { ActionList, ActionMenu, Button, ButtonGroup, RelativeTime, SegmentedCon
 import { ArrowLeftIcon, GitBranchIcon, CheckIcon, GitCommitIcon, GitCompareIcon, PeopleIcon, SparkleFillIcon, TriangleDownIcon, FileDiffIcon, DiffAddedIcon, DiffModifiedIcon, DiffRemovedIcon, DiffRenamedIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage } from '../../lib/github'
 import { useRepo, useBranches, encodePath } from '../../lib/repo'
-import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { firstLine, plural, restLines } from '../../lib/format'
 import { readPref, writePref } from '../../lib/storage'
 import { BranchPicker } from '../../components/BranchPicker'
@@ -262,9 +262,9 @@ function CompareForm() {
               <div className="flex-1" style={{ minWidth: 0 }}>
                 <div className="flex-center gap-2 mb-2">
                   <TextInput data-tab-draft block size="large" placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} aria-label="Title" />
-                  <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Write a pull request title and description for merging ${head} into ${base} in ${fullName}. First line is the title, then the markdown body.`)}>
+                  <AgentOnly><Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Write a pull request title and description for merging ${head} into ${base} in ${fullName}. First line is the title, then the markdown body.`)}>
                     Draft with agent
-                  </Button>
+                  </Button></AgentOnly>
                 </div>
                 <Composer
                   value={body}

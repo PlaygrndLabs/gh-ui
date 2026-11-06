@@ -17,7 +17,7 @@ import {
 } from '@primer/octicons-react'
 import { useGitHub, errorMessage } from '../../lib/github'
 import { useRepo } from '../../lib/repo'
-import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { Blankslate, ErrorBox, IssueLabel, Loading, UserAvatar, UserLink } from '../../components/Bits'
 import { Markdown } from '../../components/Markdown'
 import { Composer } from '../../components/Composer'
@@ -460,9 +460,9 @@ export function DiscussionPage() {
           <h1 className="page-title flex-1">
             {d.title} <span className="num">#{number}</span>
           </h1>
-          <Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Help me answer discussion #${number} in ${fullName} titled "${d.title}". Read it with get_discussion, look at the relevant code and draft a reply; don't post it until I confirm.`)}>
+          <AgentOnly><Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Help me answer discussion #${number} in ${fullName} titled "${d.title}". Read it with get_discussion, look at the relevant code and draft a reply; don't post it until I confirm.`)}>
             Draft answer
-          </Button>
+          </Button></AgentOnly>
         </div>
         <div className="dx-header-meta">
           {d.category.isAnswerable && (

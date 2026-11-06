@@ -112,7 +112,7 @@ On Windows and Linux, use Ctrl for ⌘.
 
 ## The agent
 
-Open it with the **Agent** button (or ⌘⇧A in the desktop app). It knows what page you're on and offers page-specific actions: *Review this PR*, *Address bot comments*, *Fix failing checks*, *Explain failure*, and more. Bot comments get an **Address** button that hands that one comment to the agent.
+Open it with the **Agent** button (or ⌘⇧A in the desktop app). Until an API key is saved in Settings → Agent (or a proxy is set up on the web), the agent's buttons don't show anywhere. It knows what page you're on and offers page-specific actions: *Review this PR*, *Address bot comments*, *Fix failing checks*, *Explain failure*, and more. Bot comments get an **Address** button that hands that one comment to the agent.
 
 It works through GitHub tools: reading PRs, diffs, files, review threads, checks, runs and job logs, discussions, releases and security alerts; and — after your approval — replying to and resolving review threads, posting comments, reviews and discussion replies, adding multi-line review comments and suggestions, committing fixes (multi-file commits with exact string edits, guarded by the expected head SHA), re-running / cancelling / dispatching workflows, updating and merging PRs.
 

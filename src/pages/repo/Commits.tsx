@@ -6,7 +6,7 @@ import { GitBranchIcon, GitCommitIcon, FileCodeIcon, CodeIcon, EllipsisIcon, Gea
 import { useGitHub } from '../../lib/github'
 import { useRepo, useRefPath, encodePath } from '../../lib/repo'
 import { dayLabel, firstLine, plural, restLines, shortSha } from '../../lib/format'
-import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { webUrl } from '../../lib/links'
 import { isNative, openExternal } from '../../lib/platform'
 import { readPref, writePref } from '../../lib/storage'
@@ -424,9 +424,9 @@ export function CommitPage() {
             Commit <span className="commit-header-sha">{shortSha(c.sha)}</span>
           </h1>
           <span className="commit-header-actions">
-            <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Explain commit ${c.sha} in ${owner}/${repo}.`)}>
+            <AgentOnly><Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Explain commit ${c.sha} in ${owner}/${repo}.`)}>
               Explain
-            </Button>
+            </Button></AgentOnly>
             <Button as={Link} leadingVisual={FileCodeIcon} to={`/${owner}/${repo}/tree/${c.sha}`} title="Browse the repository at this point in the history">
               Browse files
             </Button>

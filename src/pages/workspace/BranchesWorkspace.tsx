@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
 import { CheckIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
-import { useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { generateCommitMessage } from '../../lib/agent/oneshot'
 import type { FileDiff } from '../../lib/diff'
 import { changePaths, isStaged, isUnmerged, type BranchState, type LogEntry, type StatusEntry } from '../../lib/git'
@@ -251,7 +251,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
                 <div className="ws-commit">
                   <div className="ws-commit-line">
                     <TextInput block placeholder="Summary (required)" aria-label="Commit summary" value={summary} onChange={(e) => setSummary(e.target.value)} />
-                    <IconButton icon={SparkleFillIcon} aria-label="Write commit message with Claude" description={stagedCount ? 'Write it with Claude' : 'Stage some changes first'} loading={generate.isPending} disabled={!stagedCount} onClick={() => generate.mutate()} />
+                    <AgentOnly><IconButton icon={SparkleFillIcon} aria-label="Write commit message with Claude" description={stagedCount ? 'Write it with Claude' : 'Stage some changes first'} loading={generate.isPending} disabled={!stagedCount} onClick={() => generate.mutate()} /></AgentOnly>
                   </div>
                   <Textarea block rows={2} placeholder="Description" aria-label="Commit description" value={description} onChange={(e) => setDescription(e.target.value)} />
                   {genError && <div className="error-box">{genError}</div>}

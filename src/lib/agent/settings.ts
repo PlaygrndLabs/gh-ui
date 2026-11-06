@@ -47,9 +47,13 @@ export async function getAnthropicKey() {
   return secrets.get(ANTHROPIC_KEY_SECRET)
 }
 
+/** Fired when the key is saved or removed, so whatever shows the agent can show or hide it. */
+export const ANTHROPIC_KEY_EVENT = 'gh-ui:anthropic-key'
+
 export async function setAnthropicKey(key: string | null) {
   if (key) await secrets.set(ANTHROPIC_KEY_SECRET, key.trim())
   else await secrets.delete(ANTHROPIC_KEY_SECRET)
+  window.dispatchEvent(new Event(ANTHROPIC_KEY_EVENT))
 }
 
 export function proxyBaseUrl(s: AgentSettings): string | null {

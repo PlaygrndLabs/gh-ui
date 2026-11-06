@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Avatar, Button, IconButton, Label, NavList, RelativeTime, SegmentedControl } from '@primer/react'
 import { InboxIcon, GitPullRequestIcon, IssueOpenedIcon, TagIcon, CheckIcon, GitCommitIcon, CommentDiscussionIcon, BellSlashIcon, ReadIcon, PlayIcon, AlertIcon, SparkleFillIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage, type Notification } from '../lib/github'
-import { useAgent, useAgentPageContext } from '../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../lib/agent/AgentProvider'
 import { appPathFromApiUrl, webUrl } from '../lib/links'
 import { canReadNotifications } from '../lib/hosts'
 import { openExternal } from '../lib/platform'
@@ -152,9 +152,9 @@ export function NotificationsPage() {
               <SegmentedControl.Button selected={filter === 'participating'}>Participating</SegmentedControl.Button>
             </SegmentedControl>
             <span className="ml-auto flex-center gap-2">
-              <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask('Look at my unread GitHub notifications that are review requests or mentions, and tell me which need action first and why.')}>
+              <AgentOnly><Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask('Look at my unread GitHub notifications that are review requests or mentions, and tell me which need action first and why.')}>
                 Triage with agent
-              </Button>
+              </Button></AgentOnly>
               <Button leadingVisual={ReadIcon} loading={act.isPending} onClick={() => act.mutate(() => octokit.rest.activity.markNotificationsAsRead({ last_read_at: new Date().toISOString() }))}>
                 Mark all as read
               </Button>
