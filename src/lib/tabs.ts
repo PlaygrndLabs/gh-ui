@@ -418,6 +418,28 @@ export function repoKeyFromUrl(url: string): string | null {
   return `${first}/${second}`.toLowerCase()
 }
 
+/** The tab of the repository's tab row a page is under, so each keeps its own page while another is shown. */
+const SECTION_GROUPS: Record<string, string> = {
+  pull: 'pulls',
+  compare: 'pulls',
+  tree: 'code',
+  blob: 'code',
+  blame: 'code',
+  commits: 'code',
+  commit: 'code',
+  branches: 'code',
+  tags: 'releases',
+  graphs: 'pulse',
+}
+
+/** `owner/repo#section` for a GitHub repository's page, or null for any other page. */
+export function repoSectionKey(url: string): string | null {
+  const key = repoKeyFromUrl(url)
+  if (!key || key.startsWith('local/')) return null
+  const section = pathParts(url)[2] ?? ''
+  return `${key}#${SECTION_GROUPS[section] ?? section}`
+}
+
 export function findRepoTab(state: TabsState, key: string | null): Tab | undefined {
   return key ? state.tabs.find((t) => repoKeyFromUrl(t.url) === key) : undefined
 }

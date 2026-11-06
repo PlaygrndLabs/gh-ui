@@ -34,6 +34,7 @@ import {
   splitTab,
   toggleSplit,
   visibleTabs,
+  repoSectionKey,
 } from './tabs'
 
 const ids = (s: TabsState) => s.tabs.map((t) => t.id)
@@ -538,5 +539,21 @@ describe('a tab\'s branch', () => {
   it('is saved and restored', () => {
     const s = setTabBranch(initialTabs('a', '/o/r'), 'a', { branch: 'dev' })
     expect(parseSavedTabs(JSON.parse(JSON.stringify(serializeTabs(s))), 'fresh').tabs[0].branch).toBe('dev')
+  })
+})
+
+describe('repoSectionKey', () => {
+  it('puts a repository page under its tab', () => {
+    expect(repoSectionKey('/Owner/Repo')).toBe('owner/repo#')
+    expect(repoSectionKey('/owner/repo/pull/3/files')).toBe('owner/repo#pulls')
+    expect(repoSectionKey('/owner/repo/compare/main...x')).toBe('owner/repo#pulls')
+    expect(repoSectionKey('/owner/repo/blob/main/a.ts')).toBe('owner/repo#code')
+    expect(repoSectionKey('/owner/repo/actions/runs/1?x=1')).toBe('owner/repo#actions')
+    expect(repoSectionKey('/owner/repo/issues/4')).toBe('owner/repo#issues')
+  })
+  it('has none for pages outside a GitHub repository', () => {
+    expect(repoSectionKey('/notifications')).toBeNull()
+    expect(repoSectionKey('/local/abc/changes')).toBeNull()
+    expect(repoSectionKey('/owner')).toBeNull()
   })
 })

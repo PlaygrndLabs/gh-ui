@@ -170,6 +170,12 @@ exports.steps = [
     name: 'actions: the top menu picks a run, shown at full width',
     screenshot: 'actions',
     js: `${helpers}
+      // Leave the pull request scrolled, to find it so on coming back.
+      const filesPane = () => [...document.querySelectorAll('.ws-pr-files')].find((p) => p.getClientRects().length)
+      await until(() => filesPane()?.querySelector('.file-diff'), 15000)
+      filesPane().scrollTop = 300
+      await sleep(200)
+      const leftAt = filesPane().scrollTop
       ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Actions')).click()
       const pick = () => [...document.querySelectorAll('.ws-header .ws-seg-pick')].find((s) => s.getClientRects().length)
       const row = await until(() => pick() && !pick().innerText.includes('Choose a run') && pick().innerText.includes('Run'), 20000)
@@ -178,8 +184,12 @@ exports.steps = [
       // Going back to Pull requests opens the one that was open.
       const lastPull = pick()?.innerText
       ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Pull requests')).click()
-      r.backToPull = !!(await until(() => pick()?.innerText.includes('#') && main()?.querySelector('.ws-pr-thread'), 15000))
-      r.fail = !(r.selected && r.sideList === 0 && r.title && r.copy && r.backToPull && lastPull)
+      r.backToPull = !!(await until(() => pick()?.innerText.includes('#') && filesPane(), 15000))
+      // The page was kept as it was left, scrolled where it was.
+      await sleep(300)
+      r.leftAt = leftAt
+      r.backAt = filesPane()?.scrollTop
+      r.fail = !(r.selected && r.sideList === 0 && r.title && r.copy && r.backToPull && lastPull && leftAt > 0 && Math.abs(r.backAt - leftAt) < 2)
       return r
     `,
   },
