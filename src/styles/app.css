@@ -456,6 +456,9 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 
 /* ---------- Diff ---------- */
 .file-diff { margin-bottom: 16px; }
+/* The box rounds the header while it sits at the top of its file; once it sticks further down it's square, so no code
+   shows through its corners. clip, not hidden: hidden would make the box a scroller and stop the header sticking. */
+.Box.file-diff { overflow: clip; }
 .file-diff-header {
   position: sticky;
   top: 0;
@@ -466,11 +469,10 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
   padding: 6px 8px 6px 12px;
   background: var(--bgColor-muted);
   border-bottom: 1px solid var(--borderColor-default);
-  border-radius: 6px 6px 0 0;
   font-size: 12px;
   min-height: 44px;
 }
-.file-diff.collapsed .file-diff-header { border-bottom: 0; border-radius: 6px; }
+.file-diff.collapsed .file-diff-header { border-bottom: 0; }
 .file-diff-name { font-family: var(--fontStack-monospace); font-size: 12px; font-weight: 400; color: var(--fgColor-default); overflow-wrap: anywhere; }
 .diff-scroll { overflow-x: auto; }
 .diff-table {
