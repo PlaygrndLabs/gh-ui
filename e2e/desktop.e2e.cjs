@@ -139,7 +139,8 @@ exports.steps = [
         tree: !!m.querySelector('.ws-pr-files .files-tree'),
         reviewButton: !!byText('button', 'Review changes') || !!byText('button', 'Finish your review'),
         status: m.querySelector('.ws-status-bar')?.innerText.replace(/\\s+/g, ' '),
-        copyLink: m.innerHTML.includes('Copy pull request link'),
+        // The tab row links to the pull request; the page doesn't repeat it.
+        pageLink: m.innerHTML.includes('Copy pull request link'),
       }
       const nav = [...document.querySelectorAll('.ws-tabs')].find((n) => n.getClientRects().length)
       r.tabLink = [...nav.querySelectorAll('.ws-tabs-end button')].some((b) => /^Copy link to pull request #\\d+/.test(b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent || ''))
@@ -148,7 +149,7 @@ exports.steps = [
       ;[...nav.querySelectorAll('a.ws-tab')].find((a) => a.textContent.includes('Pull requests')).click()
       await new Promise((res) => setTimeout(res, 1500))
       r.stayed = pick()?.innerText === shown && !!main()?.querySelector('.ws-pr-thread')
-      r.fail = !(r.pulls > 1 && r.moved && r.menuClosed && r.sideList === 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /files viewed/.test(r.status) && r.copyLink && r.tabLink && r.stayed)
+      r.fail = !(r.pulls > 1 && r.moved && r.menuClosed && r.sideList === 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /files viewed/.test(r.status) && !r.pageLink && r.tabLink && r.stayed)
       return r
     `,
   },
@@ -180,7 +181,7 @@ exports.steps = [
       const pick = () => [...document.querySelectorAll('.ws-header .ws-seg-pick')].find((s) => s.getClientRects().length)
       const row = await until(() => pick() && !pick().innerText.includes('Choose a run') && pick().innerText.includes('Run'), 20000)
       await until(() => main()?.querySelector('.run-title'), 20000)
-      const r = { selected: !!row, seg: pick()?.innerText.replace(/\\s+/g, ' '), sideList: main()?.querySelectorAll('.ws-list').length, title: main()?.querySelector('.run-title')?.innerText.slice(0, 80), copy: !!main()?.innerHTML.includes('Copy link to this run') }
+      const r = { selected: !!row, seg: pick()?.innerText.replace(/\\s+/g, ' '), sideList: main()?.querySelectorAll('.ws-list').length, title: main()?.querySelector('.run-title')?.innerText.slice(0, 80), pageLink: !!main()?.innerHTML.includes('Copy link to this run') }
       // Going back to Pull requests opens the one that was open.
       const lastPull = pick()?.innerText
       ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Pull requests')).click()
@@ -189,7 +190,7 @@ exports.steps = [
       await sleep(300)
       r.leftAt = leftAt
       r.backAt = filesPane()?.scrollTop
-      r.fail = !(r.selected && r.sideList === 0 && r.title && r.copy && r.backToPull && lastPull && leftAt > 0 && Math.abs(r.backAt - leftAt) < 2)
+      r.fail = !(r.selected && r.sideList === 0 && r.title && !r.pageLink && r.backToPull && lastPull && leftAt > 0 && Math.abs(r.backAt - leftAt) < 2)
       return r
     `,
   },
@@ -231,11 +232,13 @@ exports.steps = [
         r.corners = [document.elementFromPoint(h.left + 1, h.top + 1), document.elementFromPoint(h.right - 2, h.top + 1)].every((el) => header.contains(el))
         pane.scrollTop = 0
       }
+      // The picked commit's links are in its pane, as the same icons as the tab row's; the tab row has none here.
+      r.commitLinks = main().innerHTML.includes('Copy link to commit') && main().innerHTML.includes('Open commit in browser') && !byText('.ws-details-head button', 'Open on GitHub')
       // Split view is a drag or a tab's menu away; the strip has no button for it.
       r.noSplitButton = ![...document.querySelectorAll('.tab-strip-end button')].some((x) => /split/i.test(x.getAttribute('aria-label') || ''))
       r.ends = [...nav.querySelectorAll('.ws-tabs-end button')].map((b) => b.getAttribute('aria-label') || document.getElementById(b.getAttribute('aria-labelledby'))?.textContent.trim() || b.textContent.trim())
       // Every page is a tab of its own; nothing hides behind More.
-      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && r.ends.includes('Copy link to branch') && r.stickyGap === 0 && r.corners && r.noSplitButton)
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request') && r.repoTabs.includes('Code') && !r.repoTabs.some((t) => t.startsWith('More') || t === 'Open on GitHub') && r.ends.includes('Refresh') && !r.ends.some((e) => /^(Copy link|Open .* in browser)/.test(e)) && r.commitLinks && r.stickyGap === 0 && r.corners && r.noSplitButton)
       return r
     `,
   },

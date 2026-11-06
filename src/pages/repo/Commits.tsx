@@ -8,7 +8,7 @@ import { useRepo, useRefPath, encodePath } from '../../lib/repo'
 import { dayLabel, firstLine, plural, restLines, shortSha } from '../../lib/format'
 import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { webUrl } from '../../lib/links'
-import { openExternal } from '../../lib/platform'
+import { isNative, openExternal } from '../../lib/platform'
 import { readPref, writePref } from '../../lib/storage'
 import { BranchPicker } from '../../components/BranchPicker'
 import { Blankslate, CommitHeadline, CopyButton, DiffStat, ErrorBox, Loading, UserAvatar, titleParts } from '../../components/Bits'
@@ -430,7 +430,7 @@ export function CommitPage() {
             <Button as={Link} leadingVisual={FileCodeIcon} to={`/${owner}/${repo}/tree/${c.sha}`} title="Browse the repository at this point in the history">
               Browse files
             </Button>
-            <IconButton icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/commit/${c.sha}`))} />
+            {!isNative && <IconButton icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/commit/${c.sha}`))} />}
           </span>
         </div>
         <div className="commit-header-attribution">

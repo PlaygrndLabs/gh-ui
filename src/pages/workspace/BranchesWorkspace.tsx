@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
-import { CheckIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
+import { CheckIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
 import { useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { generateCommitMessage } from '../../lib/agent/oneshot'
 import type { FileDiff } from '../../lib/diff'
@@ -375,10 +375,9 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
         </div>
         {github && !data?.local.some((c) => c.sha === commit.sha) && (
           <>
-            <CopyButton text={webUrl(account.host, `/${github.owner}/${github.repo}/commit/${commit.sha}`)} label="Copy link" />
-            <Button size="small" onClick={() => openExternal(webUrl(account.host, `/${github.owner}/${github.repo}/commit/${commit.sha}`))}>
-              Open on GitHub
-            </Button>
+            {/* The same icons as the tab row, which has none of its own on this tab. */}
+            <CopyButton text={webUrl(account.host, `/${github.owner}/${github.repo}/commit/${commit.sha}`)} icon={LinkIcon} label="Copy link to commit" />
+            <IconButton size="small" variant="invisible" icon={LinkExternalIcon} aria-label="Open commit in browser" onClick={() => openExternal(webUrl(account.host, `/${github.owner}/${github.repo}/commit/${commit.sha}`))} />
           </>
         )}
       </div>

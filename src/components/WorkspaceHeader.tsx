@@ -322,8 +322,8 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const stay = (current: boolean) => (e: React.MouseEvent) => {
     if (current) e.preventDefault()
   }
-  const branchName = local.status.data?.branch
-  const link = base ? webUrl(account.host, section ? pathname : `${base}${branchName ? `/tree/${branchName}` : ''}`) : null
+  // The Branch tab links to the commit picked in it, from its own pane, not from here.
+  const link = base && section ? webUrl(account.host, pathname) : null
   const name = itemName(section, parts)
   // Every page the repository has is one click away, so none hides behind a More menu.
   const more: Array<{ label: string; to: string; show: boolean; current: string[] }> = base

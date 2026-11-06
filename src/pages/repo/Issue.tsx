@@ -7,7 +7,7 @@ import { useGitHub, errorMessage, FULL_BODY, type Issue } from '../../lib/github
 import { useRepo } from '../../lib/repo'
 import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { webUrl } from '../../lib/links'
-import { openExternal } from '../../lib/platform'
+import { isNative, openExternal } from '../../lib/platform'
 import { copyText } from '../../lib/format'
 import { CopyButton, ErrorBox, InlineTitle, Loading, UserAvatar, isBot } from '../../components/Bits'
 import { IssueStateLabel, PullStateIcon } from '../../components/Status'
@@ -151,8 +151,12 @@ export function IssuePage() {
               <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Investigate issue ${fullName}#${number}: find the relevant code and explain the likely cause and fix.`)}>
                 Agent
               </Button>
-              <IconButton variant="invisible" icon={CopyIcon} aria-label="Copy link" onClick={() => void copyText(i.html_url)} />
-              <IconButton variant="invisible" icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/issues/${number}`))} />
+              {!isNative && (
+                <>
+                  <IconButton variant="invisible" icon={CopyIcon} aria-label="Copy link" onClick={() => void copyText(i.html_url)} />
+                  <IconButton variant="invisible" icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/issues/${number}`))} />
+                </>
+              )}
             </span>
           </div>
         )}

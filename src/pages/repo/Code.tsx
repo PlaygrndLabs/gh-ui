@@ -884,7 +884,7 @@ export function BlobPage() {
                 {canEdit && !editing && (
                   <IconButton description="Edit this file" size="small" icon={PencilIcon} aria-label="Edit file" onClick={() => setEditing(true)} />
                 )}
-                <IconButton description="Open on GitHub" size="small" icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/blob/${ref}/${path}`))} />
+                {!isNative && <IconButton description="Open on GitHub" size="small" icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/blob/${ref}/${path}`))} />}
               </span>
             </div>
             {file.isLoading || resolving ? (

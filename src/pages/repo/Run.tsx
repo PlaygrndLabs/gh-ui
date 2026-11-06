@@ -32,7 +32,7 @@ import { fetchJobLogs, parseLog, splitLogBySteps, type LogLine, type StepLog } f
 import { durationBetween, shortSha, copyText } from '../../lib/format'
 import { graphEdges } from '../../lib/runGraph'
 import { webUrl } from '../../lib/links'
-import { openExternal } from '../../lib/platform'
+import { isNative, openExternal } from '../../lib/platform'
 import { useEffectOnChange } from '../../lib/activity'
 import { CheckStatusIcon } from '../../components/Status'
 import { Blankslate, CopyButton, ErrorBox, Loading, UserAvatar } from '../../components/Bits'
@@ -138,7 +138,7 @@ export function RunPage() {
           <h1 className="flex-1 run-title">
             {r.display_title} <span className="fg-muted text-normal">#{r.run_number}</span>
           </h1>
-          <CopyButton text={r.html_url} label="Copy link to this run" size="medium" />
+          {!isNative && <CopyButton text={r.html_url} label="Copy link to this run" size="medium" />}
           {failedJobs.length > 0 && (
             <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Explain why workflow run ${r.id} in ${fullName} failed and propose a fix. Failed jobs: ${failedJobs.map((j) => `${j.name} (${j.id})`).join(', ')}.`)}>
               Explain failure
@@ -166,7 +166,7 @@ export function RunPage() {
               Cancel workflow
             </Button>
           )}
-          <IconButton icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/actions/runs/${run_id}${jobId ? `/job/${jobId}` : ''}`))} />
+          {!isNative && <IconButton icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/actions/runs/${run_id}${jobId ? `/job/${jobId}` : ''}`))} />}
         </div>
         {act.error && <div className="error-box mt-2">{errorMessage(act.error)}</div>}
       </div>
