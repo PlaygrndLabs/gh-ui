@@ -168,8 +168,10 @@ exports.steps = [
       await until(() => main()?.querySelector('.ws-section .ws-row'), 15000)
       await until(() => main()?.querySelector('.file-diff'), 15000)
       const text = main().innerText
-      const r = { sidebar: main().querySelectorAll('.ws-list').length, commits: main().querySelectorAll('.ws-section .ws-row').length, diff: !!main().querySelector('.file-diff'), toolbar: !!byText('.ws-seg-value', 'Clone repository') }
-      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar)
+      const tabNames = await until(() => { const n = [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].map((t) => t.textContent.trim()); return n.includes('Checks') && n }, 8000)
+      const r = { sidebar: main().querySelectorAll('.ws-list').length, commits: main().querySelectorAll('.ws-section .ws-row').length, diff: !!main().querySelector('.file-diff'), toolbar: !!byText('.ws-seg-value', 'Clone repository'), tabNames }
+      // The default branch takes pull requests; it never has one of its own.
+      r.fail = !(r.sidebar === 0 && r.commits > 0 && r.diff && r.toolbar && tabNames && !tabNames.includes('Pull request'))
       return r
     `,
   },
@@ -188,8 +190,11 @@ exports.steps = [
       item.click()
       const moved = await until(() => activeTab().textContent.trim() === 'jq - ' + name, 5000)
       const row = await until(() => main()?.querySelector('.ws-branch-title')?.textContent.includes(name), 5000)
-      const r = { before, name, title: activeTab().textContent.trim(), seg: seg().innerText, row: !!row }
-      r.fail = !(moved && row && seg().innerText.includes(name))
+      const pullTab = await until(() => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.trim() === 'Pull request'), 5000)
+      pullTab?.click()
+      const pullPanel = await until(() => main().querySelector('.ws-section[aria-label="Pull request"]'), 3000)
+      const r = { before, name, title: activeTab().textContent.trim(), seg: seg().innerText, row: !!row, pullTab: !!pullTab, pullPanel: !!pullPanel, commitPane: !!main().querySelector('.ws-details') }
+      r.fail = !(moved && row && seg().innerText.includes(name) && pullTab && pullPanel && !r.commitPane)
       return r
     `,
   },

@@ -13,6 +13,7 @@ import { openExternal } from '../../lib/platform'
 import { firstLine, shortSha } from '../../lib/format'
 import { readPref } from '../../lib/storage'
 import { useLocalRepo } from '../../lib/useLocalRepo'
+import { useRepoQuery } from '../../lib/repo'
 import { useRemoteBranches, type WorkspaceRepo } from '../../lib/workspace'
 import { CopyButton, Loading } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
@@ -77,6 +78,9 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   // The top menu chooses: in a folder by checking out, without one by picking.
   const branch = (repo.local ? undefined : branches.find((b) => b.name === picked)) ?? branches.find((b) => b.current) ?? branches[0] ?? null
   const isCurrent = !!branch?.current
+  const info = useRepoQuery(github?.owner ?? '', github?.repo ?? '', !!github)
+  // Pull requests merge into the default branch, so it never has one of its own.
+  const isDefault = !!branch && branch.name === info.data?.default_branch
 
   const commits = useQuery({
     queryKey: repo.local ? ['local-log', repo.local.id, branch?.name, branch?.sha, branch?.upstream, branch?.behind] : [key, 'workspace-commits', github?.owner, github?.repo, branch?.name],
@@ -113,8 +117,10 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const data = commits.data
   const shown = [...(data?.local ?? []), ...(data?.incoming ?? []), ...(data?.remote ?? [])]
   // Until you choose a tab, this branch opens on whichever has something to do.
-  const tab: BranchTab = chosenTab && chosenTab.branch === branch?.name ? chosenTab.tab : !repo.local ? 'github' : entries.length || stashes.data?.length ? 'changes' : data?.local.length ? 'local' : github ? 'github' : 'changes'
-  const tabCommits = tab === 'local' ? (data?.local ?? []) : tab === 'github' ? [...(data?.incoming ?? []), ...(data?.remote ?? [])] : shown
+  const tab: BranchTab = chosenTab && chosenTab.branch === branch?.name && !(chosenTab.tab === 'pull' && isDefault) ? chosenTab.tab : !repo.local ? 'github' : entries.length || stashes.data?.length ? 'changes' : data?.local.length ? 'local' : github ? 'github' : 'changes'
+  // The pull request and checks tabs link elsewhere, so they leave the commit pane out.
+  const commitTab = tab === 'changes' || tab === 'local' || tab === 'github'
+  const tabCommits = tab === 'local' ? (data?.local ?? []) : tab === 'github' ? [...(data?.incoming ?? []), ...(data?.remote ?? [])] : tab === 'changes' ? shown : []
   const entry = tab === 'changes' ? (entries.find((e) => selection?.kind === 'file' && e.path === selection.path) ?? entries[0] ?? null) : null
   const commit = entry ? null : (tabCommits.find((c) => selection?.kind === 'commit' && c.sha === selection.sha) ?? tabCommits[0] ?? null)
 
@@ -196,7 +202,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     { id: 'changes', label: 'Changes', count: entries.length, show: !!repo.local },
     { id: 'local', label: 'On this Mac', count: localCount, show: !!repo.local },
     { id: 'github', label: 'On GitHub', count: githubCount, show: true },
-    { id: 'pull', label: 'Pull request', show: !!github },
+    { id: 'pull', label: 'Pull request', show: !!github && !isDefault },
     { id: 'checks', label: 'Checks', show: !!github },
   ]
 
@@ -425,7 +431,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
                 )}
               </div>
               <div className="ws-branch-body">
-                <SplitPane id="branch-timeline" firstLabel="Timeline" secondLabel="Details" defaultWidth={420} min={280} max={800} first={timeline} second={details} />
+                {commitTab ? <SplitPane id="branch-timeline" firstLabel="Timeline" secondLabel="Details" defaultWidth={420} min={280} max={800} first={timeline} second={details} /> : timeline}
               </div>
             </>
           ) : (
