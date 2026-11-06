@@ -192,6 +192,9 @@ function registerIpc() {
     if (process.platform === 'darwin') await shell.openPath('/System/Applications/Utilities/Terminal.app')
   })
 
+  // A right-click menu drawn by the system. Items are plain data from the page: an id and a label each, or a separator.
+  ipcMain.handle('menu:popup', (e, items) => showContextMenu(e.sender, items))
+
   ipcMain.handle('dialog:pickDirectory', async (e, title) => {
     const win = BrowserWindow.fromWebContents(e.sender)
     const res = await dialog.showOpenDialog(win, { title: title || 'Choose a folder', properties: ['openDirectory', 'createDirectory'] })
@@ -347,6 +350,26 @@ function createWindow() {
   else if (process.env.GH_UI_SMOKE_TEST) smokeTest(mainWindow)
 }
 
+const contextMenuItems = (items) =>
+  (Array.isArray(items) ? items : []).slice(0, 30).map((item) =>
+    item && item.type === 'separator'
+      ? { type: 'separator' }
+      : { id: String(item?.id ?? '').slice(0, 64), label: String(item?.label ?? '').slice(0, 120), enabled: item?.enabled !== false },
+  )
+
+/** Shows the menu at the pointer and resolves with the picked item's id, or null once it closes with nothing picked. */
+function showContextMenu(sender, items) {
+  const win = BrowserWindow.fromWebContents(sender)
+  return new Promise((resolve) => {
+    let picked = null
+    const menu = Menu.buildFromTemplate(
+      contextMenuItems(items).map((item) => (item.type === 'separator' ? item : { label: item.label, enabled: item.enabled, click: () => (picked = item.id) })),
+    )
+    // The click comes before the menu reports it closed on some platforms and after on others.
+    menu.popup({ window: win ?? undefined, callback: () => setTimeout(() => resolve(picked), 0) })
+  })
+}
+
 // GH_UI_E2E=<file.cjs> electron . — runs scripted steps inside the real renderer
 // (through the real preload bridge), prints one JSON report and exits. Each step is
 // { name, js, waitMs } or { name, accelerator, waitMs }: `js` is an async function body; `accelerator` runs the app
@@ -355,6 +378,14 @@ function e2eTest(win, file) {
   const { steps } = require(path.resolve(file))
   // The run goes on behind other windows; a covered window would otherwise stop drawing frames and steps would time out.
   win.webContents.setBackgroundThrottling(false)
+  // A system menu can't be clicked from a script: a step sets window.__e2eMenuPick to the label it would pick, and the
+  // menu's items are left in window.__e2eMenuItems to check.
+  ipcMain.removeHandler('menu:popup')
+  ipcMain.handle('menu:popup', async (e, items) => {
+    const shown = contextMenuItems(items)
+    const pick = await e.sender.executeJavaScript(`window.__e2eMenuItems = ${JSON.stringify(shown)}; window.__e2eMenuPick ?? null`)
+    return shown.find((item) => item.label && item.label === pick)?.id ?? null
+  })
   const errors = []
   win.webContents.on('console-message', (event) => {
     if (event.level === 'error') errors.push(event.message)

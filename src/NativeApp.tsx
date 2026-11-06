@@ -152,7 +152,7 @@ function useTabMenu() {
       if (action === 'toggle-agent') toggle()
       else if (action === 'new-tab') newTab()
       // Applied at once, so a quick second press closes the next tab and not the one just closed.
-      else if (action === 'close-tab') flushSync(() => void close(activeTabId()))
+      else if (action === 'close-tab') flushSync(() => void close(activeTabId(), { keepPinned: true }))
       else if (action === 'reopen-tab') reopen()
       else if (action === 'toggle-split') toggleSplit()
       else if (action === 'focus-other-pane') focusOtherPane()

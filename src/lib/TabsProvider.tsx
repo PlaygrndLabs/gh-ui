@@ -16,6 +16,7 @@ import {
   navigationTarget,
   openNewTab,
   openTabNext,
+  pinTab,
   openTabToSide,
   parseSavedTabs,
   recordNavigation,
@@ -61,8 +62,10 @@ interface TabsApi {
   toggleSplit(): void
   focusOtherPane(): void
   setSplitRatio(ratio: number): void
-  /** Asks first if the tab holds text that hasn't been sent. */
-  close(id: string): void
+  /** Asks first if the tab holds text that hasn't been sent. keepPinned: Cmd+W and the like leave a pinned tab open. */
+  close(id: string, options?: { keepPinned?: boolean }): void
+  /** Pins a tab to the start of the strip, without a close button, or unpins it. */
+  pin(id: string, pinned: boolean): void
   /** Whether a tab (or any tab) holds text that hasn't been sent. */
   hasUnsentText(id?: string): boolean
   reopen(): void
@@ -216,6 +219,7 @@ export function TabsProvider({
   const cycle = useCallback((delta: number) => setState((s) => cycleTab(s, delta)), [])
   const reopen = useCallback(() => setState(reopenClosedTab), [])
   const move = useCallback((id: string, toIndex: number) => setState((s) => moveTab(s, id, toIndex)), [])
+  const pin = useCallback((id: string, pinned: boolean) => setState((s) => pinTab(s, id, pinned)), [])
   const setTitle = useCallback((id: string, title: string) => setState((s) => setTabTitle(s, id, title)), [])
   const setBranch = useCallback((id: string, change: Pick<Tab, 'branch'> | Pick<Tab, 'pickedBranch'>) => setState((s) => setTabBranch(s, id, change)), [])
   const newTab = useCallback(() => {
@@ -223,7 +227,8 @@ export function TabsProvider({
     setState((s) => openNewTab(s, id))
   }, [])
   const close = useCallback(
-    async (tabId: string) => {
+    async (tabId: string, options?: { keepPinned?: boolean }) => {
+      if (options?.keepPinned && stateRef.current.tabs.find((t) => t.id === tabId)?.pinned) return
       if (hasUnsentText(tabId)) {
         const tab = stateRef.current.tabs.find((t) => t.id === tabId)
         const ok = await confirm({
@@ -380,8 +385,8 @@ export function TabsProvider({
 
   const active = state.tabs.find((t) => t.id === state.activeId)!
   const value = useMemo<TabsApi>(
-    () => ({ state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplit: toggleSplitView, focusOtherPane: focusOther, setSplitRatio: setRatio, close, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, setBranch, pinQueries, unpinQueries }),
-    [state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplitView, focusOther, setRatio, close, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, setBranch, pinQueries, unpinQueries],
+    () => ({ state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplit: toggleSplitView, focusOtherPane: focusOther, setSplitRatio: setRatio, close, pin, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, setBranch, pinQueries, unpinQueries }),
+    [state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplitView, focusOther, setRatio, close, pin, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, setBranch, pinQueries, unpinQueries],
   )
   return <TabsContext.Provider value={value}>{children}</TabsContext.Provider>
 }

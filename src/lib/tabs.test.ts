@@ -34,6 +34,8 @@ import {
   splitTab,
   toggleSplit,
   visibleTabs,
+  pinTab,
+  pinnedCount,
   repoSectionKey,
 } from './tabs'
 
@@ -555,5 +557,45 @@ describe('repoSectionKey', () => {
     expect(repoSectionKey('/notifications')).toBeNull()
     expect(repoSectionKey('/local/abc/changes')).toBeNull()
     expect(repoSectionKey('/owner')).toBeNull()
+  })
+})
+
+describe('pinned tabs', () => {
+  const three = (): TabsState => ({
+    tabs: [
+      { id: 'a', url: '/a/a', title: null },
+      { id: 'b', url: '/b/b', title: null },
+      { id: 'c', url: '/c/c', title: null },
+    ],
+    activeId: 'a',
+    closed: [],
+    live: ['a'],
+    split: null,
+    splitRatio: 0.5,
+  })
+  const ids = (s: TabsState) => s.tabs.map((t) => `${t.id}${t.pinned ? '*' : ''}`).join(' ')
+
+  it('pins to the end of the pinned tabs and unpins to just after them', () => {
+    let s = pinTab(three(), 'c', true)
+    expect(ids(s)).toBe('c* a b')
+    s = pinTab(s, 'b', true)
+    expect(ids(s)).toBe('c* b* a')
+    expect(pinnedCount(s.tabs)).toBe(2)
+    expect(ids(pinTab(s, 'c', false))).toBe('b* c a')
+  })
+  it('opens links from a pinned tab after the pinned ones', () => {
+    const s = openTabNext(pinTab(pinTab(three(), 'a', true), 'b', true), { id: 'n', url: '/n/n' })
+    expect(ids(s)).toBe('a* b* n c')
+  })
+  it('keeps pinned and unpinned tabs apart when dragging', () => {
+    const s = pinTab(three(), 'a', true)
+    expect(ids(moveTab(s, 'c', 0))).toBe('a* c b')
+    expect(ids(moveTab(s, 'a', 2))).toBe('a* b c')
+  })
+  it('is saved and restored, pinned first', () => {
+    const s = pinTab(three(), 'b', true)
+    const saved = serializeTabs(s)
+    saved.tabs.reverse()
+    expect(ids(parseSavedTabs(saved, 'fresh'))).toBe('b* c a')
   })
 })

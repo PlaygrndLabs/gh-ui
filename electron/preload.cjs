@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('ghUi', {
   git: (repoId, args, auth) => ipcRenderer.invoke('git', repoId, args, auth),
   revealInFinder: (repoId) => ipcRenderer.invoke('repo:reveal', repoId),
   openInEditor: (repoId) => ipcRenderer.invoke('repo:openEditor', repoId),
+  contextMenu: (items) => ipcRenderer.invoke('menu:popup', items),
   onMenu: (handler) => {
     const listener = (_e, action) => handler(action)
     ipcRenderer.on('menu', listener)

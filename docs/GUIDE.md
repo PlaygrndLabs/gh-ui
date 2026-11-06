@@ -70,7 +70,7 @@ gh-ui's own OAuth App is built in through `.env` (`VITE_GITHUB_CLIENT_ID`) and u
 
 The app is built for repositories, pull requests and Actions. Home is a work queue: pull requests waiting on you, your own, and failing or running Actions. A pull request shows its checks, reviews and conflicts on one line, with Re-run failed, copy link and Check out, which uses your local clone. Discussions, Projects, Wiki, Security and quality, Insights, repository settings, the Home activity feed and a few smaller parts start switched off; turn them on in Settings → Features.
 
-- **Repository tabs** — one Chrome-style tab per repository, each with its own view and Claude chat. A link to another repository moves to its tab, and pages outside a repository (search, profiles, settings) get their own. **+** opens the repository list: folders on your Mac, repositories on GitHub, Add local folder, Clone, New.
+- **Repository tabs** — one Chrome-style tab per repository, each with its own view and Claude chat. A link to another repository moves to its tab, and pages outside a repository (search, profiles, settings) get their own. **+** opens the repository list: folders on your Mac, repositories on GitHub, Add local folder, Clone, New. Right-click a tab for the system menu: Pin tab, Open to the side, Close split view, Close tab. A pinned tab stays at the start of the strip with a pin instead of a close button, ⌘W and middle-click leave it open, and it's remembered with the other tabs.
 - **Toolbar** — the branch menu, the only place to choose a branch, and one sync button that becomes Clone, Publish repository, Publish branch, Pull, Push or Fetch as the repository needs. A third segment picks the open tab's pull request, run, issue or release. Below it, every page is a tab of its own: Branch, Pull requests, Actions, Code, Issues, Releases, and Discussions, Projects, Wiki, Security, Insights and Repository settings when they're on. Each tab keeps its page while another is shown, as it was left: the open pull request, its scroll, what was typed. Clicking the tab you're on leaves the page alone. At the end of the row: Refresh (reloads what the page shows), Copy link and Open in browser for the shown pull request, run, issue, release or branch, plus Open in editor and Show in Finder for folders. A tab's count is its open pull requests or issues, or the branch's changed files.
 - **Panes** — every list and detail can be resized by dragging or with the arrow keys, and hidden by dragging its divider well past the edge (or pressing Enter on it); drag or click the strip that's left to bring it back. Double-click a divider to reset it. Layouts are remembered, and shared by all tabs.
 - **Inbox** — reviews you were asked for and your pull requests with failing checks, across all repositories.
@@ -97,7 +97,7 @@ The app is built for repositories, pull requests and Actions. Home is a work que
 | Shortcut | Action |
 | --- | --- |
 | ⌘T | New tab, which offers repositories to open |
-| ⌘W | Close tab; closing the last one leaves a new tab. ⌘⇧W closes the window. |
+| ⌘W | Close tab (not a pinned one); closing the last one leaves a new tab. ⌘⇧W closes the window. |
 | ⌘⇧T | Reopen the last closed tab |
 | ⌥-click a link | Open it in the other pane, starting split view if needed |
 | ⌘\\ | Split view on or off |

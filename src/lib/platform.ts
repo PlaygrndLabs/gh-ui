@@ -65,8 +65,12 @@ export interface NativeBridge {
   git(repoId: string, args: string[], auth?: GitAuth): Promise<GitResult>
   revealInFinder(repoId: string): Promise<void>
   openInEditor(repoId: string): Promise<void>
+  /** A system right-click menu at the pointer; resolves with the picked item's id, or null. */
+  contextMenu(items: ContextMenuItem[]): Promise<string | null>
   onMenu(handler: (action: string) => void): () => void
 }
+
+export type ContextMenuItem = { id: string; label: string; enabled?: boolean } | { type: 'separator' }
 
 declare global {
   interface Window {

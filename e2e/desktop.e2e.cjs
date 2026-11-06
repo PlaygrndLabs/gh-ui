@@ -375,6 +375,46 @@ exports.steps = [
     `,
   },
   {
+    name: 'tabs: right-click opens the system menu, and Pin tab keeps the tab first with no close button',
+    js: `${helpers}
+      const firstItem = () => tabs()[0].closest('.tab-item')
+      const name = tabName(tabs()[0])
+      window.__e2eMenuPick = 'Pin tab'
+      firstItem().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      const pinned = await until(() => firstItem().classList.contains('is-pinned'), 5000)
+      const r = { menu: (window.__e2eMenuItems || []).map((i) => i.label || '---'), pinned: !!pinned, first: tabName(tabs()[0]) === name, closeButton: !!firstItem().querySelector('.tab-close'), pinMark: !!firstItem().querySelector('.tab-pin') }
+      tabs()[0].click()
+      r.selected = !!(await until(() => activeTab() === tabs()[0], 3000))
+      r.fail = !(r.pinned && r.first && !r.closeButton && r.pinMark && r.selected && r.menu.includes('Pin tab') && r.menu.includes('Close tab'))
+      return r
+    `,
+  },
+  {
+    name: 'tabs: Cmd+W leaves a pinned tab open',
+    accelerator: 'CmdOrCtrl+W',
+    js: `${helpers}
+      await sleep(500)
+      const r = { tabs: tabTitles(), pinned: tabs()[0].closest('.tab-item').classList.contains('is-pinned'), active: activeTab() === tabs()[0] }
+      r.fail = !(r.tabs.length === 3 && r.pinned && r.active)
+      return r
+    `,
+  },
+  {
+    name: 'tabs: Unpin tab brings the close button back',
+    js: `${helpers}
+      const firstItem = () => tabs()[0].closest('.tab-item')
+      window.__e2eMenuPick = 'Unpin tab'
+      firstItem().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+      const unpinned = await until(() => !firstItem().classList.contains('is-pinned'), 5000)
+      window.__e2eMenuPick = null
+      const r = { unpinned: !!unpinned, menu: (window.__e2eMenuItems || []).map((i) => i.label || '---'), closeButton: !!firstItem().querySelector('.tab-close') }
+      tabs().find((t) => tabName(t) === 'gh-ui').click()
+      r.back = !!(await until(() => tabName(activeTab()) === 'gh-ui', 3000))
+      r.fail = !(r.unpinned && r.closeButton && r.back && r.menu.includes('Unpin tab'))
+      return r
+    `,
+  },
+  {
     name: 'tabs: navigate inside the active tab',
     js: `${helpers}
       clickLink('/PlaygrndLabs/gh-ui/releases')

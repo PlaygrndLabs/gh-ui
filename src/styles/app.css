@@ -208,6 +208,9 @@ body:has(.app-shell) { overflow: hidden; }
   color: var(--fgColor-muted);
 }
 .tab-item:hover .tab-close, .tab-item.is-active .tab-close { visibility: visible; }
+/* A pinned tab has no close button: a pin sits in its place. */
+.tab-pin { flex-shrink: 0; margin: 0 10px 0 4px; color: var(--fgColor-muted); opacity: 0.7; }
+.tab-item.is-pinned { flex-basis: 170px; }
 /* Its room stays reserved, so titles don't re-truncate under a passing mouse, until a narrow tab needs it for the title. */
 @container (max-width: 140px) {
   .tab-close { display: none; }

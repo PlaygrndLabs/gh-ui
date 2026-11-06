@@ -241,6 +241,8 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .tabbed .tab-main { padding: 0 2px 0 12px; }
 .tabbed .tab-icon { color: inherit; }
 .tabbed .tab-close { color: var(--ws-chrome-muted); }
+.tabbed .tab-pin { color: var(--ws-chrome-muted); }
+.tabbed .tab-item.is-pinned { flex-basis: 170px; width: 170px; }
 .tabbed .tab-close:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-hover); }
 /* The thin line between two tabs that aren't active or under the mouse. */
 .tabbed .tab-item:not(.is-active):not(:hover)::after { content: ''; position: absolute; right: 0; top: 10px; bottom: 10px; width: 1px; background: var(--ws-chrome-line); }
