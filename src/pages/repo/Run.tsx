@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useLayoutEffect, useRef } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Banner, Button, NavList, RelativeTime, TextInput, IconButton } from '@primer/react'
@@ -30,6 +30,7 @@ import { useRepo, encodePath } from '../../lib/repo'
 import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { fetchJobLogs, parseLog, splitLogBySteps, type LogLine, type StepLog } from '../../lib/logs'
 import { durationBetween, shortSha, copyText } from '../../lib/format'
+import { graphEdges } from '../../lib/runGraph'
 import { webUrl } from '../../lib/links'
 import { openExternal } from '../../lib/platform'
 import { useEffectOnChange } from '../../lib/activity'
@@ -426,6 +427,8 @@ interface GraphCard {
   id: string
   heading?: string
   matrix: boolean
+  /** The workflow-file jobs this card shows. */
+  keys: string[]
   jobs: Job[]
   /** Jobs of the workflow file that have no job yet (the run is waiting, or hasn't reached them), by name. */
   pending: string[]
@@ -496,20 +499,21 @@ function layoutJobs(specs: JobSpec[], jobs: Job[]): GraphCard[][] | null {
     const d = depthOf(s.key, new Set())
     const stage = (stages[d] ??= new Map())
     if (s.matrix || s.reusable) {
-      stage.set(`k:${s.key}`, { id: `k:${s.key}`, heading: s.matrix ? `Matrix: ${name}` : name, matrix: s.matrix, jobs: list, pending, order })
+      stage.set(`k:${s.key}`, { id: `k:${s.key}`, heading: s.matrix ? `Matrix: ${name}` : name, matrix: s.matrix, keys: [s.key], jobs: list, pending, order })
       return
     }
     // Like github.com, jobs with the same needs and the same dependents share a card.
     const id = `g:${[...s.needs].sort().join(',')}|${dependents(s.key)}`
     const card = stage.get(id)
     if (card) {
+      card.keys.push(s.key)
       card.jobs.push(...list)
       card.pending.push(...pending)
-    } else stage.set(id, { id, matrix: false, jobs: [...list], pending, order })
+    } else stage.set(id, { id, matrix: false, keys: [s.key], jobs: [...list], pending, order })
   })
   if (unmatched.length) {
     const first = (stages[0] ??= new Map())
-    for (const j of unmatched) first.set(`j:${j.id}`, { id: `j:${j.id}`, matrix: false, jobs: [j], pending: [], order: Infinity })
+    for (const j of unmatched) first.set(`j:${j.id}`, { id: `j:${j.id}`, matrix: false, keys: [], jobs: [j], pending: [], order: Infinity })
   }
   return stages.filter(Boolean).map((m) => [...m.values()].sort((a, b) => a.order - b.order))
 }
@@ -521,10 +525,36 @@ function groupStatus(jobs: Job[]): { status: string; conclusion: string | null }
   return { status: 'completed', conclusion }
 }
 
+/** Half the height of a card's first row, where its lines join. */
+const GRAPH_ROW_CENTER = 22
+
 function JobGraph({ jobs, specs, runId }: { jobs: Job[]; specs: JobSpec[] | null; runId: number }) {
   const { owner, repo } = useRepo()
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const stages = useMemo(() => (specs ? layoutJobs(specs, jobs) : null), [specs, jobs])
+  const edges = useMemo(() => (stages && specs ? graphEdges(stages.flat(), (k) => specs.find((s) => s.key === k)?.needs ?? []) : []), [stages, specs])
+  const graph = useRef<HTMLDivElement>(null)
+  const [lines, setLines] = useState<{ width: number; height: number; paths: Array<{ x1: number; y1: number; x2: number; y2: number }> } | null>(null)
+  // The lines follow where the cards landed, which depends on the fonts, the width and any matrix that's been opened.
+  useLayoutEffect(() => {
+    const box = graph.current
+    if (!box || !edges.length) return setLines(null)
+    const measure = () => {
+      const origin = box.getBoundingClientRect()
+      const rectOf = (id: string) => box.querySelector(`[data-card="${CSS.escape(id)}"]`)?.getBoundingClientRect()
+      const paths = edges.flatMap(([from, to]) => {
+        const [a, b] = [rectOf(from), rectOf(to)]
+        if (!a || !b) return []
+        return [{ x1: a.right - origin.left + box.scrollLeft, y1: a.top - origin.top + box.scrollTop + GRAPH_ROW_CENTER, x2: b.left - origin.left + box.scrollLeft, y2: b.top - origin.top + box.scrollTop + GRAPH_ROW_CENTER }]
+      })
+      setLines({ width: box.scrollWidth, height: box.scrollHeight, paths })
+    }
+    measure()
+    const seen = new ResizeObserver(measure)
+    seen.observe(box)
+    box.querySelectorAll('[data-card]').forEach((card) => seen.observe(card))
+    return () => seen.disconnect()
+  }, [edges, expanded])
   const jobLink = (j: Job) => (
     <Link key={j.id} to={`/${owner}/${repo}/actions/runs/${runId}/job/${j.id}`} className="graph-job">
       <CheckStatusIcon status={j.status} conclusion={j.conclusion} />
@@ -543,14 +573,28 @@ function JobGraph({ jobs, specs, runId }: { jobs: Job[]; specs: JobSpec[] | null
       </div>
     )
   return (
-    <div className="run-graph">
+    <div className="run-graph" ref={graph}>
+      {lines && (
+        <svg className="run-graph-lines" width={lines.width} height={lines.height} aria-hidden="true">
+          {lines.paths.map(({ x1, y1, x2, y2 }) => {
+            const bend = (x2 - x1) / 2
+            return (
+              <g key={`${x1},${y1},${x2},${y2}`}>
+                <path d={`M${x1} ${y1} C${x1 + bend} ${y1} ${x2 - bend} ${y2} ${x2} ${y2}`} />
+                <circle cx={x1} cy={y1} r={3.5} />
+                <circle cx={x2} cy={y2} r={3.5} />
+              </g>
+            )
+          })}
+        </svg>
+      )}
       {stages.map((cards, i) => (
         <div key={i} className="graph-stage">
           {cards.map((c) => {
             const done = c.jobs.filter((j) => j.status === 'completed').length
             const st = groupStatus(c.jobs)
             return (
-              <div key={c.id} className={`graph-card ${c.jobs.length + c.pending.length > 1 || c.heading ? 'group' : ''} ${c.heading ? 'has-heading' : ''}`}>
+              <div key={c.id} data-card={c.id} className={`graph-card ${c.jobs.length + c.pending.length > 1 || c.heading ? 'group' : ''} ${c.heading ? 'has-heading' : ''}`}>
                 {c.heading && <div className="graph-card-heading text-truncate">{c.heading}</div>}
                 {c.heading && !c.jobs.length ? (
                   <div className="graph-job pending">

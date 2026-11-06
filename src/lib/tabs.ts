@@ -8,8 +8,14 @@ export interface Tab {
   url: string
   /** What the page calls itself, or a title from the link that opened it. Null until then: see tabTitle. */
   title: string | null
+  /** The branch the tab's title names: the one picked here, or else the repository's own. */
+  branch?: string | null
+  /** A branch picked in this tab, to look at or, in a repository only on GitHub, to work with. */
+  pickedBranch?: string | null
   /** The tab it was opened from, so a run of background tabs lines up next to it in order. */
   opener?: string
+  /** Kept at the start of the strip with no close button, and Cmd+W leaves it open. */
+  pinned?: boolean
 }
 
 export interface ClosedTab {
@@ -134,9 +140,27 @@ export interface OpenTabOptions {
   background?: boolean
 }
 
+/** How many tabs are pinned: they're always the first ones in the strip. */
+export function pinnedCount(tabs: Pick<Tab, 'pinned'>[]) {
+  let n = 0
+  while (tabs[n]?.pinned) n++
+  return n
+}
+
+/** Pinning moves a tab to the end of the pinned ones; unpinning, to just after them. */
+export function pinTab(state: TabsState, id: string, pinned: boolean): TabsState {
+  const tab = state.tabs.find((t) => t.id === id)
+  if (!tab || !!tab.pinned === pinned) return state
+  const rest = state.tabs.filter((t) => t.id !== id)
+  const at = pinnedCount(rest)
+  const { pinned: _, ...plain } = tab
+  return { ...state, tabs: [...rest.slice(0, at), pinned ? { ...plain, pinned: true } : plain, ...rest.slice(at)] }
+}
+
 /** Opens a link next to the current tab, after any tabs already opened from it, as browsers do. */
 export function openTabNext(state: TabsState, { id, url, title = null, background = false }: OpenTabOptions): TabsState {
-  let at = state.tabs.findIndex((t) => t.id === state.activeId) + 1
+  // A link from a pinned tab opens after the pinned ones, as browsers do.
+  let at = Math.max(state.tabs.findIndex((t) => t.id === state.activeId) + 1, pinnedCount(state.tabs))
   while (state.tabs[at]?.opener === state.activeId) at++
   const tabs = [...state.tabs.slice(0, at), { id, url: safeTabPath(url), title, opener: state.activeId }, ...state.tabs.slice(at)]
   const next = { ...state, tabs }
@@ -174,19 +198,23 @@ export function reopenClosedTab(state: TabsState): TabsState {
   if (!last) return state
   const open = findRepoTab(state, repoKeyFromUrl(last.url))
   if (open) return selectTab({ ...state, closed }, open.id)
-  const at = Math.min(last.index, state.tabs.length)
+  const at = Math.max(Math.min(last.index, state.tabs.length), pinnedCount(state.tabs))
   const tabs = [...state.tabs.slice(0, at), { id: last.id, url: last.url, title: last.title }, ...state.tabs.slice(at)]
   return selectTab({ ...state, tabs, closed }, last.id)
 }
 
 export function moveTab(state: TabsState, id: string, toIndex: number): TabsState {
   const from = state.tabs.findIndex((t) => t.id === id)
-  const to = Math.max(0, Math.min(toIndex, state.tabs.length - 1))
-  if (from < 0 || from === to) return state
+  if (from < 0) return state
+  // Pinned tabs move among themselves, and the others never go in front of them.
+  const pins = pinnedCount(state.tabs)
+  const [low, high] = state.tabs[from].pinned ? [0, pins - 1] : [pins, state.tabs.length - 1]
+  const to = Math.max(low, Math.min(toIndex, high))
+  if (from === to) return state
   const tabs = [...state.tabs]
   // A moved tab is the user's choice of place, so later links no longer line up after it.
   const [tab] = tabs.splice(from, 1)
-  tabs.splice(to, 0, { id: tab.id, url: tab.url, title: tab.title })
+  tabs.splice(to, 0, { id: tab.id, url: tab.url, title: tab.title, branch: tab.branch, pickedBranch: tab.pickedBranch, ...(tab.pinned ? { pinned: true } : {}) })
   return { ...state, tabs }
 }
 
@@ -205,7 +233,15 @@ const pathnameOf = (url: string) => url.replace(/[?#].*$/, '')
 /** A tab navigated. The title belonged to the old page, unless only the query or hash changed. */
 export function setTabUrl(state: TabsState, id: string, location: string): TabsState {
   const url = safeTabPath(location)
-  return mapTab(state, id, (tab) => (tab.url === url ? tab : { ...tab, url, title: pathnameOf(tab.url) === pathnameOf(url) ? tab.title : null }))
+  return mapTab(state, id, (tab) => {
+    if (tab.url === url) return tab
+    const next = { ...tab, url, title: pathnameOf(tab.url) === pathnameOf(url) ? tab.title : null }
+    return repoKeyFromUrl(tab.url) === repoKeyFromUrl(url) ? next : { ...next, branch: null, pickedBranch: null }
+  })
+}
+
+export function setTabBranch(state: TabsState, id: string, change: Pick<Tab, 'branch'> | Pick<Tab, 'pickedBranch'>): TabsState {
+  return mapTab(state, id, (tab) => (Object.entries(change).every(([k, v]) => (tab[k as 'branch'] ?? null) === v) ? tab : { ...tab, ...change }))
 }
 
 export function setTabTitle(state: TabsState, id: string, title: string): TabsState {
@@ -265,7 +301,7 @@ export function recordNavigation(history: TabHistory, action: 'POP' | 'PUSH' | '
 
 export function serializeTabs(state: TabsState) {
   return {
-    tabs: state.tabs.map((t) => ({ id: t.id, url: t.url, title: t.title })),
+    tabs: state.tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, ...(t.branch ? { branch: t.branch } : {}), ...(t.pickedBranch ? { pickedBranch: t.pickedBranch } : {}), ...(t.pinned ? { pinned: true } : {}) })),
     activeId: state.activeId,
     closed: state.closed,
     split: state.split,
@@ -292,9 +328,11 @@ export function parseSavedTabs(saved: unknown, freshId: string): TabsState {
     const url = isRecord(t) ? savedUrl(t.url) : null
     if (!isRecord(t) || !validId(t.id) || seen.has(t.id) || !url) continue
     seen.add(t.id)
-    tabs.push({ id: t.id, url, title: validTitle(t.title) })
+    tabs.push({ id: t.id, url, title: validTitle(t.title), ...(validTitle(t.branch) ? { branch: validTitle(t.branch) } : {}), ...(validTitle(t.pickedBranch) ? { pickedBranch: validTitle(t.pickedBranch) } : {}), ...(t.pinned === true ? { pinned: true } : {}) })
   }
   if (!tabs.length) return initialTabs(freshId)
+  // Pinned tabs come first, whatever order they were saved in.
+  tabs.sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned))
   const closed: ClosedTab[] = []
   for (const c of Array.isArray(saved.closed) ? (saved.closed as unknown[]) : []) {
     const url = isRecord(c) ? savedUrl(c.url) : null
@@ -387,11 +425,12 @@ export function iconFromPath(url: string): TabIcon {
   return !section ? 'repo' : section === 'blob' || section === 'tree' || section === 'blame' || section === 'commit' || section === 'commits' ? 'code' : 'repo'
 }
 
-/** A tab on a repository's page goes by the repository, whichever of its pages is showing. */
-export function tabTitle(tab: Pick<Tab, 'url' | 'title'>) {
+/** A tab on a repository's page goes by the repository and branch, whichever of its pages is showing. */
+export function tabTitle(tab: Pick<Tab, 'url' | 'title' | 'branch'>) {
   const [owner, repo] = pathParts(tab.url)
-  if (repoKeyFromUrl(tab.url) && owner !== 'local') return repo
-  return tab.title ?? titleFromPath(tab.url)
+  const isRepo = !!repoKeyFromUrl(tab.url)
+  const name = isRepo && owner !== 'local' ? repo : (tab.title ?? titleFromPath(tab.url))
+  return isRepo && tab.branch ? `${name} - ${tab.branch}` : name
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +442,28 @@ export function repoKeyFromUrl(url: string): string | null {
   if (first === 'local') return second ? `local/${second}` : null
   if (!first || !second || TOP_LEVEL[first] || first === 'orgs' || first === 'login') return null
   return `${first}/${second}`.toLowerCase()
+}
+
+/** The tab of the repository's tab row a page is under, so each keeps its own page while another is shown. */
+const SECTION_GROUPS: Record<string, string> = {
+  pull: 'pulls',
+  compare: 'pulls',
+  tree: 'code',
+  blob: 'code',
+  blame: 'code',
+  commits: 'code',
+  commit: 'code',
+  branches: 'code',
+  tags: 'releases',
+  graphs: 'pulse',
+}
+
+/** `owner/repo#section` for a GitHub repository's page, or null for any other page. */
+export function repoSectionKey(url: string): string | null {
+  const key = repoKeyFromUrl(url)
+  if (!key || key.startsWith('local/')) return null
+  const section = pathParts(url)[2] ?? ''
+  return `${key}#${SECTION_GROUPS[section] ?? section}`
 }
 
 export function findRepoTab(state: TabsState, key: string | null): Tab | undefined {

@@ -58,14 +58,19 @@ export interface NativeBridge {
     list(): Promise<LocalRepo[]>
     add(path: string): Promise<LocalRepo>
     remove(id: string): Promise<void>
+    cloneTarget(parentDir: string, name: string): Promise<{ exists: boolean; path?: string; isRepo?: boolean; origin?: string | null }>
     clone(url: string, parentDir: string, name: string, auth?: GitAuth): Promise<LocalRepo>
   }
   /** Runs an allow-listed git subcommand inside a registered local repository. */
   git(repoId: string, args: string[], auth?: GitAuth): Promise<GitResult>
   revealInFinder(repoId: string): Promise<void>
   openInEditor(repoId: string): Promise<void>
+  /** A system right-click menu at the pointer; resolves with the picked item's id, or null. */
+  contextMenu(items: ContextMenuItem[]): Promise<string | null>
   onMenu(handler: (action: string) => void): () => void
 }
+
+export type ContextMenuItem = { id: string; label: string; enabled?: boolean } | { type: 'separator' }
 
 declare global {
   interface Window {

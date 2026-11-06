@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent } from 'react'
 import { createPortal, flushSync } from 'react-dom'
-import { ActionList, ActionMenu, IconButton } from '@primer/react'
 import {
   CodeIcon,
-  ColumnsIcon,
   CommentDiscussionIcon,
   DeviceDesktopIcon,
   GearIcon,
@@ -12,6 +10,7 @@ import {
   InboxIcon,
   IssueOpenedIcon,
   PersonIcon,
+  PinIcon,
   PlayIcon,
   RepoIcon,
   SearchIcon,
@@ -21,6 +20,7 @@ import {
 import { RepoPicker } from './RepoPicker'
 import { UpdateNotice } from './UpdateNotice'
 import { tabButtonId, tabPanelId, useTabs } from '../lib/TabsProvider'
+import { native, type ContextMenuItem } from '../lib/platform'
 import { iconFromPath, repoKeyFromUrl, tabTitle, type Tab, type TabIcon } from '../lib/tabs'
 
 const ICONS: Record<TabIcon, Icon> = {
@@ -49,10 +49,26 @@ type Side = 'left' | 'right'
 
 /** The row of tabs at the very top of the window, sharing it with the macOS window buttons. */
 export function TabStrip() {
-  const { state, active, select, close, split, toggleSplit } = useTabs()
+  const { state, active, select, close, split, toggleSplit, pin } = useTabs()
   const list = useRef<HTMLDivElement>(null)
   const [dropSide, setDropSide] = useState<Side | null>(null)
-  const [menu, setMenu] = useState<{ tab: Tab; anchor: HTMLElement } | null>(null)
+
+  // The system's own menu, which closes the way every other menu on the Mac does.
+  const showMenu = async (tab: Tab) => {
+    if (!native) return
+    const items: ContextMenuItem[] = [
+      { id: 'pin', label: tab.pinned ? 'Unpin tab' : 'Pin tab' },
+      ...(state.tabs.length > 1 && !state.split?.includes(tab.id) ? [{ id: 'side', label: 'Open to the side' }] : []),
+      ...(state.split ? [{ id: 'unsplit', label: 'Close split view' }] : []),
+      { type: 'separator' },
+      { id: 'close', label: 'Close tab' },
+    ]
+    const picked = await native.contextMenu(items)
+    if (picked === 'pin') pin(tab.id, !tab.pinned)
+    else if (picked === 'side') split(tab.id)
+    else if (picked === 'unsplit') toggleSplit()
+    else if (picked === 'close') close(tab.id)
+  }
 
   useEffect(() => {
     document.getElementById(tabButtonId(active.id))?.parentElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
@@ -77,7 +93,7 @@ export function TabStrip() {
     else if (e.key === 'ArrowLeft') goTo(state.tabs[(at - 1 + state.tabs.length) % state.tabs.length])
     else if (e.key === 'Home') goTo(state.tabs[0])
     else if (e.key === 'End') goTo(state.tabs[state.tabs.length - 1])
-    else if (e.key === 'Delete') close(active.id)
+    else if (e.key === 'Delete') close(active.id, { keepPinned: true })
     else return
     e.preventDefault()
   }
@@ -101,41 +117,16 @@ export function TabStrip() {
             live={state.live.includes(tab.id)}
             list={list}
             onDropSide={setDropSide}
-            onMenu={(anchor) => setMenu({ tab, anchor })}
+            onMenu={() => void showMenu(tab)}
           />
         ))}
       </div>
       <RepoPicker />
       <div className="tab-strip-end">
         <UpdateNotice />
-        <IconButton
-          className="tab-split"
-          icon={ColumnsIcon}
-          aria-label={state.split ? 'Close split view' : 'Split view'}
-          aria-pressed={!!state.split}
-          size="small"
-          variant="invisible"
-          onClick={toggleSplit}
-        />
       </div>
       {/* In the body: the strip keeps one size at any zoom, which would throw this out of place. */}
       {dropSide && createPortal(<div className={`split-drop is-${dropSide}`} aria-hidden="true" />, document.body)}
-      {menu && (
-        <ActionMenu open anchorRef={{ current: menu.anchor }} onOpenChange={(open) => !open && setMenu(null)}>
-          <ActionMenu.Overlay>
-            <ActionList>
-              {state.tabs.length > 1 && !state.split?.includes(menu.tab.id) && (
-                <ActionList.Item onSelect={() => split(menu.tab.id)}>Open to the side</ActionList.Item>
-              )}
-              {state.split && <ActionList.Item onSelect={toggleSplit}>Close split view</ActionList.Item>}
-              {(state.tabs.length > 1 || state.split) && <ActionList.Divider />}
-              <ActionList.Item variant="danger" onSelect={() => close(menu.tab.id)}>
-                Close tab
-              </ActionList.Item>
-            </ActionList>
-          </ActionMenu.Overlay>
-        </ActionMenu>
-      )}
     </div>
   )
 }
@@ -155,7 +146,7 @@ function TabItem({
   live: boolean
   list: React.RefObject<HTMLDivElement | null>
   onDropSide(side: Side | null): void
-  onMenu(anchor: HTMLElement): void
+  onMenu(): void
 }) {
   const { state, select, close, move, split } = useTabs()
   const title = tabTitle(tab)
@@ -248,16 +239,16 @@ function TabItem({
 
   return (
     <div
-      className={`tab-item${active ? ' is-active' : ''}${inSplit ? ' in-split' : ''}`}
+      className={`tab-item${active ? ' is-active' : ''}${inSplit ? ' in-split' : ''}${tab.pinned ? ' is-pinned' : ''}`}
       role="presentation"
       title={title}
       onPointerDown={onPointerDown}
       onContextMenu={(e) => {
         e.preventDefault()
-        onMenu(e.currentTarget)
+        onMenu()
       }}
       onAuxClick={(e) => {
-        if (e.button === 1) close(tab.id)
+        if (e.button === 1) close(tab.id, { keepPinned: true })
       }}
     >
       <button
@@ -273,9 +264,13 @@ function TabItem({
         <Icon className="tab-icon" size={16} />
         <span className="tab-title">{title}</span>
       </button>
-      <button type="button" className="tab-close" tabIndex={-1} aria-label={`Close ${title}`} onClick={() => close(tab.id)}>
-        <XIcon size={12} />
-      </button>
+      {tab.pinned ? (
+        <PinIcon className="tab-pin" size={12} aria-label="Pinned" />
+      ) : (
+        <button type="button" className="tab-close" tabIndex={-1} aria-label={`Close ${title}`} onClick={() => close(tab.id)}>
+          <XIcon size={12} />
+        </button>
+      )}
     </div>
   )
 }

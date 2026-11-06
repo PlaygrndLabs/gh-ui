@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parsePatch, parseUnifiedDiff } from './diff'
 import { splitRefPath } from './repo'
-import { appPathFromApiUrl, appPathFromUrl, mapSrcset, parseRemote, safeNextPath, toHttpsRemote } from './links'
+import { appPathFromApiUrl, appPathFromUrl, mapSrcset, parseRemote, safeNextPath, sameRemote, toHttpsRemote } from './links'
 import { assetUploadUrl, isValidTagName, makeLatestValue, tagMenu } from './releases'
 import { parseLog, splitLogBySteps, summarizeLog } from './logs'
 import { apiBaseFor, canReadNotifications, tokenKind } from './hosts'
@@ -298,5 +298,13 @@ describe('toHttpsRemote', () => {
     expect(toHttpsRemote('ssh://git@ghe.example.com/acme/web')).toBe('https://ghe.example.com/acme/web.git')
     expect(toHttpsRemote('https://github.com/acme/web.git')).toBeNull()
     expect(toHttpsRemote('')).toBeNull()
+  })
+})
+
+describe('sameRemote', () => {
+  it('matches https and SSH forms of one repository, ignoring case', () => {
+    expect(sameRemote('https://github.com/Acme/Web.git', 'git@github.com:acme/web.git')).toBe(true)
+    expect(sameRemote('https://github.com/acme/web', 'https://github.com/acme/api')).toBe(false)
+    expect(sameRemote('not a url', 'not a url')).toBe(false)
   })
 })

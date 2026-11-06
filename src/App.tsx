@@ -1,5 +1,6 @@
-import { Component, useLayoutEffect, useRef, type FocusEvent, type ReactElement, type ReactNode, type UIEvent } from 'react'
-import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useNavigationType, useParams } from 'react-router-dom'
+import { Activity, Component, useLayoutEffect, useRef, type FocusEvent, type ReactElement, type ReactNode, type UIEvent } from 'react'
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useNavigationType, useOutlet, useParams } from 'react-router-dom'
+import { repoSectionKey } from './lib/tabs'
 import { Banner } from '@primer/react'
 import { reauthPath, useAuth } from './lib/auth'
 import { AgentProvider, useAgent } from './lib/agent/AgentProvider'
@@ -107,6 +108,10 @@ function useContentScroll() {
   const lastFocus = useRef<HTMLElement | null>(null)
   const shownPathname = useRef<string | null>(null)
   const lastTop = useRef(0)
+  // Each tab of a repository's tab row keeps its page (see KeptSections), and where it was scrolled with it.
+  const section = repoSectionKey(pathname)
+  const shownSection = useRef<string | null>(null)
+  const sections = useRef(new Map<string, { top: number; inner: Map<Element, { top: number; left: number }> }>())
   useLayoutEffect(() => {
     const el = main.current
     if (!el) return
@@ -116,12 +121,25 @@ function useContentScroll() {
         if (!node.isConnected) inner.current.delete(node)
         else if (node !== el) node.scrollTo(at.left, at.top)
       }
+    } else if (section && section !== shownSection.current && sections.current.has(section)) {
+      // Back to a tab of the repository: its page was kept, so it goes back to where it was.
+      const kept = sections.current.get(section)!
+      inner.current = kept.inner
+      lastFocus.current = null
+      lastTop.current = kept.top
+      el.scrollTop = kept.top
+      for (const [node, at] of kept.inner) {
+        if (!node.isConnected) kept.inner.delete(node)
+        else node.scrollTo(at.left, at.top)
+      }
     } else {
-      inner.current.clear()
+      inner.current = new Map()
       lastFocus.current = null
       lastTop.current = navigationType === 'POP' ? (positions.current.get(key) ?? 0) : 0
       el.scrollTop = lastTop.current
     }
+    if (section) sections.current.set(section, { top: lastTop.current, inner: inner.current })
+    shownSection.current = section
     shownPathname.current = pathname
     // Arrow keys and Page Down scroll the focused area, so keep it focused unless something else is. A focused
     // element in the tab just hidden still counts as active until the browser next lays out.
@@ -142,13 +160,50 @@ function useContentScroll() {
     if (e.target === el) {
       lastTop.current = el.scrollTop
       positions.current.set(key, el.scrollTop)
+      const kept = shownSection.current && sections.current.get(shownSection.current)
+      if (kept) kept.top = el.scrollTop
     }
-    else if (e.target instanceof Element) inner.current.set(e.target, { top: e.target.scrollTop, left: e.target.scrollLeft })
+    // A kept page being hidden scrolls to 0 too.
+    else if (e.target instanceof Element && e.target.getClientRects().length) inner.current.set(e.target, { top: e.target.scrollTop, left: e.target.scrollLeft })
   }
   const onFocus = (e: FocusEvent<HTMLElement>) => {
     if (e.target !== main.current) lastFocus.current = e.target
   }
   return { main, onScroll, onFocus }
+}
+
+/**
+ * The desktop app's pages for one window tab. Each tab of a repository's tab row (Branch, Pull requests, Actions, Code,
+ * …) keeps its page while another is shown, hidden in <Activity>, so going back finds it as it was left: the pull
+ * request, its files, what was typed. Other pages show as usual.
+ */
+function KeptSections() {
+  const { pathname } = useLocation()
+  const outlet = useOutlet()
+  const current = repoSectionKey(pathname)
+  const kept = useRef(new Map<string, ReactNode>())
+  if (current) {
+    // Only the open repository's tabs: going to another repository in this window tab starts it afresh.
+    const repo = current.slice(0, current.indexOf('#'))
+    for (const k of kept.current.keys()) if (!k.startsWith(`${repo}#`)) kept.current.delete(k)
+    kept.current.set(current, outlet)
+  }
+  return (
+    <>
+      {[...kept.current].map(([k, page]) => (
+        <Activity key={k} mode={k === current ? 'visible' : 'hidden'}>
+          <ErrorBoundary resetKey={k === current ? pathname : k} title="This page hit an error">
+            {page}
+          </ErrorBoundary>
+        </Activity>
+      ))}
+      {!current && (
+        <ErrorBoundary resetKey={pathname} title="This page hit an error">
+          {outlet}
+        </ErrorBoundary>
+      )}
+    </>
+  )
 }
 
 /** The app's frame. In the desktop app each tab renders it without the agent panel, which is shared across tabs (see NativeApp). */
@@ -159,9 +214,13 @@ export function AppShell({ tabbed = false }: { tabbed?: boolean }) {
 
   const page = (
     <main className="app-main" ref={main} tabIndex={-1} onScrollCapture={onScroll} onFocusCapture={onFocus}>
-      <ErrorBoundary resetKey={pathname} title="This page hit an error">
-        <Outlet />
-      </ErrorBoundary>
+      {tabbed ? (
+        <KeptSections />
+      ) : (
+        <ErrorBoundary resetKey={pathname} title="This page hit an error">
+          <Outlet />
+        </ErrorBoundary>
+      )}
     </main>
   )
 

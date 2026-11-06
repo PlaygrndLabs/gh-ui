@@ -23,11 +23,13 @@ contextBridge.exposeInMainWorld('ghUi', {
     list: () => ipcRenderer.invoke('repos:list'),
     add: (path) => ipcRenderer.invoke('repos:add', path),
     remove: (id) => ipcRenderer.invoke('repos:remove', id),
+    cloneTarget: (parentDir, name) => ipcRenderer.invoke('repos:cloneTarget', parentDir, name),
     clone: (url, parentDir, name, auth) => ipcRenderer.invoke('repos:clone', url, parentDir, name, auth),
   },
   git: (repoId, args, auth) => ipcRenderer.invoke('git', repoId, args, auth),
   revealInFinder: (repoId) => ipcRenderer.invoke('repo:reveal', repoId),
   openInEditor: (repoId) => ipcRenderer.invoke('repo:openEditor', repoId),
+  contextMenu: (items) => ipcRenderer.invoke('menu:popup', items),
   onMenu: (handler) => {
     const listener = (_e, action) => handler(action)
     ipcRenderer.on('menu', listener)

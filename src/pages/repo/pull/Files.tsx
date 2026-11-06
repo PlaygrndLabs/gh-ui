@@ -94,7 +94,13 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
 
   const [split, setSplit] = useState(() => readPref('diffSplit', false))
   const [showTree, setShowTree] = useState(() => readPref('diffFileTree', true))
-  const treeBox = useRef<HTMLDivElement>(null)
+  const treeBox = useRef<HTMLDivElement | null>(null)
+  // The tree can mount after the files are known (they're often cached), so the tracking waits for it.
+  const [treeEl, setTreeEl] = useState<HTMLDivElement | null>(null)
+  const treeRef = useCallback((el: HTMLDivElement | null) => {
+    treeBox.current = el
+    setTreeEl(el)
+  }, [])
   const pinnedFile = useRef(false)
   const [currentFile, setCurrentFile] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
@@ -158,8 +164,11 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
   // The tree follows the page: the file being read is the one that's reached the sticky bars. Picking a file in the tree
   // keeps it marked through the scroll there, and even if it's too short to reach them, until the user next scrolls.
   useEffect(() => {
-    const main = treeBox.current?.closest('.app-main')
+    // In the desktop app's chat-beside-code layout the files scroll in their own pane, not with the page.
+    const main = treeEl?.closest('.ws-pr-files') ?? treeEl?.closest('.app-main')
     if (!main || !shownPaths) return
+    // A file picked from another list of files doesn't hold this one.
+    pinnedFile.current = false
     const paths = shownPaths.split('\n')
     let frame = 0
     const update = () => {
@@ -182,15 +191,19 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
     main.addEventListener('wheel', release, { passive: true })
     main.addEventListener('keydown', release)
     main.addEventListener('pointerdown', release)
+    // A pane opened in a hidden tab has no size yet: check again once it's shown.
+    const resized = new ResizeObserver(schedule)
+    resized.observe(main)
     schedule()
     return () => {
+      resized.disconnect()
       cancelAnimationFrame(frame)
       main.removeEventListener('scroll', schedule)
       main.removeEventListener('wheel', release)
       main.removeEventListener('keydown', release)
       main.removeEventListener('pointerdown', release)
     }
-  }, [shownPaths])
+  }, [shownPaths, treeEl])
 
   // Keep the marked file in view in the tree, moving only the tree and not the page.
   useEffect(() => {
@@ -447,7 +460,7 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
         />
       )}
       <div className={`files-layout ${showTree ? '' : 'no-tree'}`}>
-        <div className="files-tree" ref={treeBox}>
+        <div className="files-tree" ref={treeRef}>
           <TextInput block leadingVisual={SearchIcon} placeholder="Filter changed files" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filter changed files" className="mb-2" />
           <FileTree
             files={shown}
