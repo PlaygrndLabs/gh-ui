@@ -163,6 +163,18 @@ button.ws-row:hover, a.ws-row:hover { color: var(--ws-text); text-decoration: no
 .ws-diff { padding: 12px 20px 12px 12px; }
 /* Sticky headers stop at the scroller's padding: pull them up over it, so no code shows above a file's name. */
 .ws-diff .file-diff-header { top: -12px; }
+.ws-commit-files { display: flex; flex: 1; flex-direction: column; min-height: 0; border-right: 1px solid var(--ws-line); }
+.ws-commit-files-head { flex: none; padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--ws-muted); border-bottom: 1px solid var(--ws-line); }
+.ws-commit-files .ws-scroll { padding: 4px; }
+.ws-file-row { font-size: 12px; }
+.ws-file-path { display: flex; flex: 1; min-width: 0; white-space: nowrap; }
+.ws-file-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ws-muted); }
+.ws-file-name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.ws-commit-row { align-items: center; padding: 6px 8px; }
+.ws-commit-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
+.ws-commit-subject { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 600; }
+.ws-commit-text .ws-row-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ws-commit-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; color: var(--ws-muted); border: 1px solid var(--ws-line); border-radius: 50%; }
 .ws-commit-message { margin: 0 0 12px; font-family: inherit; white-space: pre-wrap; }
 .ws-empty { display: flex; flex: 1; align-items: center; justify-content: center; padding: 32px; color: var(--ws-muted); text-align: center; }
 .ws-empty-body { display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -234,6 +246,8 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 /* ---------- Tabs, the way Chrome draws them: the active one is part of the toolbar under it ---------- */
 .tabbed > .tab-strip { align-items: flex-end; gap: 0; padding-top: 8px; padding-right: 8px; color: var(--ws-chrome-muted); background: var(--ws-chrome-bg-deep); border-bottom: 0; }
 .tabbed .tab-list { align-items: flex-end; gap: 0; padding: 0 8px; }
+/* The tabs sit on the strip's bottom edge; the update notice is centred in the whole strip, like the window buttons. */
+.tabbed > .tab-strip > .tab-strip-end { align-self: stretch; margin-top: -8px; }
 .tabbed .tab-item { flex: 0 1 220px; width: 220px; height: 36px; color: var(--ws-chrome-muted); border-radius: 9px 9px 0 0; }
 .tabbed .tab-item:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-bg-hover, #1a1e23); }
 .tabbed .tab-item.is-active, .tabbed .tab-item.is-active:hover { z-index: 1; color: var(--ws-chrome-text); background: var(--ws-chrome-bg); box-shadow: none; }

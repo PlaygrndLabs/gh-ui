@@ -6,7 +6,7 @@ import { TableIcon, ProjectIcon, LinkExternalIcon, SearchIcon } from '@primer/oc
 import { useGitHub, errorMessage } from '../../lib/github'
 import { useRepo } from '../../lib/repo'
 import { useAgentPageContext } from '../../lib/agent/AgentProvider'
-import { openExternal } from '../../lib/platform'
+import { isNative, openExternal } from '../../lib/platform'
 import { fetchProject, isScopeError, statusFieldOf, type ProjectModel } from '../../lib/projects'
 import { Blankslate, ErrorBox, Loading } from '../../components/Bits'
 import { Board } from './project/Board'
@@ -230,7 +230,7 @@ export function ProjectPage() {
           <SegmentedControl.Button selected={view === 'board'}>Board</SegmentedControl.Button>
           <SegmentedControl.Button selected={view === 'table'}>Table</SegmentedControl.Button>
         </SegmentedControl>
-        <IconButton icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(model.url)} />
+        {!isNative && <IconButton icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(model.url)} />}
       </div>
       {/* Not dismissible: editing stays off once GitHub has refused the scope, so the notice explains why. */}
       {scopeRefused && <Banner className="mb-3" variant="warning" title="Your token can’t edit projects" description={WRITE_SCOPE_HINT} />}

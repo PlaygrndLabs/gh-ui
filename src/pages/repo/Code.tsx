@@ -33,7 +33,7 @@ import { useGitHub, decodeBase64, encodeBase64, errorMessage } from '../../lib/g
 import { useRepo, useRefPath, encodePath } from '../../lib/repo'
 import { compactNumber, copyText, firstLine, formatBytes, shortSha, plural } from '../../lib/format'
 import { highlightLines, languageFor } from '../../lib/highlight'
-import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { isNative, openExternal } from '../../lib/platform'
 import { appPathFromUrl, webUrl } from '../../lib/links'
 import { contentElementById } from '../../lib/scroll'
@@ -867,7 +867,7 @@ export function BlobPage() {
                 </span>
               </div>
               <span className="ml-auto flex-center gap-2">
-                  <IconButton description="Ask the agent about this file" size="small" icon={SparkleFillIcon} aria-label="Ask agent about this file" onClick={() => agent.ask(`Explain ${path} in ${owner}/${repo} at ${ref}.`)} />
+                  <AgentOnly><IconButton description="Ask the agent about this file" size="small" icon={SparkleFillIcon} aria-label="Ask agent about this file" onClick={() => agent.ask(`Explain ${path} in ${owner}/${repo} at ${ref}.`)} /></AgentOnly>
                 {fileData && isText ? (
                   <ButtonGroup>
                     {fileData.download_url && (
@@ -884,7 +884,7 @@ export function BlobPage() {
                 {canEdit && !editing && (
                   <IconButton description="Edit this file" size="small" icon={PencilIcon} aria-label="Edit file" onClick={() => setEditing(true)} />
                 )}
-                <IconButton description="Open on GitHub" size="small" icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/blob/${ref}/${path}`))} />
+                {!isNative && <IconButton description="Open on GitHub" size="small" icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/blob/${ref}/${path}`))} />}
               </span>
             </div>
             {file.isLoading || resolving ? (
@@ -984,14 +984,14 @@ export function BlobPage() {
       )}
       {range && text && (
         <div className="mt-2 flex-center gap-2">
-          <Button
+          <AgentOnly><Button
             size="small"
             leadingVisual={SparkleFillIcon}
             onClick={() => agent.ask(`Explain lines ${range[0]}-${range[1]} of ${path} in ${owner}/${repo} at ${ref}.`)}
           >
             Ask agent about L{range[0]}
             {range[1] !== range[0] ? `–L${range[1]}` : ''}
-          </Button>
+          </Button></AgentOnly>
         </div>
       )}
     </div>

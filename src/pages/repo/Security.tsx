@@ -6,7 +6,7 @@ import { ShieldIcon, DependabotIcon, CodescanIcon, KeyIcon, AlertIcon, SparkleFi
 import type { Octokit } from '@octokit/rest'
 import { useGitHub, errorMessage } from '../../lib/github'
 import { useRepo } from '../../lib/repo'
-import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { openExternal } from '../../lib/platform'
 import { webBaseFor } from '../../lib/hosts'
 import { Blankslate, ErrorBox, Loading } from '../../components/Bits'
@@ -318,9 +318,9 @@ export function SecurityPage() {
               <div className="security-subhead mb-3">
                 <h2 className="security-subhead-heading">{alertSection.label} alerts</h2>
                 {!!current.data?.alerts.length && (
-                  <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Look at the open ${alertSection.id.replace('-', ' ')} alerts in ${fullName} (list_security_alerts with kind "${alertSection.id}"). Explain which matter for this codebase and propose fixes.`)}>
+                  <AgentOnly><Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Look at the open ${alertSection.id.replace('-', ' ')} alerts in ${fullName} (list_security_alerts with kind "${alertSection.id}"). Explain which matter for this codebase and propose fixes.`)}>
                     Triage with agent
-                  </Button>
+                  </Button></AgentOnly>
                 )}
               </div>
               {current.isLoading ? (

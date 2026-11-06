@@ -3,7 +3,7 @@ import { Banner, Button, Label, RelativeTime } from '@primer/react'
 import { GitCommitIcon, SparkleFillIcon } from '@primer/octicons-react'
 import { useGitHub, setThreadResolved, addPendingReply, updatePendingComment, deletePendingComment, type PendingReviewComment, type PullRequest } from '../../../lib/github'
 import { useRepo } from '../../../lib/repo'
-import { useAgent } from '../../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent } from '../../../lib/agent/AgentProvider'
 import { botName, ErrorBox, Loading, UserAvatar, UserLink, isBot } from '../../../components/Bits'
 import { Composer } from '../../../components/Composer'
 import { Markdown } from '../../../components/Markdown'
@@ -189,9 +189,9 @@ export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } 
                   <Markdown html={e.body_html} text={e.body_html ? undefined : e.body} context={fullName} />
                   {isBot(e.user?.login, e.user?.type) && (
                     <div className="mt-2">
-                      <Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(prompts.bots)}>
+                      <AgentOnly><Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(prompts.bots)}>
                         Address {botName(e.user?.login ?? '')} review
-                      </Button>
+                      </Button></AgentOnly>
                     </div>
                   )}
                 </div>
@@ -235,7 +235,7 @@ export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } 
         <div style={{ minWidth: 0 }}>
           {bots.size > 0 && (
             <div className="mb-3">
-              <Banner
+              <AgentOnly><Banner
                 variant="info"
                 title={`${[...bots.values()].reduce((a, b) => a + b, 0)} unresolved comments from review bots`}
                 description={[...bots.entries()].map(([b, c]) => `${botName(b)} (${c})`).join(', ')}
@@ -245,7 +245,7 @@ export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } 
                     Address with agent
                   </Banner.PrimaryAction>
                 }
-              />
+              /></AgentOnly>
             </div>
           )}
           <CommentCard

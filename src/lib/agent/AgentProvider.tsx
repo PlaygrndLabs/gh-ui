@@ -7,7 +7,7 @@ import { readPref, writePref } from '../storage'
 import { useTabTitle } from '../TabsProvider'
 import { BASE_SYSTEM_PROMPT } from './prompt'
 import { createClient, describeAgentError, runAgent, type AgentEvent } from './runner'
-import { getAnthropicKey, loadAgentSettings, proxyBaseUrl, saveAgentSettings, type AgentSettings } from './settings'
+import { ANTHROPIC_KEY_EVENT, getAnthropicKey, loadAgentSettings, proxyBaseUrl, saveAgentSettings, type AgentSettings } from './settings'
 import { useIsFocusedPane } from '../TabsProvider'
 
 export interface PageContext {
@@ -31,6 +31,8 @@ export type ChatItem =
   | { id: string; kind: 'notice'; text: string; tone: 'info' | 'danger' }
 
 interface AgentApi {
+  /** Whether the agent can run: an API key is saved, or a proxy holds one. Its buttons show only then. */
+  available: boolean
   open: boolean
   setOpen(open: boolean): void
   toggle(): void
@@ -91,6 +93,19 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const [chats, setChats] = useState<Record<string, ChatView>>({})
   const [pageContext, setPageContext] = useState<PageContext | null>(null)
   const [settings, setSettings] = useState<AgentSettings>(loadAgentSettings)
+  // Unknown until the secret store answers, and hidden till then rather than flashing in.
+  const [hasKey, setHasKey] = useState(false)
+  useEffect(() => {
+    let live = true
+    const check = () => void getAnthropicKey().then((key) => live && setHasKey(!!key?.trim()), () => live && setHasKey(false))
+    check()
+    window.addEventListener(ANTHROPIC_KEY_EVENT, check)
+    return () => {
+      live = false
+      window.removeEventListener(ANTHROPIC_KEY_EVENT, check)
+    }
+  }, [])
+  const available = settings.mode === 'proxy' || hasKey
 
   const runs = useRef(new Map<string, ChatRun>())
   const settingsRef = useRef(settings)
@@ -325,9 +340,11 @@ export function AgentProvider({ children }: { children: ReactNode }) {
   const chat = chats[chatId] ?? EMPTY_CHAT
   const value = useMemo<AgentApi>(
     () => ({
-      open,
+      available,
+      // With nothing to run it, the panel stays shut.
+      open: open && available,
       setOpen,
-      toggle: () => setOpen(!open),
+      toggle: () => available && setOpen(!open),
       setChat: (id) => setChatId(id ?? GENERAL_CHAT),
       items: chat.items,
       running: chat.running,
@@ -341,7 +358,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       updateSettings,
       usage: chat.usage,
     }),
-    [open, setOpen, chat, pageContext, ask, stop, reset, respond, settings, updateSettings],
+    [available, open, setOpen, chat, pageContext, ask, stop, reset, respond, settings, updateSettings],
   )
   return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>
 }
@@ -350,6 +367,11 @@ export function useAgent() {
   const ctx = useContext(AgentContext)
   if (!ctx) throw new Error('useAgent must be used inside <AgentProvider>')
   return ctx
+}
+
+/** Shows its children only while the agent can run, so no button offers what can't happen. */
+export function AgentOnly({ children }: { children: ReactNode }) {
+  return useAgent().available ? children : null
 }
 
 /** Pages call this to tell the agent what the user is looking at. */

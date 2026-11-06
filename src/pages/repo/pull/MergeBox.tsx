@@ -19,7 +19,7 @@ import {
 } from '@primer/octicons-react'
 import { useGitHub, errorMessage, markReadyForReview, type PullRequest } from '../../../lib/github'
 import { useRepo } from '../../../lib/repo'
-import { useAgent } from '../../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent } from '../../../lib/agent/AgentProvider'
 import { CheckStatusIcon } from '../../../components/Status'
 import { useChecks, useReviews, useInvalidatePull, summarizeChecks, actionsIds, prPrompts } from './data'
 
@@ -184,9 +184,9 @@ export function MergeBox({ pr }: { pr: PullRequest }) {
           </div>
           {summary.failed > 0 && (
             <>
-              <Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(prPrompts(owner, repo, pr).checks)}>
+              <AgentOnly><Button size="small" leadingVisual={SparkleFillIcon} onClick={() => agent.ask(prPrompts(owner, repo, pr).checks)}>
                 Fix with agent
-              </Button>
+              </Button></AgentOnly>
               {failedRunIds.length > 0 && canPush && (
                 <Button
                   size="small"

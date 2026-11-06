@@ -20,7 +20,10 @@ import {
 import { RepoPicker } from './RepoPicker'
 import { UpdateNotice } from './UpdateNotice'
 import { tabButtonId, tabPanelId, useTabs } from '../lib/TabsProvider'
-import { native, type ContextMenuItem } from '../lib/platform'
+import { native, openExternal, type ContextMenuItem } from '../lib/platform'
+import { useGitHub } from '../lib/github'
+import { copyText } from '../lib/format'
+import { webUrl } from '../lib/links'
 import { iconFromPath, repoKeyFromUrl, tabTitle, type Tab, type TabIcon } from '../lib/tabs'
 
 const ICONS: Record<TabIcon, Icon> = {
@@ -50,13 +53,17 @@ type Side = 'left' | 'right'
 /** The row of tabs at the very top of the window, sharing it with the macOS window buttons. */
 export function TabStrip() {
   const { state, active, select, close, split, toggleSplit, pin } = useTabs()
+  const { account } = useGitHub()
   const list = useRef<HTMLDivElement>(null)
   const [dropSide, setDropSide] = useState<Side | null>(null)
 
   // The system's own menu, which closes the way every other menu on the Mac does.
   const showMenu = async (tab: Tab) => {
     if (!native) return
+    // The page's address on GitHub. Folders on this Mac and the app's own settings have none.
+    const link = /^\/(local|settings)(\/|$)/.test(tab.url) ? null : webUrl(account.host, tab.url)
     const items: ContextMenuItem[] = [
+      ...(link ? [{ id: 'copy', label: 'Copy link' }, { id: 'browser', label: 'Open in browser' }, { type: 'separator' as const }] : []),
       { id: 'pin', label: tab.pinned ? 'Unpin tab' : 'Pin tab' },
       ...(state.tabs.length > 1 && !state.split?.includes(tab.id) ? [{ id: 'side', label: 'Open to the side' }] : []),
       ...(state.split ? [{ id: 'unsplit', label: 'Close split view' }] : []),
@@ -64,7 +71,9 @@ export function TabStrip() {
       { id: 'close', label: 'Close tab' },
     ]
     const picked = await native.contextMenu(items)
-    if (picked === 'pin') pin(tab.id, !tab.pinned)
+    if (picked === 'copy' && link) void copyText(link)
+    else if (picked === 'browser' && link) openExternal(link)
+    else if (picked === 'pin') pin(tab.id, !tab.pinned)
     else if (picked === 'side') split(tab.id)
     else if (picked === 'unsplit') toggleSplit()
     else if (picked === 'close') close(tab.id)

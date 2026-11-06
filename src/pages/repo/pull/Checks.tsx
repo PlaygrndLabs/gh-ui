@@ -5,7 +5,7 @@ import { Button, NavList, RelativeTime } from '@primer/react'
 import { SyncIcon, SparkleFillIcon, FileIcon, LinkExternalIcon, ReportIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage, type PullRequest, type CheckRun } from '../../../lib/github'
 import { useRepo, encodePath } from '../../../lib/repo'
-import { useAgent } from '../../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent } from '../../../lib/agent/AgentProvider'
 import { durationBetween, firstLine, plural, shortSha } from '../../../lib/format'
 import { openExternal } from '../../../lib/platform'
 import { CheckStatusIcon } from '../../../components/Status'
@@ -257,7 +257,7 @@ function CheckDetail({ run, pr }: { run: CheckRun; pr: PullRequest }) {
           </div>
         </div>
         {failed && (
-          <Button
+          <AgentOnly><Button
             size="small"
             leadingVisual={SparkleFillIcon}
             onClick={() =>
@@ -267,7 +267,7 @@ function CheckDetail({ run, pr }: { run: CheckRun; pr: PullRequest }) {
             }
           >
             Explain failure
-          </Button>
+          </Button></AgentOnly>
         )}
         {data.permissions?.push && run.status === 'completed' && (
           <Button size="small" leadingVisual={SyncIcon} loading={rerun.isPending} onClick={() => rerun.mutate()}>

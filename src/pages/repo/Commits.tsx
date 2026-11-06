@@ -6,9 +6,9 @@ import { GitBranchIcon, GitCommitIcon, FileCodeIcon, CodeIcon, EllipsisIcon, Gea
 import { useGitHub } from '../../lib/github'
 import { useRepo, useRefPath, encodePath } from '../../lib/repo'
 import { dayLabel, firstLine, plural, restLines, shortSha } from '../../lib/format'
-import { useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
+import { AgentOnly, useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { webUrl } from '../../lib/links'
-import { openExternal } from '../../lib/platform'
+import { isNative, openExternal } from '../../lib/platform'
 import { readPref, writePref } from '../../lib/storage'
 import { BranchPicker } from '../../components/BranchPicker'
 import { Blankslate, CommitHeadline, CopyButton, DiffStat, ErrorBox, Loading, UserAvatar, titleParts } from '../../components/Bits'
@@ -424,13 +424,13 @@ export function CommitPage() {
             Commit <span className="commit-header-sha">{shortSha(c.sha)}</span>
           </h1>
           <span className="commit-header-actions">
-            <Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Explain commit ${c.sha} in ${owner}/${repo}.`)}>
+            <AgentOnly><Button leadingVisual={SparkleFillIcon} onClick={() => agent.ask(`Explain commit ${c.sha} in ${owner}/${repo}.`)}>
               Explain
-            </Button>
+            </Button></AgentOnly>
             <Button as={Link} leadingVisual={FileCodeIcon} to={`/${owner}/${repo}/tree/${c.sha}`} title="Browse the repository at this point in the history">
               Browse files
             </Button>
-            <IconButton icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/commit/${c.sha}`))} />
+            {!isNative && <IconButton icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/commit/${c.sha}`))} />}
           </span>
         </div>
         <div className="commit-header-attribution">
