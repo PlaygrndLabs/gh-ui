@@ -113,6 +113,9 @@ a.ws-tab, .ws-tab { display: inline-flex; align-items: center; gap: 6px; padding
 .ws-bad { color: var(--ws-bad); }
 .ws-run { color: var(--ws-warn); }
 
+/* Rows in every dropdown run edge to edge with square corners, as GitHub Desktop's do, instead of Primer's inset cards. */
+:is([role='menu'], [role='listbox']) li[class*='ActionList-ActionListItem-'] { margin-inline: 0; border-radius: 0; }
+:is([role='menu'], [role='listbox']) [class*='ActionList-ActionListContent-'] { padding-inline: 16px; border-radius: 0; }
 .ws-menu-filter { padding: 8px; border-bottom: 1px solid var(--ws-line); }
 .ws-menu-list { max-height: 380px; overflow: auto; }
 /* Primer positions overlays inline, so these have to win over its style attribute. */
