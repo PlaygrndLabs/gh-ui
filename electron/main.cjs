@@ -179,18 +179,46 @@ function isPrivateHost(host) {
   return /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(name) || /^172\.(1[6-9]|2\d|3[01])\./.test(name)
 }
 
+/**
+ * One request that stops at a redirect and reports where it points, so the caller decides whether to go on and with
+ * which headers. net.fetch can't do this: with redirect 'manual' it rejects with "Redirect was cancelled".
+ */
+function requestWithoutRedirect(url, { method, headers, body }) {
+  return new Promise((resolve, reject) => {
+    const request = net.request({ url, method, redirect: 'manual' })
+    for (const [name, value] of Object.entries(headers)) request.setHeader(name, value)
+    request.on('redirect', (_status, _method, location) => {
+      // Without the abort, a redirect nobody follows fails the request.
+      request.abort()
+      resolve({ location })
+    })
+    request.on('error', reject)
+    request.on('response', (response) => {
+      const chunks = []
+      response.on('data', (chunk) => chunks.push(chunk))
+      response.on('error', reject)
+      response.on('end', () => {
+        const outHeaders = {}
+        for (const [k, v] of Object.entries(response.headers)) outHeaders[k] = Array.isArray(v) ? v.join(', ') : v
+        resolve({ status: response.statusCode, headers: outHeaders, body: Buffer.concat(chunks).toString() })
+      })
+    })
+    if (body !== undefined && body !== null) request.write(typeof body === 'string' ? body : Buffer.from(body))
+    request.end()
+  })
+}
+
 async function httpRequest(req) {
   const url = new URL(req.url)
   if (url.protocol !== 'https:' || isPrivateHost(url.hostname)) throw new Error('Only public https URLs are allowed')
   const headers = { 'user-agent': 'gh-ui', ...(req.headers || {}) }
   // body is a string, or a Uint8Array for binary uploads (release assets to uploads.github.com).
-  let res = await net.fetch(url.toString(), { method: req.method || 'GET', headers, body: req.body, redirect: 'manual' })
+  const first = await requestWithoutRedirect(url.toString(), { method: req.method || 'GET', headers, body: req.body })
+  if (!first.location) return first
   // Follow one redirect (Actions logs → pre-signed blob URL) without the token.
-  if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
-    const next = new URL(res.headers.get('location'), url)
-    if (next.protocol !== 'https:' || isPrivateHost(next.hostname)) throw new Error('Refusing a redirect to a non-public address')
-    res = await net.fetch(next.toString(), { headers: { 'user-agent': 'gh-ui' } })
-  }
+  const next = new URL(first.location, url)
+  if (next.protocol !== 'https:' || isPrivateHost(next.hostname)) throw new Error('Refusing a redirect to a non-public address')
+  const res = await net.fetch(next.toString(), { headers: { 'user-agent': 'gh-ui' } })
   const outHeaders = {}
   res.headers.forEach((v, k) => (outHeaders[k] = v))
   return { status: res.status, headers: outHeaders, body: await res.text() }
