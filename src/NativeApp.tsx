@@ -3,7 +3,7 @@ import { Activity, createContext, useCallback, useContext, useEffect, useLayoutE
 import { createPath, createRoutesFromElements, MemoryRouter, parsePath, Route, Router, RouterProvider, Routes, useLocation, type Navigator } from 'react-router-dom'
 import { AppShell, ErrorBoundary, pageRoutes } from './App'
 import { AgentPanel } from './components/AgentPanel'
-import { Loading } from './components/Bits'
+import { AppLoading } from './components/Bits'
 import { TabStrip } from './components/TabStrip'
 import { LoginPage } from './pages/Login'
 import { AgentProvider, useAgent } from './lib/agent/AgentProvider'
@@ -321,7 +321,7 @@ export function NativeApp() {
     known.current = accounts.map((a) => a.id)
   }, [accounts])
 
-  if (!ready) return <Loading label="Loading accounts" />
+  if (!ready) return <AppLoading label="Loading accounts" />
   const showLogin = !active || loginPath !== null
   return (
     <>

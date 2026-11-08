@@ -7,7 +7,7 @@ import { AgentProvider, useAgent } from './lib/agent/AgentProvider'
 import { AppHeader } from './components/AppHeader'
 import { WorkspaceHeader } from './components/WorkspaceHeader'
 import { AgentPanel } from './components/AgentPanel'
-import { Loading, Blankslate, ErrorBox } from './components/Bits'
+import { AppLoading, Blankslate, ErrorBox } from './components/Bits'
 import { LoginPage } from './pages/Login'
 import { NotificationsPage } from './pages/Notifications'
 import { GlobalListPage } from './pages/GlobalList'
@@ -50,7 +50,7 @@ import { FeatureGate } from './components/FeatureGate'
 function RequireAuth({ children }: { children: ReactNode }) {
   const { ready, active } = useAuth()
   const location = useLocation()
-  if (!ready) return <Loading label="Loading accounts" />
+  if (!ready) return <AppLoading label="Loading accounts" />
   if (!active) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />
   return <>{children}</>
 }
