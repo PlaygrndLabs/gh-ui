@@ -670,9 +670,29 @@ exports.steps = [
       r.publishGone = !byText('.ws-seg-value', 'Publish repository') && !byText('.ws-branch-head button', 'Publish repository')
       r.sync = [...document.querySelectorAll('.ws-seg-sync .ws-seg-value')].find((x) => x.getClientRects().length)?.textContent
       r.gitHubPagesGone = ![...document.querySelectorAll('.ws-tabs a')].some((a) => a.getClientRects().length && /Pull requests|Actions/.test(a.textContent))
-      r.tabNamed = [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].some((t) => t.textContent.includes('On GitLab'))
+      const branchTab = (name) => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes(name))
+      r.oneHistoryTab = !!branchTab('History') && !branchTab('On this Mac') && !branchTab('On GitLab')
       r.notInBranchHead = !/On this Mac|Only on/.test(main().querySelector('.ws-branch-head').textContent)
-      r.fail = !(/Only on this Mac/.test(r.before) && r.empty && /On this Mac and\\s*GitLab/.test(r.after) && r.listed && r.publishGone && r.sync === 'Publish branch' && r.gitHubPagesGone && r.tabNamed && r.notInBranchHead)
+      r.fail = !(/Only on this Mac/.test(r.before) && r.empty && /On this Mac and\\s*GitLab/.test(r.after) && r.listed && r.publishGone && r.sync === 'Publish branch' && r.gitHubPagesGone && r.oneHistoryTab && r.notInBranchHead)
+      return r
+    `,
+    waitMs: 300,
+  },
+  {
+    name: 'history: commits not pushed carry an icon, and a filter narrows to them',
+    screenshot: 'history-unpushed',
+    js: `${helpers}
+      byText('[role=dialog] button', 'Done').click()
+      await until(() => !document.querySelector('[role=dialog]'), 3000)
+      const branchTab = (name) => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes(name))
+      branchTab('History').click()
+      await until(() => main().querySelector('.ws-commit-mark.is-unpushed'), 5000)
+      const r = { marks: main().querySelectorAll('.ws-commit-mark.is-unpushed').length, count: main().querySelector('.ws-history-filter .ws-pill')?.textContent }
+      main().querySelector('.ws-history-filter').click()
+      await sleep(100)
+      r.on = main().querySelector('.ws-history-filter').getAttribute('aria-pressed') === 'true'
+      r.rowsStayed = main().querySelectorAll('.ws-commit-row').length === r.marks
+      r.fail = !(r.marks > 0 && r.count === String(r.marks) && r.on && r.rowsStayed)
       return r
     `,
     waitMs: 300,
@@ -681,7 +701,10 @@ exports.steps = [
     name: 'repository settings: removing the remote brings Publish back',
     js: `${helpers}
       const seg = () => [...document.querySelectorAll('.ws-seg-where')].find((x) => x.getClientRects().length)
-      const dialog = document.querySelector('[role=dialog]')
+      main().querySelector('.ws-history-filter').click()
+      ;[...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes('Changes')).click()
+      seg().click()
+      const dialog = await until(() => document.querySelector('[role=dialog]'), 5000)
       const r = {}
       const remove = [...dialog.querySelectorAll('button')].find((b) => (document.getElementById(b.getAttribute('aria-labelledby'))?.textContent || b.getAttribute('aria-label') || '') === 'Remove lab')
       remove.click()
@@ -708,7 +731,9 @@ exports.steps = [
       setInput(summary, 'Add scratch')
       await sleep(200)
       byText('button', 'Commit 1 file').click()
-      const row = await until(() => [...main().querySelectorAll('.ws-section[aria-label="Only on this Mac"] .ws-row')].find((c) => c.textContent.includes('Add scratch')))
+      await until(() => !box())
+      ;[...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes('History')).click()
+      const row = await until(() => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-row')].find((c) => c.textContent.includes('Add scratch')))
       const r = { committed: !!row, cleared: !box() }
       await until(() => main().querySelector('.file-diff'))
       r.diffShown = !!main().querySelector('.file-diff')
@@ -832,16 +857,15 @@ exports.steps = [
       const tab = (name) => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes(name))
       const names = [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].map((t) => t.textContent.trim())
       const opened = main().querySelector('.ws-branch-tabs [aria-selected=true]')?.textContent
-      tab('On GitHub').click()
-      const github = await until(() => main().innerText.includes('isn’t on GitHub yet'), 3000)
-      tab('On this Mac').click()
-      const rows = await until(() => main().querySelectorAll('.ws-section[aria-label="Only on this Mac"] .ws-row').length, 3000)
+      tab('History').click()
+      const rows = await until(() => main().querySelectorAll('.ws-section[aria-label="History"] .ws-row').length, 3000)
+      const noPushTalk = !main().querySelector('.ws-commit-mark') && !main().querySelector('.ws-history-filter')
       const sections = main().querySelectorAll('.ws-section').length
       const title = await until(() => activeTab().textContent.trim() === 'e2e-local - main', 3000)
       const clone = [...document.querySelectorAll('.ws-tool')].some((t) => t.getClientRects().length && t.textContent.includes('Clone'))
       const publish = !![...main().querySelectorAll('.ws-branch-head button')].find((b) => b.textContent.includes('Publish repository'))
-      const r = { names, opened, github: !!github, rows, sections, title: activeTab().textContent.trim(), clone, publish }
-      r.fail = !(names.length === 3 && github && rows > 0 && sections === 1 && title && !clone && publish)
+      const r = { names, opened, noPushTalk, rows, sections, title: activeTab().textContent.trim(), clone, publish }
+      r.fail = !(names.length === 2 && noPushTalk && rows > 0 && sections === 1 && title && !clone && publish)
       return r
     `,
   },
