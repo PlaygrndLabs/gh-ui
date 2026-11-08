@@ -646,6 +646,57 @@ exports.steps = [
     `,
   },
   {
+    name: 'repository settings: a folder with a remote elsewhere is named for it and never offered Publish',
+    screenshot: 'repo-settings',
+    js: `${helpers}
+      const seg = () => [...document.querySelectorAll('.ws-seg-where')].find((x) => x.getClientRects().length)
+      const r = { before: seg()?.textContent.trim() }
+      seg().click()
+      const dialog = await until(() => document.querySelector('[role=dialog]'), 5000)
+      r.empty = dialog.textContent.includes('No remote yet')
+      const set = (label, value) => {
+        const el = dialog.querySelector('input[aria-label="' + label + '"]')
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value)
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+      set('New remote name', 'lab')
+      set('New remote address', 'https://gitlab.com/example/nested/repo.git')
+      await sleep(100)
+      byText('[role=dialog] button', 'Add remote').click()
+      await until(() => seg()?.textContent.includes('GitLab'), 8000)
+      await sleep(300)
+      r.after = seg().textContent.trim()
+      r.listed = dialog.textContent.includes('gitlab.com/example/nested/repo.git')
+      r.publishGone = !byText('.ws-seg-value', 'Publish repository') && !byText('.ws-branch-head button', 'Publish repository')
+      r.sync = [...document.querySelectorAll('.ws-seg-sync .ws-seg-value')].find((x) => x.getClientRects().length)?.textContent
+      r.gitHubPagesGone = ![...document.querySelectorAll('.ws-tabs a')].some((a) => a.getClientRects().length && /Pull requests|Actions/.test(a.textContent))
+      r.tabNamed = [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].some((t) => t.textContent.includes('On GitLab'))
+      r.notInBranchHead = !/On this Mac|Only on/.test(main().querySelector('.ws-branch-head').textContent)
+      r.fail = !(/Only on this Mac/.test(r.before) && r.empty && /On this Mac and\\s*GitLab/.test(r.after) && r.listed && r.publishGone && r.sync === 'Publish branch' && r.gitHubPagesGone && r.tabNamed && r.notInBranchHead)
+      return r
+    `,
+    waitMs: 300,
+  },
+  {
+    name: 'repository settings: removing the remote brings Publish back',
+    js: `${helpers}
+      const seg = () => [...document.querySelectorAll('.ws-seg-where')].find((x) => x.getClientRects().length)
+      const dialog = document.querySelector('[role=dialog]')
+      const r = {}
+      const remove = [...dialog.querySelectorAll('button')].find((b) => (document.getElementById(b.getAttribute('aria-labelledby'))?.textContent || b.getAttribute('aria-label') || '') === 'Remove lab')
+      remove.click()
+      const confirm = await until(() => [...document.querySelectorAll('[role=alertdialog] button, [role=dialog] button')].find((b) => b.textContent.trim() === 'Remove remote'), 5000)
+      confirm.click()
+      await until(() => seg()?.textContent.includes('Only on this Mac'), 8000)
+      r.publishBack = !!(await until(() => byText('.ws-seg-value', 'Publish repository'), 8000))
+      byText('[role=dialog] button', 'Done').click()
+      await until(() => !document.querySelector('[role=dialog]'), 3000)
+      r.fail = !r.publishBack
+      return r
+    `,
+    waitMs: 300,
+  },
+  {
     name: 'branches: stage, commit and undo through the page',
     screenshot: 'branches-commit',
     js: `${helpers}

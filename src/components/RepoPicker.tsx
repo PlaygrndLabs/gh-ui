@@ -6,9 +6,7 @@ import { useGitHub, errorMessage } from '../lib/github'
 import { webUrl } from '../lib/links'
 import { native, openExternal } from '../lib/platform'
 import { useTabs } from '../lib/TabsProvider'
-import { githubKey, useWorkspaceRepos, workspacePath, type WorkspaceRepo } from '../lib/workspace'
-
-const WHERE: Record<WorkspaceRepo['location'], string> = { both: 'On this Mac and GitHub', local: 'Only on this Mac', github: 'On GitHub' }
+import { githubKey, repoWhere, useWorkspaceRepos, workspacePath, type WorkspaceRepo } from '../lib/workspace'
 
 /** The + at the end of the tab strip: every repository the workspace knows, and the ways to add another. */
 export function RepoPicker() {
@@ -69,7 +67,7 @@ export function RepoPickerPanel({ onDone }: { onDone(): void }) {
           {repo.local ? <DeviceDesktopIcon /> : <MarkGithubIcon />}
           <span className="ws-picker-text">
             <span className="ws-picker-name">{repo.github ? `${repo.github.owner}/${repo.github.repo}` : repo.name}</span>
-            <span className="ws-picker-sub">{path ? WHERE[repo.location] : `Sign in to ${repo.github?.host} to open this`}</span>
+            <span className="ws-picker-sub">{path ? repoWhere(repo) : `Sign in to ${repo.github?.host} to open this`}</span>
           </span>
         </button>
         {!repo.local && (

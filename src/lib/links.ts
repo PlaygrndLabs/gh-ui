@@ -146,6 +146,47 @@ export function parseRemote(remote: string): { host: string; owner: string; repo
   return null
 }
 
+/** The server a remote URL points at, or null for a path on disk. */
+export function remoteHost(remote: string): string | null {
+  const url = remote.trim()
+  const scp = url.match(/^(?:[\w.-]+@)?([\w.-]+):(?!\/\/)/)
+  if (scp && !/^[a-z]:$/i.test(`${scp[1]}:`)) return scp[1].toLowerCase()
+  try {
+    return new URL(url).hostname.toLowerCase() || null
+  } catch {
+    return null
+  }
+}
+
+/** Whether a remote is hosted by GitHub: github.com, a *.ghe.com tenant, or the Enterprise server you're signed in to. */
+export function isGitHubRemote(remote: string, accountHost = 'github.com'): boolean {
+  const host = remoteHost(remote)
+  return !!host && (host === 'github.com' || host.endsWith('.ghe.com') || host === accountHost.toLowerCase())
+}
+
+/** What to call the place a remote lives: a provider's name when it's recognisable, or else its server. */
+export function remoteProvider(remote: string, accountHost = 'github.com'): string {
+  const host = remoteHost(remote)
+  if (!host) return 'another folder'
+  if (isGitHubRemote(remote, accountHost)) return 'GitHub'
+  if (/(^|[.-])gitlab([.-]|$)/.test(host)) return 'GitLab'
+  if (/(^|[.-])bitbucket([.-]|$)/.test(host)) return 'Bitbucket'
+  if (host === 'codeberg.org') return 'Codeberg'
+  if (host === 'dev.azure.com' || host.endsWith('.visualstudio.com')) return 'Azure DevOps'
+  if (host === 'git.sr.ht') return 'SourceHut'
+  return host
+}
+
+/** A remote URL fit to show: a user name or token embedded in an https URL stays out of the window. */
+export function displayRemote(remote: string): string {
+  return remote.replace(/^(https?:\/\/)[^/@\s]+@/i, '$1')
+}
+
+/** The forms the app will save as a remote: https, ssh:// and user@host:path. The same rule the desktop process applies. */
+export function isValidRemoteUrl(remote: string): boolean {
+  return /^https:\/\/[^\s-][^\s]*$/.test(remote) || /^ssh:\/\/[\w.]+[^\s]*$/.test(remote) || /^[\w.][\w.-]*@[\w.][\w.-]*:[\w.~/-]+$/.test(remote)
+}
+
 /** The HTTPS form of an SSH remote, or null when it isn't one. HTTPS is what a sign-in with a token can authenticate. */
 /** Whether two clone URLs, https or SSH, are the same repository. */
 export function sameRemote(a: string, b: string) {

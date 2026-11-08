@@ -3,8 +3,8 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useGitHub } from './github'
-import { parseRemote } from './links'
-import { localGit, type BranchState } from './git'
+import { isGitHubRemote, parseRemote, remoteProvider } from './links'
+import { localGit, primaryRemote, type BranchState } from './git'
 import { native, type LocalRepo } from './platform'
 import { useSharedPref } from './storage'
 
@@ -16,13 +16,23 @@ export interface GitHubRepoRef {
 
 export type RepoLocation = 'both' | 'local' | 'github'
 
+/** The remote a folder syncs with, and what to call the place it lives. */
+export interface RepoRemote {
+  name: string
+  url: string
+  provider: string
+}
+
 export interface WorkspaceRepo {
   /** Stable across restarts, for tabs and preferences. */
   key: string
   name: string
   location: RepoLocation
   local: LocalRepo | null
+  /** Only for a repository that is on GitHub; a folder cloned from GitLab or anywhere else has none. */
   github: GitHubRepoRef | null
+  /** A folder's remote. Any remote at all means the folder already has a home, so it's never offered Publish. */
+  remote: RepoRemote | null
 }
 
 /** GitHub ignores case in names, so two spellings of one repository share a key. */
@@ -34,24 +44,25 @@ const sameHost = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
  * Folders first, oldest first, then the GitHub repositories without a folder here. A second clone of one repository is
  * its own entry, since it has its own branch and changes; the first clone is the one the GitHub repository links to.
  */
-export function buildWorkspaceRepos(folders: Array<{ repo: LocalRepo; remoteUrl: string }>, githubOnly: GitHubRepoRef[]): WorkspaceRepo[] {
+export function buildWorkspaceRepos(folders: Array<{ repo: LocalRepo; remoteUrl: string; remoteName?: string }>, githubOnly: GitHubRepoRef[], accountHost = 'github.com'): WorkspaceRepo[] {
   const taken = new Set<string>()
   const result: WorkspaceRepo[] = []
-  for (const { repo, remoteUrl } of [...folders].sort((a, b) => a.repo.addedAt - b.repo.addedAt)) {
-    const github = remoteUrl ? parseRemote(remoteUrl) : null
+  for (const { repo, remoteUrl, remoteName = 'origin' } of [...folders].sort((a, b) => a.repo.addedAt - b.repo.addedAt)) {
+    const github = remoteUrl && isGitHubRemote(remoteUrl, accountHost) ? parseRemote(remoteUrl) : null
+    const remote = remoteUrl ? { name: remoteName, url: remoteUrl, provider: remoteProvider(remoteUrl, accountHost) } : null
     const key = github ? githubKey(github) : null
     if (key && !taken.has(key)) {
       taken.add(key)
-      result.push({ key, name: github!.repo, location: 'both', local: repo, github })
+      result.push({ key, name: github!.repo, location: 'both', local: repo, github, remote })
     } else {
-      result.push({ key: `local/${repo.id}`, name: repo.name, location: github ? 'both' : 'local', local: repo, github })
+      result.push({ key: `local/${repo.id}`, name: repo.name, location: remote ? 'both' : 'local', local: repo, github, remote })
     }
   }
   for (const github of githubOnly) {
     const key = githubKey(github)
     if (taken.has(key)) continue
     taken.add(key)
-    result.push({ key, name: github.repo, location: 'github', local: null, github })
+    result.push({ key, name: github.repo, location: 'github', local: null, github, remote: null })
   }
   return result
 }
@@ -64,6 +75,15 @@ export function workspacePath(repo: WorkspaceRepo, accountHost: string): string 
   const isExtraClone = repo.key.startsWith('local/')
   if (repo.github && sameHost(repo.github.host, accountHost) && !isExtraClone) return `/${repo.github.owner}/${repo.github.repo}`
   return repo.local ? `/local/${repo.local.id}` : null
+}
+
+/** Where a repository's other copy lives, for labels. */
+export const hostName = (repo: WorkspaceRepo) => repo.remote?.provider ?? 'GitHub'
+
+/** Where a repository lives, in words. */
+export function repoWhere(repo: WorkspaceRepo): string {
+  if (repo.location === 'github') return 'On GitHub'
+  return repo.remote ? `On this Mac and ${repo.remote.provider}` : 'Only on this Mac'
 }
 
 export type SyncKind = 'clone' | 'publish-repo' | 'publish-branch' | 'pull' | 'push' | 'fetch'
@@ -90,16 +110,22 @@ export function removeGitHubRepo(list: GitHubRepoRef[], key: string): GitHubRepo
 /** Every repository the workspace knows about, plus the GitHub-only list to change. */
 export function useWorkspaceRepos() {
   const [githubOnly, setGitHubOnly] = useSharedPref<GitHubRepoRef[]>('workspaceGitHubRepos', [])
+  const { account } = useGitHub()
   const folders = useQuery({
     queryKey: ['workspace-folders'],
     enabled: !!native,
     queryFn: async () => {
       const repos = await native!.repos.list()
-      return Promise.all(repos.map(async (repo) => ({ repo, remoteUrl: await localGit(repo.id).remoteUrl() })))
+      return Promise.all(
+        repos.map(async (repo) => {
+          const remote = primaryRemote(await localGit(repo.id).remotes().catch(() => []))
+          return { repo, remoteUrl: remote?.url ?? '', remoteName: remote?.name }
+        }),
+      )
     },
   })
   return {
-    repos: buildWorkspaceRepos(folders.data ?? [], githubOnly),
+    repos: buildWorkspaceRepos(folders.data ?? [], githubOnly, account.host),
     isLoading: folders.isLoading,
     addGitHubRepo: (ref: GitHubRepoRef) => setGitHubOnly((list) => addGitHubRepo(list, ref)),
     removeGitHubRepo: (key: string) => setGitHubOnly((list) => removeGitHubRepo(list, key)),

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, IconButton, TextInput } from '@primer/react'
-import { GitBranchIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
+import { CloudIcon, DeviceDesktopIcon, GearIcon, GitBranchIcon, MarkGithubIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgent } from '../lib/agent/AgentProvider'
 import { useFeatures } from '../lib/features'
 import { errorMessage, useGitHub } from '../lib/github'
@@ -11,12 +11,14 @@ import { native } from '../lib/platform'
 import { useRepoCounts, useRepoQuery } from '../lib/repo'
 import { useLocalRepo } from '../lib/useLocalRepo'
 import { useTabBranch, useTabTitle } from '../lib/TabsProvider'
-import { syncAction, useRemoteBranches, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
+import { hostName, repoWhere, syncAction, useRemoteBranches, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
 import { repoKeyFromUrl } from '../lib/tabs'
 import { CloneDialog } from '../pages/Local'
 import { AccountMenu } from './AppHeader'
 import { InboxMenu } from './InboxMenu'
 import { TabItemPicker } from './HeaderPickers'
+import { RepoSettingsDialog } from './RepoSettingsDialog'
+import { displayRemote } from '../lib/links'
 
 const SYNC_LABEL: Record<SyncKind, string> = {
   clone: 'Clone repository',
@@ -54,7 +56,7 @@ function useCurrentRepo(): WorkspaceRepo | null {
 
   if (known) return known
   if (!key || isFolder) return null
-  return { key: `${account.host}/${key}`.toLowerCase(), name: parts[1], location: 'github', local: null, github: { host: account.host, owner: parts[0], repo: parts[1] } }
+  return { key: `${account.host}/${key}`.toLowerCase(), name: parts[1], location: 'github', local: null, github: { host: account.host, owner: parts[0], repo: parts[1] }, remote: null }
 }
 
 function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
@@ -114,7 +116,7 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
               >
                 {b.name}
                 <ActionList.Description variant="block">
-                  {!repo.local ? (b.name === info.data?.default_branch ? 'Default branch' : 'On GitHub') : [b.location === 'remote' ? 'Only on GitHub' : b.location === 'local' ? 'Only on this Mac' : 'On this Mac and GitHub', b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : ''].filter(Boolean).join(' · ')}
+                  {!repo.local ? (b.name === info.data?.default_branch ? 'Default branch' : 'On GitHub') : [b.location === 'remote' ? `Only on ${hostName(repo)}` : b.location === 'local' ? 'Only on this Mac' : `On this Mac and ${hostName(repo)}`, b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : ''].filter(Boolean).join(' · ')}
                 </ActionList.Description>
               </ActionList.Item>
             ))}
@@ -136,6 +138,40 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
         </ActionMenu.Overlay>
       </ActionMenu>
       {local.error && <Banner className="ws-error" variant="critical" title="Git said" description={local.error} onDismiss={local.clearError} />}
+    </>
+  )
+}
+
+/** Where this repository lives. For a folder it also opens the folder's settings. */
+function LocationSeg({ repo }: { repo: WorkspaceRepo }) {
+  const [open, setOpen] = useState(false)
+  const Icon = repo.location === 'local' ? DeviceDesktopIcon : hostName(repo) === 'GitHub' ? MarkGithubIcon : CloudIcon
+  // The label holds "On this Mac and", so the name that matters is never the part cut off.
+  const key = repo.remote ? 'On this Mac and' : 'Location'
+  const value = repo.remote ? repo.remote.provider : repo.location === 'github' ? 'GitHub' : 'Only on this Mac'
+  const body = (
+    <>
+      <Icon />
+      <span className="ws-seg-text">
+        <span className="ws-seg-key">{key}</span>
+        <span className="ws-seg-value">{value}</span>
+      </span>
+    </>
+  )
+  const title = repo.remote ? `${repoWhere(repo)} · ${repo.remote.name}: ${displayRemote(repo.remote.url)}` : repoWhere(repo)
+  if (!repo.local)
+    return (
+      <div className="ws-seg ws-seg-where" title={title}>
+        {body}
+      </div>
+    )
+  return (
+    <>
+      <button type="button" className="ws-seg ws-seg-where" title={title} aria-label={`Repository settings. ${repoWhere(repo)}`} onClick={() => setOpen(true)}>
+        {body}
+        <GearIcon />
+      </button>
+      {open && <RepoSettingsDialog repo={repo} onClose={() => setOpen(false)} />}
     </>
   )
 }
@@ -166,7 +202,7 @@ function SyncButton({ repo }: { repo: WorkspaceRepo }) {
         <SyncIcon />
         <span className="ws-seg-text">
           <span className="ws-seg-key">{hint}</span>
-          <span className="ws-seg-value">{SYNC_LABEL[action.kind]}</span>
+          <span className="ws-seg-value">{SYNC_LABEL[action.kind].replace('origin', repo.remote?.name ?? 'origin')}</span>
         </span>
         {action.count > 0 && (
           <span className="ws-seg-count">
@@ -191,6 +227,9 @@ export function PublishDialog({ repo, onClose }: { repo: WorkspaceRepo; onClose(
   const [isPrivate, setPrivate] = useState(true)
   const publish = useMutation({
     mutationFn: async () => {
+      // Asked of git at the last moment and before anything is created: a folder with a home of its own never lands on GitHub.
+      const existing = await local.git!.remotes()
+      if (existing.length) throw new Error(`This folder already syncs with ${existing[0].name} (${displayRemote(existing[0].url)}), so it won’t be published to GitHub.`)
       const { data } = await octokit.rest.repos.createForAuthenticatedUser({ name: name.trim(), private: isPrivate })
       await local.git!.addOrigin(`https://${account.host}/${data.full_name}.git`)
       await local.git!.publishBranch()
@@ -205,7 +244,7 @@ export function PublishDialog({ repo, onClose }: { repo: WorkspaceRepo; onClose(
   })
   return (
     <Dialog
-      title="Publish to GitHub"
+      title={`Publish to GitHub as ${account.login}`}
       onClose={onClose}
       footerButtons={[
         { content: 'Cancel', onClick: onClose },
@@ -299,6 +338,8 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const changes = local.status.data?.entries.length ?? 0
 
   const home = path ?? '/'
+  // Pull requests and Actions are GitHub's: a folder that lives elsewhere doesn't get them, or the Publish prompt behind them.
+  const githubPages = !!base || repo.location === 'local'
   // Coming back to Pull requests, Actions, Issues or Releases opens what was open there before.
   const [lastIn, setLastIn] = useState<Record<string, string>>({})
   const group = ['pulls', 'pull', 'compare'].includes(section) ? 'pulls' : section
@@ -334,18 +375,18 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
           </span>
         )}
       </Link>
-      <Link className="ws-tab" to={base ? tabTo('pulls', `${base}/pulls`) : `${home}/pulls`} aria-current={group === 'pulls' ? 'page' : undefined} onClick={stay(group === 'pulls')}>
+      {githubPages && <Link className="ws-tab" to={base ? tabTo('pulls', `${base}/pulls`) : `${home}/pulls`} aria-current={group === 'pulls' ? 'page' : undefined} onClick={stay(group === 'pulls')}>
         Pull requests
         {counts.data && counts.data.pulls > 0 && <span className="ws-pill" title={plural(counts.data.pulls, 'open pull request')}>{counts.data.pulls}</span>}
-      </Link>
-      <Link className="ws-tab" to={base ? tabTo('actions', `${base}/actions`) : `${home}/actions`} aria-current={section === 'actions' ? 'page' : undefined} onClick={stay(section === 'actions')}>
+      </Link>}
+      {githubPages && <Link className="ws-tab" to={base ? tabTo('actions', `${base}/actions`) : `${home}/actions`} aria-current={section === 'actions' ? 'page' : undefined} onClick={stay(section === 'actions')}>
         Actions
         {runMark && (
           <span className={`ws-mark ${runMark.cls}`} title={runMark.label}>
             {runMark.glyph}
           </span>
         )}
-      </Link>
+      </Link>}
       {more
         .filter((m) => m.show)
         .map((m) => (
@@ -387,6 +428,7 @@ export function WorkspaceHeader() {
       <div className="ws-toolbar">
         {repo && (
           <>
+            <LocationSeg key={`where-${repo.key}`} repo={repo} />
             <BranchMenu key={`branch-${repo.key}`} repo={repo} />
             <SyncButton key={`sync-${repo.key}`} repo={repo} />
             {repo.github && repo.github.host.toLowerCase() === account.host.toLowerCase() && <TabItemPicker owner={repo.github.owner} repo={repo.github.repo} />}
