@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
@@ -12,7 +12,7 @@ import { webUrl } from '../../lib/links'
 import { openExternal } from '../../lib/platform'
 import { firstLine, shortSha } from '../../lib/format'
 import { readPref } from '../../lib/storage'
-import { useLocalRepo } from '../../lib/useLocalRepo'
+import { useLocalRepo, useStageError, useStageIntents } from '../../lib/useLocalRepo'
 import { useRepoQuery } from '../../lib/repo'
 import { hostName, useRemoteBranches, type WorkspaceRepo } from '../../lib/workspace'
 import { CopyButton, Loading } from '../../components/Bits'
@@ -30,6 +30,120 @@ function ChangeBadge({ e }: { e: StatusEntry }) {
     <span className={`text-mono text-small text-bold ${color}`} title={{ M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', U: 'Untracked', C: 'Copied', '!': 'Conflicted' }[code] ?? code}>
       {code}
     </span>
+  )
+}
+
+type LocalRepoState = ReturnType<typeof useLocalRepo>
+
+interface DraftText {
+  summary: string
+  description: string
+}
+
+/** The commit message being written. It outlives the Changes tab, and typing in it redraws only the commit box. */
+function createCommitDraft() {
+  let text: DraftText = { summary: '', description: '' }
+  const listeners = new Set<() => void>()
+  return {
+    get: () => text,
+    set(change: Partial<DraftText>) {
+      text = { ...text, ...change }
+      listeners.forEach((listener) => listener())
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener)
+      return () => void listeners.delete(listener)
+    },
+  }
+}
+
+type CommitDraft = ReturnType<typeof createCommitDraft>
+
+const ChangeRow = memo(function ChangeRow({ entry, staged, selected, onToggle, onSelect }: { entry: StatusEntry; staged: boolean; selected: boolean; onToggle(entry: StatusEntry, staged: boolean): void; onSelect(path: string): void }) {
+  return (
+    <div className={`ws-row ws-row-file ${selected ? 'is-selected' : ''}`}>
+      <Checkbox checked={staged} aria-label={isUnmerged(entry) ? `Mark ${entry.path} as resolved` : `Stage ${entry.path}`} onChange={() => onToggle(entry, !staged)} />
+      <button type="button" className="ws-row-link text-mono" title={entry.path} onClick={() => onSelect(entry.path)}>
+        {entry.path}
+      </button>
+      <ChangeBadge e={entry} />
+    </div>
+  )
+})
+
+function CommitBox({ local, draft, branchName, stagedCount, conflictCount, onCommitted }: { local: LocalRepoState; draft: CommitDraft; branchName: string; stagedCount: number; conflictCount: number; onCommitted(): void }) {
+  const { account } = useGitHub()
+  const { summary, description } = useSyncExternalStore(draft.subscribe, draft.get)
+  const [genError, setGenError] = useState<string | null>(null)
+  const generate = useMutation({
+    mutationFn: async () => {
+      // In the queue, so it sees the boxes just ticked.
+      const staged = await local.ops!.run(() => local.git!.stagedDiff())
+      if (!staged.trim()) throw new Error('Stage some changes first.')
+      return generateCommitMessage(staged, account)
+    },
+    onSuccess: (m) => {
+      setGenError(null)
+      draft.set({ summary: m.summary, description: m.description })
+    },
+    onError: (e) => setGenError(errorMessage(e)),
+  })
+  const commitWork = () =>
+    local.op.mutate(async () => {
+      await local.git!.commit(summary, description)
+      draft.set({ summary: '', description: '' })
+      onCommitted()
+    })
+  return (
+    <div className="ws-commit">
+      <div className="ws-commit-line">
+        <TextInput block placeholder="Summary (required)" aria-label="Commit summary" value={summary} onChange={(e) => draft.set({ summary: e.target.value })} />
+        <AgentOnly><IconButton icon={SparkleFillIcon} aria-label="Write commit message with Claude" description={stagedCount ? 'Write it with Claude' : 'Stage some changes first'} loading={generate.isPending} disabled={!stagedCount} onClick={() => generate.mutate()} /></AgentOnly>
+      </div>
+      <Textarea block rows={2} placeholder="Description" aria-label="Commit description" value={description} onChange={(e) => draft.set({ description: e.target.value })} />
+      {genError && <div className="error-box">{genError}</div>}
+      <Button variant="primary" block disabled={!summary.trim() || !stagedCount || conflictCount > 0} loading={local.op.isPending} onClick={commitWork}>
+        Commit {stagedCount ? `${stagedCount} file${stagedCount === 1 ? '' : 's'} ` : ''}to {branchName}
+      </Button>
+    </div>
+  )
+}
+
+/** The changed files and the commit box. A box shows the click at once; git catches up behind it (lib/repoOps.ts). */
+function ChangesList({ local, draft, entries, selectedPath, branchName, onSelect, onCommitted }: { local: LocalRepoState; draft: CommitDraft; entries: StatusEntry[]; selectedPath: string | undefined; branchName: string; onSelect(path: string): void; onCommitted(): void }) {
+  const confirm = useConfirm()
+  const intents = useStageIntents(local.ops)
+  const { setStaged } = local
+  const stagedOf = (e: StatusEntry) => intents.get(e.path)?.staged ?? isStaged(e)
+  const stagedCount = entries.filter(stagedOf).length
+  const conflictCount = entries.filter(isUnmerged).length
+  const onToggle = useCallback((entry: StatusEntry, staged: boolean) => setStaged([entry], staged), [setStaged])
+  const toggleAll = async () => {
+    if (stagedCount === entries.length) return setStaged(entries, false)
+    if (
+      conflictCount &&
+      !(await confirm({
+        title: 'Mark conflicts as resolved?',
+        content: `Staging all changes also marks ${conflictCount} conflicted file${conflictCount === 1 ? '' : 's'} as resolved. Make sure no conflict markers are left.`,
+        confirmButtonContent: 'Stage all',
+      }))
+    )
+      return
+    setStaged(entries, true)
+  }
+  return (
+    <>
+      <label className="ws-row ws-row-check">
+        <Checkbox checked={stagedCount === entries.length} indeterminate={stagedCount > 0 && stagedCount < entries.length} onChange={() => void toggleAll()} aria-label="Stage all" />
+        <span className="ws-row-sub">
+          {stagedCount} of {entries.length} staged{conflictCount ? `, ${conflictCount} with conflicts` : ''}
+        </span>
+      </label>
+      {entries.map((e) => (
+        <ChangeRow key={e.path} entry={e} staged={stagedOf(e)} selected={selectedPath === e.path} onToggle={onToggle} onSelect={onSelect} />
+      ))}
+      <CommitBox local={local} draft={draft} branchName={branchName} stagedCount={stagedCount} conflictCount={conflictCount} onCommitted={onCommitted} />
+    </>
   )
 }
 
@@ -77,13 +191,14 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const github = repo.github && repo.github.host.toLowerCase() === account.host.toLowerCase() ? repo.github : null
   const { picked } = useTabBranch()
   const [selection, setSelection] = useState<Selection>(null)
-  const [summary, setSummary] = useState('')
-  const [description, setDescription] = useState('')
+  const [draft] = useState(createCommitDraft)
   const [dialog, setDialog] = useState<'publish' | null>(null)
   const [chosenTab, setChosenTab] = useState<{ branch: string; tab: BranchTab } | null>(null)
   const [notPushedOn, setNotPushedOn] = useState<string | null>(null)
-  const [genError, setGenError] = useState<string | null>(null)
+  const stageError = useStageError(local.ops)
   const split = readPref('diffSplit', false)
+  const selectFile = useCallback((path: string) => setSelection({ kind: 'file', path }), [])
+  const clearSelection = useCallback(() => setSelection(null), [])
 
   const remoteBranches = useRemoteBranches(repo)
   const host = hostName(repo)
@@ -126,8 +241,6 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   })
 
   const entries = isCurrent ? (status?.entries ?? []) : []
-  const stagedCount = entries.filter(isStaged).length
-  const conflictCount = entries.filter(isUnmerged).length
   const data = commits.data
   const shown = [...(data?.local ?? []), ...(data?.incoming ?? []), ...(data?.remote ?? [])]
   // Until you choose a tab, this branch opens on whichever has something to do.
@@ -144,9 +257,13 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const commit = entry ? null : (tabCommits.find((c) => selection?.kind === 'commit' && c.sha === selection.sha) ?? tabCommits[0] ?? null)
 
   const diff = useQuery({
-    queryKey: ['local-diff', repo.local?.id ?? '', entry?.path, entry?.index, entry?.worktree],
+    // The path alone: staging a file doesn't change what it differs by, so a click has no reason to reload this.
+    queryKey: ['local-diff', repo.local?.id ?? '', entry?.path],
     enabled: !!entry && !!local.git,
     queryFn: () => local.git!.fileDiff(entry!),
+    // What's on screen is what Discard would throw away, so edits made in another program show up here.
+    staleTime: 0,
+    refetchInterval: 4000,
   })
   const shownCommit = useQuery({
     queryKey: repo.local ? ['local-show', repo.local.id, commit?.sha] : [key, 'workspace-commit', github?.owner, github?.repo, commit?.sha],
@@ -161,20 +278,6 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     },
   })
 
-  const generate = useMutation({
-    mutationFn: async () => {
-      const staged = await local.git!.stagedDiff()
-      if (!staged.trim()) throw new Error('Stage some changes first.')
-      return generateCommitMessage(staged, account)
-    },
-    onSuccess: (m) => {
-      setGenError(null)
-      setSummary(m.summary)
-      setDescription(m.description)
-    },
-    onError: (e) => setGenError(errorMessage(e)),
-  })
-
   useAgentPageContext({
     tabTitle: repo.name,
     label: `the branches of ${github ? `${github.owner}/${github.repo}` : repo.name}${repo.local ? ` with a local folder at ${repo.local.path}` : ''}`,
@@ -183,35 +286,15 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     details: { branch: branch?.name, where: branch ? { both: `On this Mac and ${host}`, local: 'Only on this Mac', remote: `Only on ${host}` }[branch.location] : undefined, ahead: branch?.ahead, behind: branch?.behind, changed_files: repo.local ? entries.length : undefined, note: repo.local ? 'Agent GitHub tools see only pushed code, not local changes.' : undefined },
   })
 
-  const toggleAll = async () => {
-    if (stagedCount === entries.length) return local.op.mutate(() => local.git!.unstageAll())
-    if (
-      conflictCount &&
-      !(await confirm({
-        title: 'Mark conflicts as resolved?',
-        content: `Staging all changes also marks ${conflictCount} conflicted file${conflictCount === 1 ? '' : 's'} as resolved. Make sure no conflict markers are left.`,
-        confirmButtonContent: 'Stage all',
-      }))
-    )
-      return
-    local.op.mutate(() => local.git!.stageAll())
-  }
   const discard = async (e: StatusEntry) => {
     const paths = changePaths(e)
     const from = paths.length > 1 ? ` (renamed from ${paths[0]})` : ''
     if (await confirm({ title: 'Discard changes?', content: `Your changes to ${e.path}${from} will be lost.`, confirmButtonType: 'danger', confirmButtonContent: 'Discard' })) local.op.mutate(() => local.git!.discard(e))
   }
-  const commitWork = () =>
-    local.op.mutate(async () => {
-      await local.git!.commit(summary, description)
-      setSummary('')
-      setDescription('')
-      setSelection(null)
-    })
   const undo = (subject: string) =>
     local.op.mutate(async () => {
       await local.git!.undoCommit()
-      setSummary(firstLine(subject))
+      draft.set({ summary: firstLine(subject) })
       setSelection(null)
       // The commit's files and message are back in Changes, so show them there.
       if (branch) setChosenTab({ branch: branch.name, tab: 'changes' })
@@ -249,36 +332,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       <div className="ws-scroll" role="tabpanel">
         {tab === 'changes' && (
           <Section title="Changes" flush>
-            {isCurrent && entries.length > 0 && (
-              <>
-                <label className="ws-row ws-row-check">
-                  <Checkbox checked={stagedCount === entries.length} indeterminate={stagedCount > 0 && stagedCount < entries.length} onChange={() => void toggleAll()} aria-label="Stage all" />
-                  <span className="ws-row-sub">
-                    {stagedCount} of {entries.length} staged{conflictCount ? `, ${conflictCount} with conflicts` : ''}
-                  </span>
-                </label>
-                {entries.map((e) => (
-                  <div key={e.path} className={`ws-row ws-row-file ${entry?.path === e.path ? 'is-selected' : ''}`}>
-                    <Checkbox checked={isStaged(e)} aria-label={isUnmerged(e) ? `Mark ${e.path} as resolved` : `Stage ${e.path}`} onChange={() => local.op.mutate(() => (isStaged(e) ? local.git!.unstage(e) : local.git!.stage(e)))} />
-                    <button type="button" className="ws-row-link text-mono" title={e.path} onClick={() => setSelection({ kind: 'file', path: e.path })}>
-                      {e.path}
-                    </button>
-                    <ChangeBadge e={e} />
-                  </div>
-                ))}
-                <div className="ws-commit">
-                  <div className="ws-commit-line">
-                    <TextInput block placeholder="Summary (required)" aria-label="Commit summary" value={summary} onChange={(e) => setSummary(e.target.value)} />
-                    <AgentOnly><IconButton icon={SparkleFillIcon} aria-label="Write commit message with Claude" description={stagedCount ? 'Write it with Claude' : 'Stage some changes first'} loading={generate.isPending} disabled={!stagedCount} onClick={() => generate.mutate()} /></AgentOnly>
-                  </div>
-                  <Textarea block rows={2} placeholder="Description" aria-label="Commit description" value={description} onChange={(e) => setDescription(e.target.value)} />
-                  {genError && <div className="error-box">{genError}</div>}
-                  <Button variant="primary" block disabled={!summary.trim() || !stagedCount || conflictCount > 0} loading={local.op.isPending} onClick={commitWork}>
-                    Commit {stagedCount ? `${stagedCount} file${stagedCount === 1 ? '' : 's'} ` : ''}to {branch.name}
-                  </Button>
-                </div>
-              </>
-            )}
+            {isCurrent && entries.length > 0 && <ChangesList local={local} draft={draft} entries={entries} selectedPath={entry?.path} branchName={branch.name} onSelect={selectFile} onCommitted={clearSelection} />}
             {isCurrent && !entries.length && <p className="ws-note">No uncommitted changes.</p>}
             {!!stashes.data?.length && (
               <div className="ws-row">
@@ -431,14 +485,22 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
 
   return (
     <div className="ws-page">
-      {local.error && (
+      {(local.error ?? stageError) && (
         <Banner
           className="ws-page-error"
           variant="critical"
           title="Git said"
-          description={local.error}
+          description={local.error ?? stageError}
           primaryAction={
-            <IconButton icon={XIcon} aria-label="Dismiss" variant="invisible" onClick={local.clearError} />
+            <IconButton
+              icon={XIcon}
+              aria-label="Dismiss"
+              variant="invisible"
+              onClick={() => {
+                local.clearError()
+                local.ops?.clearError()
+              }}
+            />
           }
         />
       )}
@@ -473,14 +535,15 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   )
 }
 
-function LocalFileDiff({ file, split }: { file: FileDiff; split: boolean }) {
+// A diff can be thousands of table rows. It only redraws when the diff itself changes.
+const LocalFileDiff = memo(function LocalFileDiff({ file, split }: { file: FileDiff; split: boolean }) {
   return (
     <FileDiffBox
       file={{ path: file.newPath, previousPath: file.oldPath !== file.newPath ? file.oldPath : null, status: file.status, additions: file.additions, deletions: file.deletions, patch: file.binary ? null : file.patch }}
       split={split}
     />
   )
-}
+})
 
 const STATUS_MARK: Partial<Record<FileDiff['status'], { code: string; color: string; title: string }>> = {
   added: { code: 'A', color: 'fg-success', title: 'Added' },

@@ -283,10 +283,11 @@ function SyncButton({ repo }: { repo: WorkspaceRepo }) {
   const [fetched, setFetched] = useState<Date | null>(null)
   if (!action) return <div className="ws-seg ws-seg-sync" />
   const run = () => {
-    const { git, op } = local
+    const { git, op, unqueued } = local
     if (action.kind === 'clone') return setCloning(true)
     if (action.kind === 'publish-repo') return setPublishing(true)
-    op.mutate(async () => {
+    // Only a pull changes the files here.
+    ;(action.kind === 'pull' ? op : unqueued).mutate(async () => {
       if (action.kind === 'publish-branch') await git!.publishBranch()
       else if (action.kind === 'pull') await git!.pull()
       else if (action.kind === 'push') await git!.push()
@@ -294,10 +295,11 @@ function SyncButton({ repo }: { repo: WorkspaceRepo }) {
       setFetched(new Date())
     })
   }
-  const hint = local.op.isPending ? 'Working…' : repo.location === 'github' ? 'Not on this Mac yet' : repo.location === 'local' ? 'Not on GitHub yet' : action.kind === 'publish-branch' ? 'Only on this Mac' : fetched ? `Synced at ${fetched.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not synced this session'
+  const syncing = local.op.isPending || local.unqueued.isPending
+  const hint = syncing ? 'Working…' : repo.location === 'github' ? 'Not on this Mac yet' : repo.location === 'local' ? 'Not on GitHub yet' : action.kind === 'publish-branch' ? 'Only on this Mac' : fetched ? `Synced at ${fetched.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not synced this session'
   return (
     <>
-      <button type="button" className="ws-seg ws-seg-sync" disabled={local.op.isPending} onClick={run}>
+      <button type="button" className="ws-seg ws-seg-sync" disabled={syncing} onClick={run}>
         <SyncIcon />
         <span className="ws-seg-text">
           <span className="ws-seg-key">{hint}</span>
