@@ -148,6 +148,9 @@ export type IdentityKey = 'user.name' | 'user.email'
 
 export type GitClient = ReturnType<typeof createGitClient>
 
+/** What the repository has stopped in the middle of. */
+export type RepoOperation = 'merge' | 'rebase'
+
 /** Another program (an editor, a terminal) holds the index for a moment. Git changes nothing when it says this, so trying again is safe. */
 const INDEX_LOCKED = /index\.lock|another git process/i
 const LOCK_RETRY_MS = [100, 250, 500, 1000]
@@ -170,11 +173,26 @@ export function createGitClient(run: GitRunner) {
   }
   const remotes = async () => parseRemotes(await git(['remote', '-v']))
   const remoteName = async () => primaryRemote(await remotes().catch(() => []))?.name ?? 'origin'
+  const branchNames = async () => (await git(['branch', '--format=%(refname:short)'])).split('\n').filter(Boolean)
+  /** What the remote's HEAD names, or null when this clone doesn't know. */
+  const defaultBranch = async () => {
+    const remote = await remoteName()
+    const res = await run(['rev-parse', '--abbrev-ref', `${remote}/HEAD`], false)
+    const name = res.stdout.trim().slice(remote.length + 1)
+    return res.code === 0 && name && name !== 'HEAD' ? name : null
+  }
+  /** Conflicts stop git with an error, but they're a state to finish from, not a failure. */
+  const stopsOnConflicts = async (args: string[]) => {
+    const res = await run(args, false)
+    if (res.code === 0) return { conflicts: false }
+    if ((await status()).entries.some(isUnmerged)) return { conflicts: true }
+    throw new Error((res.stderr || res.stdout || `git ${args[0]} failed`).trim())
+  }
   return {
     status,
     /** Empty when there's no origin. */
     remoteUrl: async () => (await git(['remote', 'get-url', 'origin']).catch(() => '')).trim(),
-    branchNames: async () => (await git(['branch', '--format=%(refname:short)'])).split('\n').filter(Boolean),
+    branchNames,
     /** Throws when git can't tell, so nothing can mistake a failure for a folder with no remote. */
     remotes,
     addRemote: (name: string, url: string) => git(['remote', 'add', name, url]),
@@ -221,12 +239,24 @@ export function createGitClient(run: GitRunner) {
     renameBranch: (from: string, to: string) => git(['branch', '-m', '--', from, to]),
     /** Forced, as GitHub Desktop's is: the app asks first, and a branch that was never merged is what people delete. */
     deleteBranch: (branch: string) => git(['branch', '-D', '--', branch]),
-    /** What the remote's HEAD names, or null when this clone doesn't know. */
-    async defaultBranch() {
-      const remote = await remoteName()
-      const res = await run(['rev-parse', '--abbrev-ref', `${remote}/HEAD`], false)
-      const name = res.stdout.trim().slice(remote.length + 1)
-      return res.code === 0 && name && name !== 'HEAD' ? name : null
+    defaultBranch,
+    /** The branch others merge into: the remote's default, or a local main or master when there's no remote to ask. */
+    mainBranch: async () => {
+      const known = await defaultBranch()
+      if (known) return known
+      const names = await branchNames()
+      return names.find((n) => n === 'main' || n === 'master') ?? null
+    },
+    merge: (ref: string, options: { squash?: boolean } = {}) => stopsOnConflicts(['merge', options.squash ? '--squash' : '--no-edit', ref]),
+    rebase: (ref: string) => stopsOnConflicts(['rebase', ref]),
+    continueRebase: () => stopsOnConflicts(['rebase', '--continue']),
+    abortMerge: () => git(['merge', '--abort']),
+    abortRebase: () => git(['rebase', '--abort']),
+    /** Commits a merge whose conflicts are resolved, with the message git prepared. */
+    finishMerge: () => git(['commit', '--no-edit']),
+    async operation(): Promise<RepoOperation | null> {
+      if ((await run(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], false)).code === 0) return 'merge'
+      return (await run(['rev-parse', '-q', '--verify', 'REBASE_HEAD'], false)).code === 0 ? 'rebase' : null
     },
     createBranch: (branch: string) => git(['switch', '-c', branch]),
     /** Saves every change, new files too, and leaves the working tree clean. */

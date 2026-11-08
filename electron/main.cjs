@@ -298,6 +298,12 @@ function registerIpc() {
   })
 
   handle('repo:reveal', async (_e, repoId) => shell.showItemInFolder((await repoById(repoId)).path))
+  handle('repo:openTerminal', async (_e, repoId) => {
+    const repo = await repoById(repoId)
+    if (isMac) await run('open', ['-a', 'Terminal', repo.path], { timeout: 15_000 })
+    else await shell.openPath(repo.path)
+  })
+  handle('menu:state', (_e, state) => setRepoMenuState(state))
   handle('repo:openEditor', async (_e, repoId) => {
     const repo = await repoById(repoId)
     const res = await run('code', [repo.path], { timeout: 15_000 })
@@ -312,6 +318,73 @@ let mainWindow = null
 
 function sendMenu(action) {
   mainWindow?.webContents.send('menu', action)
+}
+
+let repoMenuState = null
+
+/** Only the focused tab's repository decides what these menus offer, so the menu is rebuilt when that changes. */
+function setRepoMenuState(state) {
+  const flag = (name) => state?.[name] === true
+  const next = state && typeof state === 'object'
+    ? { folder: flag('folder'), github: flag('github'), remote: flag('remote'), branch: flag('branch'), upstream: flag('upstream'), changes: flag('changes'), onMain: flag('onMain'), busy: flag('busy'), main: String(state.main ?? '').slice(0, 100) }
+    : null
+  if (JSON.stringify(next) === JSON.stringify(repoMenuState)) return
+  repoMenuState = next
+  buildMenu()
+}
+
+/**
+ * GitHub Desktop's menus and shortcuts, apart from a few that would take a key this app already uses: Reopen Tab has
+ * Cmd+Shift+T, Toggle Agent Cmd+Shift+A, Close Window Cmd+Shift+W, and Cmd+I is italic in the comment box.
+ */
+function repoMenus() {
+  const s = repoMenuState ?? {}
+  const item = (label, action, enabled, accelerator) => ({ label, accelerator, enabled: !!enabled, click: () => sendMenu(`repo:${action}`) })
+  const idle = s.folder && !s.busy
+  const onBranch = idle && s.branch
+  const separator = { type: 'separator' }
+  return [
+    {
+      label: 'Repository',
+      submenu: [
+        item('Push', 'push', s.remote && s.branch, 'CmdOrCtrl+P'),
+        item('Pull', 'pull', s.upstream, 'CmdOrCtrl+Shift+P'),
+        item('Fetch', 'fetch', s.remote, 'CmdOrCtrl+Alt+T'),
+        item('Remove…', 'remove', s.folder),
+        separator,
+        item('View on GitHub', 'view-github', s.github, 'CmdOrCtrl+Shift+G'),
+        item('Open in Terminal', 'terminal', s.folder, 'Ctrl+`'),
+        item(isMac ? 'Show in Finder' : 'Show in Folder', 'finder', s.folder, 'CmdOrCtrl+Shift+F'),
+        item('Open in Editor', 'editor', s.folder, 'CmdOrCtrl+Alt+A'),
+        separator,
+        item('Create Issue on GitHub', 'create-issue', s.github),
+        separator,
+        item('New Worktree…', 'new-worktree', onBranch, 'CmdOrCtrl+Alt+W'),
+        separator,
+        item('Repository Settings…', 'settings', s.folder),
+      ],
+    },
+    {
+      label: 'Branch',
+      submenu: [
+        item('New Branch…', 'new-branch', idle, 'CmdOrCtrl+Shift+N'),
+        item('Rename…', 'rename', onBranch && !s.onMain, 'CmdOrCtrl+Shift+R'),
+        item('Delete…', 'delete', onBranch && !s.onMain && s.main, 'CmdOrCtrl+Shift+D'),
+        separator,
+        item('Discard All Changes…', 'discard-all', idle && s.changes, 'CmdOrCtrl+Shift+Backspace'),
+        item('Stash All Changes', 'stash-all', idle && s.changes, 'CmdOrCtrl+Shift+S'),
+        separator,
+        item(`Update from ${s.main || 'Default Branch'}`, 'update-from-main', onBranch && s.main && !s.onMain, 'CmdOrCtrl+Shift+U'),
+        item('Merge into Current Branch…', 'merge', onBranch, 'CmdOrCtrl+Shift+M'),
+        item('Squash and Merge into Current Branch…', 'squash', onBranch, 'CmdOrCtrl+Shift+H'),
+        item('Rebase Current Branch…', 'rebase', onBranch, 'CmdOrCtrl+Shift+E'),
+        separator,
+        item('Compare on GitHub', 'compare-github', s.github && s.upstream && s.main, 'CmdOrCtrl+Shift+C'),
+        item('View Branch on GitHub', 'view-branch', s.github && s.upstream, 'CmdOrCtrl+Alt+B'),
+        item('Create Pull Request', 'create-pull', s.github && s.upstream && s.main && !s.onMain, 'CmdOrCtrl+R'),
+      ],
+    },
+  ]
 }
 
 // Page contents can't reach these directly: a tab's history and page live in the renderer, so every action goes to it.
@@ -338,7 +411,8 @@ function buildMenu() {
         { label: 'Split View', accelerator: 'CmdOrCtrl+\\', click: () => sendMenu('toggle-split') },
         { label: 'Focus Other Pane', accelerator: 'CmdOrCtrl+Alt+\\', click: () => sendMenu('focus-other-pane') },
         { type: 'separator' },
-        { role: 'reload' },
+        // Cmd+R is Create Pull Request, as in GitHub Desktop.
+        { role: 'reload', accelerator: 'CmdOrCtrl+Alt+R' },
         { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' },
@@ -348,6 +422,7 @@ function buildMenu() {
         { role: 'togglefullscreen' },
       ],
     },
+    ...repoMenus(),
     {
       label: 'Go',
       submenu: [
@@ -462,7 +537,12 @@ function e2eTest(win, file) {
             await new Promise((r) => setTimeout(r, 30))
           }
         }
-        const result = step.js ? await win.webContents.executeJavaScript(`(async () => { ${step.js} })()`) : true
+        let result = step.js ? await win.webContents.executeJavaScript(`(async () => { ${step.js} })()`) : true
+        // What a menu offers right now, as `Label (off)`.
+        if (step.readMenu) {
+          const menu = Menu.getApplicationMenu().items.find((m) => m.label === step.readMenu).submenu.items.filter((i) => i.label).map((i) => `${i.label}${i.enabled ? '' : ' (off)'}`)
+          result = { menu, fail: (step.expectMenu ?? []).some((label) => !menu.includes(label)) }
+        }
         results.push({ step: step.name, ok: true, result })
       } catch (err) {
         results.push({ step: step.name, ok: false, error: String(err && err.message ? err.message : err) })

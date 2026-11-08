@@ -66,8 +66,15 @@ export function useLocalRepo(repo: LocalRepo | null) {
     refetchInterval: 15_000,
   })
 
+  const operation = useQuery({
+    queryKey: ['local-operation', id],
+    enabled: !!git,
+    queryFn: () => git!.operation(),
+    refetchInterval: 4000,
+  })
+
   const refresh = () => {
-    for (const key of ['local-status', 'local-branch-states', 'local-branches', 'local-diff', 'local-log', 'local-show', 'local-stash']) void qc.invalidateQueries({ queryKey: [key, id] })
+    for (const key of ['local-operation', 'local-status', 'local-branch-states', 'local-branches', 'local-diff', 'local-log', 'local-show', 'local-stash']) void qc.invalidateQueries({ queryKey: [key, id] })
   }
   const settled = {
     onSuccess: () => {
@@ -104,5 +111,5 @@ export function useLocalRepo(repo: LocalRepo | null) {
       }
     })
 
-  return { git, ops, status, branches, op, unqueued, setStaged, switchBranch, refresh, error, clearError: () => setError(null) }
+  return { git, ops, status, branches, operation, op, unqueued, setStaged, switchBranch, refresh, error, clearError: () => setError(null) }
 }

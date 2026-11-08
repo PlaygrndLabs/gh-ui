@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, IconButton, TextInput, useConfirm } from '@primer/react'
+import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, IconButton, TextInput } from '@primer/react'
 import { CloudIcon, DeviceDesktopIcon, GearIcon, GitBranchIcon, MarkGithubIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgent } from '../lib/agent/AgentProvider'
 import { useFeatures } from '../lib/features'
 import { errorMessage, useGitHub } from '../lib/github'
-import { copyText, plural } from '../lib/format'
+import { plural } from '../lib/format'
 import type { BranchState } from '../lib/git'
 import { native } from '../lib/platform'
 import { useRepoCounts, useRepoQuery } from '../lib/repo'
@@ -19,6 +19,7 @@ import { AccountMenu } from './AppHeader'
 import { InboxMenu } from './InboxMenu'
 import { TabItemPicker } from './HeaderPickers'
 import { useToolbarPanel } from './toolbarPanel'
+import { RepoCommands, useBranchActions, useClearRepoMenu } from './RepoCommands'
 import { RepoSettingsDialog } from './RepoSettingsDialog'
 import { displayRemote } from '../lib/links'
 
@@ -61,42 +62,9 @@ function useCurrentRepo(): WorkspaceRepo | null {
   return { key: `${account.host}/${key}`.toLowerCase(), name: parts[1], location: 'github', local: null, github: { host: account.host, owner: parts[0], repo: parts[1] }, remote: null }
 }
 
-function RenameBranchDialog({ branch, where, taken, onRename, onClose }: { branch: BranchState; where: string; taken: string[]; onRename(name: string): void; onClose(): void }) {
-  const [value, setValue] = useState(branch.name)
-  const name = value.trim().replace(/\s+/g, '-')
-  const ok = !!name && name !== branch.name && !taken.includes(name)
-  const submit = () => {
-    if (!ok) return
-    onRename(name)
-    onClose()
-  }
-  return (
-    <Dialog
-      title={`Rename ${branch.name}`}
-      onClose={onClose}
-      footerButtons={[
-        { content: 'Cancel', onClick: onClose },
-        { content: 'Rename', buttonType: 'primary', disabled: !ok, onClick: submit },
-      ]}
-    >
-      <FormControl>
-        <FormControl.Label>Name</FormControl.Label>
-        <TextInput block autoFocus value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
-        {taken.includes(name) && name !== branch.name && <FormControl.Validation variant="error">A branch with this name already exists.</FormControl.Validation>}
-      </FormControl>
-      {branch.location === 'both' && <p className="ws-note mt-2">This only renames it on this Mac. The branch on {where} keeps its name.</p>}
-    </Dialog>
-  )
-}
-
 function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const local = useLocalRepo(repo.local)
-  const confirm = useConfirm()
-  const navigate = useNavigate()
-  const { pathname } = useLocation()
-  const { account } = useGitHub()
-  const qc = useQueryClient()
-  const [renaming, setRenaming] = useState<BranchState | null>(null)
+  const actions = useBranchActions(repo, local)
   const info = useRepoQuery(repo.github?.owner ?? '', repo.github?.repo ?? '', !repo.local && !!repo.github)
   const [filter, setFilter] = useState('')
   const [open, setOpen] = useState(false)
@@ -116,11 +84,6 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const branches = all.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()))
   const exists = local.branches.data?.some((b) => b.name === name)
 
-  const showBranchTab = () => {
-    const home = workspacePath(repo, account.host)
-    if (home && home !== pathname) navigate(home)
-  }
-
   const branchOptions = async (b: BranchState) => {
     const git = local.git
     const here = !!git && b.location !== 'remote'
@@ -132,33 +95,20 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
             { id: 'copy', label: 'Copy Branch Name' },
             { id: 'worktree', label: 'Checkout in New Worktree…', enabled: !b.current },
             { type: 'separator' },
+            { id: 'merge', label: `Merge into ${current}`, enabled: !b.current && !local.operation.data },
+            { id: 'rebase', label: `Rebase ${current} onto This Branch`, enabled: !b.current && !local.operation.data },
+            { type: 'separator' },
             { id: 'delete', label: 'Delete…', enabled: here && !b.current && !isDefault },
           ]
         : [{ id: 'copy', label: 'Copy Branch Name' }],
     )
     if (!action) return
     setOpen(false)
-    if (action === 'copy') void copyText(b.name)
-    if (action === 'rename') setRenaming(b)
-    if (action === 'worktree') {
-      const parent = await native!.pickDirectory('Choose where to put the worktree')
-      if (!parent) return
-      local.op.mutate(async () => {
-        const added = await native!.repos.addWorktree(repo.local!.id, parent, b.name)
-        await qc.invalidateQueries({ queryKey: ['local-repos'] })
-        await qc.invalidateQueries({ queryKey: ['workspace-folders'] })
-        navigate(`/local/${added.id}`)
-      })
-    }
-    if (action === 'delete') {
-      const ok = await confirm({
-        title: `Delete ${b.name}?`,
-        content: b.location === 'both' ? `This removes it from this Mac. The branch on ${hostName(repo)} stays.` : 'It’s only on this Mac, so any commits no other branch has will be lost.',
-        confirmButtonContent: 'Delete',
-        confirmButtonType: 'danger',
-      })
-      if (ok) local.op.mutate(() => git!.deleteBranch(b.name))
-    }
+    if (action === 'copy') actions.copyName(b)
+    if (action === 'rename') actions.rename(b)
+    if (action === 'worktree') void actions.worktree(b)
+    if (action === 'merge' || action === 'rebase') actions.integrate(b, action)
+    if (action === 'delete') void actions.remove(b)
   }
 
   const label = (
@@ -200,7 +150,7 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
                     setPicked(repo.local ? null : b.name)
                     if (repo.local && !b.current) local.switchBranch(b.name)
                     setFilter('')
-                    showBranchTab()
+                    actions.showBranchTab()
                   }}
                 >
                   {b.name}
@@ -217,7 +167,7 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
                       setPicked(null)
                       local.op.mutate(() => local.git!.createBranch(name))
                       setFilter('')
-                      showBranchTab()
+                      actions.showBranchTab()
                     }}
                   >
                     Create branch {name}
@@ -228,7 +178,7 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
           </div>
         </ActionMenu.Overlay>
       </ActionMenu>
-      {renaming && <RenameBranchDialog branch={renaming} where={hostName(repo)} taken={all.map((b) => b.name)} onRename={(to) => local.op.mutate(() => local.git!.renameBranch(renaming.name, to))} onClose={() => setRenaming(null)} />}
+      {actions.dialogs}
       {local.error && <Banner className="ws-error" variant="critical" title="Git said" description={local.error} onDismiss={local.clearError} />}
     </>
   )
@@ -527,6 +477,7 @@ export function WorkspaceHeader() {
   const [cloning, setCloning] = useState(false)
   // A folder's tab goes by the folder on all of its pages, not only the one that names it.
   useTabTitle(repo?.name)
+  useClearRepoMenu(!repo)
   const content = useMemo(() => repo && <RepoTabs key={repo.key} repo={repo} />, [repo])
   return (
     <header className="ws-header">
@@ -554,6 +505,7 @@ export function WorkspaceHeader() {
           <AccountMenu />
         </div>
       </div>
+      {repo && <RepoCommands key={`commands-${repo.key}`} repo={repo} />}
       {content}
       {cloning && <CloneDialog initial="" onClose={() => setCloning(false)} onCloned={(r) => navigate(`/local/${r.id}`)} />}
     </header>
