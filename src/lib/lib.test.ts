@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parsePatch, parseUnifiedDiff } from './diff'
 import { splitRefPath } from './repo'
-import { appPathFromApiUrl, appPathFromUrl, mapSrcset, parseRemote, safeNextPath, sameRemote, toHttpsRemote } from './links'
+import { appPathFromApiUrl, appPathFromUrl, displayRemote, isValidRemoteUrl, mapSrcset, parseRemote, remoteHost, remoteProvider, safeNextPath, sameRemote, toHttpsRemote } from './links'
 import { assetUploadUrl, isValidTagName, makeLatestValue, tagMenu } from './releases'
 import { parseLog, splitLogBySteps, summarizeLog } from './logs'
 import { apiBaseFor, canReadNotifications, tokenKind } from './hosts'
@@ -306,5 +306,31 @@ describe('sameRemote', () => {
     expect(sameRemote('https://github.com/Acme/Web.git', 'git@github.com:acme/web.git')).toBe(true)
     expect(sameRemote('https://github.com/acme/web', 'https://github.com/acme/api')).toBe(false)
     expect(sameRemote('not a url', 'not a url')).toBe(false)
+  })
+})
+
+describe('remote hosts', () => {
+  it('finds the server in every form a remote takes', () => {
+    expect(remoteHost('git@gitlab.com:a/b.git')).toBe('gitlab.com')
+    expect(remoteHost('deploy@git.corp.example:a/b')).toBe('git.corp.example')
+    expect(remoteHost('ssh://git@host.example:2222/a/b')).toBe('host.example')
+    expect(remoteHost('https://GitLab.com/a/b/c.git')).toBe('gitlab.com')
+    expect(remoteHost('/mnt/backup/odd.git')).toBeNull()
+  })
+  it('names the provider, or else the server', () => {
+    expect(remoteProvider('git@github.com:a/b.git')).toBe('GitHub')
+    expect(remoteProvider('https://gitlab.com/a/b.git')).toBe('GitLab')
+    expect(remoteProvider('https://gitlab.corp.example/a/b.git')).toBe('GitLab')
+    expect(remoteProvider('git@bitbucket.org:a/b.git')).toBe('Bitbucket')
+    expect(remoteProvider('https://git.corp.example/a/b.git')).toBe('git.corp.example')
+    expect(remoteProvider('https://notgithub.com/a/b.git')).toBe('notgithub.com')
+  })
+  it('keeps a token in a URL out of sight', () => {
+    expect(displayRemote('https://me:glpat-secret@gitlab.com/a/b.git')).toBe('https://gitlab.com/a/b.git')
+    expect(displayRemote('git@gitlab.com:a/b.git')).toBe('git@gitlab.com:a/b.git')
+  })
+  it('accepts only addresses that can’t run anything', () => {
+    for (const ok of ['https://gitlab.com/a/b.git', 'git@gitlab.com:a/b.git', 'ssh://git@host/a/b']) expect(isValidRemoteUrl(ok)).toBe(true)
+    for (const bad of ['ext::sh -c evil', '/etc', 'ssh://-oProxyCommand=x/y', 'https://a b', '-x@h:p']) expect(isValidRemoteUrl(bad)).toBe(false)
   })
 })

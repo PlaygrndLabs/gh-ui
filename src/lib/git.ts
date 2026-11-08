@@ -123,8 +123,28 @@ export function parseBranches(out: string, remote = 'origin'): BranchState[] {
   return [...local.values(), ...remoteOnly.values()].sort((a, b) => Number(b.current) - Number(a.current) || b.date.localeCompare(a.date) || a.name.localeCompare(b.name))
 }
 
+export interface GitRemote {
+  name: string
+  url: string
+}
+
+/** The remotes in `git remote -v`, each once. */
+export function parseRemotes(out: string): GitRemote[] {
+  const remotes: GitRemote[] = []
+  for (const line of out.split('\n')) {
+    const m = line.match(/^(\S+)\t(.+) \(fetch\)$/)
+    if (m) remotes.push({ name: m[1], url: m[2] })
+  }
+  return remotes
+}
+
+/** The remote a folder syncs with: origin, or whichever it has when it has no origin. */
+export const primaryRemote = (remotes: GitRemote[]): GitRemote | null => remotes.find((r) => r.name === 'origin') ?? remotes[0] ?? null
+
 /** Runs git in one repository; withAuth marks the commands that talk to the remote. */
 export type GitRunner = (args: string[], withAuth: boolean) => Promise<GitResult>
+
+export type IdentityKey = 'user.name' | 'user.email'
 
 export type GitClient = ReturnType<typeof createGitClient>
 
@@ -138,12 +158,22 @@ export function createGitClient(run: GitRunner) {
     const res = await run(['log', '-n', String(limit), LOG_FORMAT, ...revisions, '--'], false)
     return res.code === 0 ? parseCommitLog(res.stdout) : []
   }
+  const remotes = async () => parseRemotes(await git(['remote', '-v']))
+  const remoteName = async () => primaryRemote(await remotes().catch(() => []))?.name ?? 'origin'
   return {
     status: async () => parseStatus(await git(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'])),
     /** Empty when there's no origin. */
     remoteUrl: async () => (await git(['remote', 'get-url', 'origin']).catch(() => '')).trim(),
     branchNames: async () => (await git(['branch', '--format=%(refname:short)'])).split('\n').filter(Boolean),
-    branches: async () => parseBranches(await git(['branch', '--all', BRANCH_FORMAT])),
+    /** Throws when git can't tell, so nothing can mistake a failure for a folder with no remote. */
+    remotes,
+    addRemote: (name: string, url: string) => git(['remote', 'add', name, url]),
+    setRemoteUrl: (name: string, url: string) => git(['remote', 'set-url', name, url]),
+    removeRemote: (name: string) => git(['remote', 'remove', name]),
+    /** This repository's own value, empty when it uses your global one. */
+    identity: async (key: IdentityKey) => (await run(['config', '--local', '--get', key], false)).stdout.trim(),
+    setIdentity: (key: IdentityKey, value: string) => (value ? git(['config', '--local', key, value]) : run(['config', '--local', '--unset', key], false)),
+    branches: async () => parseBranches(await git(['branch', '--all', BRANCH_FORMAT]), await remoteName()),
     async fileDiff(entry: StatusEntry): Promise<FileDiff | null> {
       if (entry.index === '?' && entry.worktree === '?') {
         // --no-index exits 1 when the files differ, which here they always do.
@@ -158,10 +188,11 @@ export function createGitClient(run: GitRunner) {
     log: (ref?: string, limit = 200) => log(ref ? [ref] : [], limit),
     /** A branch's commits by where they are: only here, on origin, or on its upstream and not pulled yet. */
     async branchCommits(branch: BranchState, limit = 100) {
-      const ref = branch.location === 'remote' ? `origin/${branch.name}` : branch.name
+      const remote = await remoteName()
+      const ref = branch.location === 'remote' ? `${remote}/${branch.name}` : branch.name
       const all = await log([ref], limit)
       if (branch.location === 'remote') return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote: all }
-      const local = await log([ref, '--not', '--remotes=origin'], limit)
+      const local = await log([ref, '--not', `--remotes=${remote}`], limit)
       const onlyHere = new Set(local.map((c) => c.sha))
       const incoming = branch.upstream && branch.behind ? await log([`${ref}..${branch.upstream}`], limit) : []
       return { local, incoming, remote: all.filter((c) => !onlyHere.has(c.sha)) }
@@ -172,10 +203,10 @@ export function createGitClient(run: GitRunner) {
       return { message: message.trim(), files: parseUnifiedDiff(patch) }
     },
     addOrigin: (url: string) => git(['remote', 'add', 'origin', url]),
-    publishBranch: () => git(['push', '-u', 'origin', 'HEAD'], true),
+    publishBranch: async () => git(['push', '-u', await remoteName(), 'HEAD'], true),
     pull: () => git(['pull', '--ff-only'], true),
     push: () => git(['push'], true),
-    fetch: () => git(['fetch', '--prune', 'origin'], true),
+    fetch: async () => git(['fetch', '--prune', await remoteName()], true),
     switchTo: (branch: string) => git(['switch', branch]),
     createBranch: (branch: string) => git(['switch', '-c', branch]),
     /** Saves every change, new files too, and leaves the working tree clean. */

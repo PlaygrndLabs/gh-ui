@@ -23,6 +23,8 @@ function LocalWorkspace({ id, section }: { id: string; section?: string }) {
   if (!repo?.local) return <LocalShell />
   const path = workspacePath(repo, account.host)
   if (path && path !== `/local/${id}`) return <Navigate to={`${path}${section ? `/${section}` : ''}`} replace />
+  // Pull requests and Actions are GitHub's. A folder that lives somewhere else has neither, and isn't offered Publish.
+  if (section && repo.location !== 'local') return <Navigate to={`/local/${id}`} replace />
   if (section)
     return (
       <div className="container-lg">

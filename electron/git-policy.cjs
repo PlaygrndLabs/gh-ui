@@ -24,22 +24,39 @@ const GIT_BASE_ENV = { GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL
 // git allow-list. The renderer only ever runs these subcommands, and never with
 // options that execute programs, write arbitrary files, or point git elsewhere.
 
-const ALLOWED_SUBCOMMANDS = new Set(['status', 'diff', 'log', 'show', 'branch', 'switch', 'add', 'restore', 'reset', 'commit', 'push', 'pull', 'fetch', 'remote', 'rev-parse', 'stash', 'clean', 'ls-tree'])
+const ALLOWED_SUBCOMMANDS = new Set(['status', 'diff', 'log', 'show', 'branch', 'switch', 'add', 'restore', 'reset', 'commit', 'push', 'pull', 'fetch', 'remote', 'config', 'rev-parse', 'stash', 'clean', 'ls-tree'])
 // args[0] is always the subcommand, so global options (-c, -C, --git-dir…) can't
 // appear; these are the per-command options that run programs, write files or destroy work.
 const FORBIDDEN_FLAG = /^(--upload-pack|--receive-pack|--exec|--output|--ext-diff|--textconv|--template|--config|--git-dir|--work-tree|--separate-git-dir|--hard|--force|--force-with-lease|--mirror|--delete|-f|-d|-D)(=|$)/
 const VALUE_FLAGS = new Set(['-m', '--message', '-F', '--format', '--pretty', '-n', '--max-count'])
 
+const IDENTITY_KEYS = new Set(['user.name', 'user.email'])
+const REMOTE_NAME = /^[A-Za-z0-9][\w.-]*$/
+// A remote's URL decides what git connects to. These can't run anything, unlike ext:: or a path to a hook-laden folder.
+const REMOTE_URL = [/^https:\/\/[^\s-][^\s]*$/, /^ssh:\/\/[\w.]+[^\s]*$/, /^[\w.][\w.-]*@[\w.][\w.-]*:[\w.~/-]+$/]
+const safeRemoteUrl = (url) => REMOTE_URL.some((re) => re.test(url))
+
+function validateRemoteArgs(rest) {
+  const [action, name, url] = rest
+  if (action === '-v' && rest.length === 1) return
+  if (action === 'get-url' && rest.length === 2 && REMOTE_NAME.test(name)) return
+  if (action === 'remove' && rest.length === 2 && REMOTE_NAME.test(name)) return
+  if ((action === 'add' || action === 'set-url') && rest.length === 3 && REMOTE_NAME.test(name) && safeRemoteUrl(url)) return
+  throw new Error('That `git remote` command is not allowed')
+}
+
 function validateGitArgs(args) {
   if (!Array.isArray(args) || args.length === 0 || !args.every((a) => typeof a === 'string')) throw new Error('Invalid git arguments')
   const [sub, ...rest] = args
   if (!ALLOWED_SUBCOMMANDS.has(sub)) throw new Error(`git ${sub} is not allowed`)
-  // Adding origin is how a folder gets published. An https URL can't run anything, unlike ext:: or a local path.
-  if (sub === 'remote' && rest[0] === 'add') {
-    if (!(rest.length === 3 && rest[1] === 'origin' && /^https:\/\/[^\s]+$/.test(rest[2]))) throw new Error('Only `git remote add origin <https URL>` is allowed')
+  if (sub === 'remote') return validateRemoteArgs(rest)
+  // Only this repository's commit identity; any other setting could make git run a program.
+  if (sub === 'config') {
+    const ok = rest.length === 3 && rest[0] === '--local' && ['--get', '--unset'].includes(rest[1]) && IDENTITY_KEYS.has(rest[2])
+    const set = rest.length === 3 && rest[0] === '--local' && IDENTITY_KEYS.has(rest[1]) && !rest[2].startsWith('-')
+    if (!ok && !set) throw new Error('Only a repository\'s user.name and user.email can be changed')
     return
   }
-  if (sub === 'remote' && !(rest[0] === 'get-url' || rest[0] === '-v')) throw new Error('Only `git remote get-url` and `git remote -v` are allowed')
   if (sub === 'diff' && rest.includes('--no-index')) {
     // Only "new file" previews: git diff --no-index -- /dev/null <repo-relative path>
     const target = rest[3]
