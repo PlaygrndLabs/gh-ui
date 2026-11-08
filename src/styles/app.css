@@ -13,7 +13,17 @@ body {
   font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  user-select: none;
 }
+
+/* Interface text can't be selected, as in a desktop app. Anything worth copying opts back in here. Line numbers and
+   diff markers inside these areas keep their own user-select: none. */
+input, textarea, [contenteditable='true'],
+.markdown-body, pre, .deploy-key-fingerprint, .run-artifacts code,
+.diff-code, .blob-code, .log-line,
+.page-title, .ws-details-title, .commit-message, .commit-header-sha,
+.agent-msg-user, .agent-msg-assistant, .agent-thinking,
+.error-box, [class*='Flash-Flash'] { user-select: text; }
 
 a { color: var(--fgColor-accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
@@ -1769,7 +1779,7 @@ a.project-table-title-text:hover { color: var(--fgColor-accent); }
 .diff-table:not(.diff-split) tr > .selected-line:last-child::after, .diff-table .selected-line.selected-line-right::after { border-right: 1px solid var(--borderColor-attention-muted); }
 /* While a comment form is open on the lines, a blue bar marks them. */
 .diff-table.is-commenting .selected-line.diff-code::before { content: ''; position: absolute; top: 0; left: -1px; width: 4px; height: 100%; background: var(--bgColor-accent-emphasis); }
-.diff-table.is-dragging { user-select: none; }
+.diff-table.is-dragging .diff-code { user-select: none; }
 .diff-table td.diff-num[data-sel-line], .diff-table:not(.diff-split) .diff-line[data-sel-line] > td.diff-num { cursor: pointer; }
 .diff-add-comment { z-index: 3; }
 
