@@ -40,8 +40,10 @@ const RULES = {
   add: { args: 'none', paths: true },
   restore: { flags: ['--staged', '--worktree'], prefixes: ['--source='], args: 'none', paths: true },
   reset: { flags: ['-q', '--soft'], args: 'any', paths: true },
-  commit: { valued: { '-m': ANYTHING }, args: 'none' },
-  'rev-parse': { flags: ['--abbrev-ref'], args: 'any' },
+  commit: { flags: ['--no-edit'], valued: { '-m': ANYTHING }, args: 'none' },
+  merge: { flags: ['--no-edit', '--squash', '--abort'], args: 'any' },
+  rebase: { flags: ['--abort', '--continue'], args: 'any' },
+  'rev-parse': { flags: ['--abbrev-ref', '-q', '--verify'], args: 'any' },
   'ls-tree': { flags: ['-r', '--name-only'], args: 'any' },
   // The first bare argument names a configured remote, never a URL or folder, which could connect anywhere or run its hooks.
   push: { flags: ['-u'], args: 'remote' },
@@ -55,7 +57,12 @@ const ALLOWED_SUBCOMMANDS = new Set([...Object.keys(RULES), 'remote', 'config', 
  * app/[id]/page.tsx also matches app/i/page.tsx. Not for every command, because stash runs `git clean -- :/` internally
  * and a literal ":/" matches nothing, which would leave untracked files behind.
  */
-const gitCommandEnv = (sub) => ({ ...GIT_BASE_ENV, ...(sub === 'clean' || RULES[sub]?.paths ? { GIT_LITERAL_PATHSPECS: '1' } : {}) })
+const gitCommandEnv = (sub) => ({
+  ...GIT_BASE_ENV,
+  ...(sub === 'clean' || RULES[sub]?.paths ? { GIT_LITERAL_PATHSPECS: '1' } : {}),
+  // Nobody is at a terminal to edit the message of a commit a rebase replays.
+  ...(sub === 'rebase' ? { GIT_EDITOR: 'true' } : {}),
+})
 
 // One ref, or source:destination. No leading "+" (forces the update) and no leading ":" (deletes the remote branch).
 const REFSPEC = /^[^\s:+~^?*[\\-][^\s:~^?*[\\]*(:[^\s:~^?*[\\]+)?$/
