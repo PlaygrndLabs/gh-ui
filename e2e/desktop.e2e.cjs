@@ -673,10 +673,37 @@ exports.steps = [
       const branchTab = (name) => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes(name))
       r.oneHistoryTab = !!branchTab('History') && !branchTab('On this Mac') && !branchTab('On GitLab')
       r.notInBranchHead = !/On this Mac|Only on/.test(main().querySelector('.ws-branch-head').textContent)
-      r.fail = !(/Only on this Mac/.test(r.before) && r.empty && /On this Mac and\\s*GitLab/.test(r.after) && r.listed && r.publishGone && r.sync === 'Publish branch' && r.gitHubPagesGone && r.oneHistoryTab && r.notInBranchHead)
+      r.tabServer = await until(() => activeTab().closest('.tab-item').dataset.server === 'gitlab' && 'gitlab', 3000)
+      r.tabHover = activeTab().closest('.tab-item').title
+      const tabBranch = activeTab().querySelector('.tab-branch')
+      const shownBranch = tabBranch.textContent
+      tabBranch.textContent = ' - a-very-long-branch-name-that-cannot-possibly-fit-in-one-tab'
+      const tabLabel = activeTab().querySelector('.tab-name')
+      r.branchShortenedFirst = tabLabel.scrollWidth <= tabLabel.clientWidth && tabBranch.scrollWidth > tabBranch.clientWidth
+      tabBranch.textContent = shownBranch
+      r.fail = !(/Only on this Mac/.test(r.before) && r.empty && /On this Mac and\\s*GitLab/.test(r.after) && r.listed && r.publishGone && r.sync === 'Publish branch' && r.gitHubPagesGone && r.oneHistoryTab && r.notInBranchHead && r.tabServer === 'gitlab' && r.tabHover.startsWith('gitlab.com/example/nested/repo') && r.branchShortenedFirst)
       return r
     `,
     waitMs: 300,
+  },
+  {
+    name: 'videos in comments are allowed to load',
+    js: `${helpers}
+      const video = document.createElement('video')
+      video.muted = true
+      const r = await new Promise((done) => {
+        const finish = (how) => { document.removeEventListener('securitypolicyviolation', blocked); done({ how }) }
+        const blocked = (e) => { if (e.violatedDirective.startsWith('media-src') || e.effectiveDirective === 'media-src') finish('blocked by policy') }
+        document.addEventListener('securitypolicyviolation', blocked)
+        video.onloadedmetadata = () => finish('loaded')
+        video.onerror = () => finish('network error')
+        setTimeout(() => finish('timed out'), 15000)
+        video.src = 'https://raw.githubusercontent.com/mediaelement/mediaelement-files/master/big_buck_bunny.mp4'
+      })
+      r.duration = video.duration
+      r.fail = r.how === 'blocked by policy'
+      return r
+    `,
   },
   {
     name: 'history: commits not pushed carry an icon, and a filter narrows to them',
@@ -945,7 +972,10 @@ exports.steps = [
       clickLink('/PlaygrndLabs/gh-ui/actions/runs/42027302260')
       const paths = await until(() => document.querySelectorAll('.run-graph-lines path').length, 20000)
       const r = { paths, cards: document.querySelectorAll('.graph-card').length }
-      r.fail = paths !== 3
+      const lines = [...main().querySelectorAll('nav [data-component="ActionList.Divider"]')]
+      r.dividers = lines.length
+      r.doubled = lines.filter((d) => d.nextElementSibling?.matches('[data-component="ActionList.Divider"]')).length
+      r.fail = paths !== 3 || r.dividers !== 2 || r.doubled !== 0
       return r
     `,
   },

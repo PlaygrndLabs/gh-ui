@@ -276,7 +276,6 @@ export function SecurityPage() {
           </h2>
           <NavList aria-label="Security and quality">
             {navItem('overview', 'Overview', HomeIcon)}
-            <NavList.Divider />
             <NavList.Group title="Reporting">
               {navItem('policy', 'Security policy', LawIcon)}
               {navItem('advisories', 'Advisories', ShieldIcon, advisories.data && !advisories.data.unavailable ? published.length : undefined)}
