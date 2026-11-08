@@ -93,6 +93,8 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const local = useLocalRepo(repo.local)
   const confirm = useConfirm()
   const navigate = useNavigate()
+  const { pathname } = useLocation()
+  const { account } = useGitHub()
   const qc = useQueryClient()
   const [renaming, setRenaming] = useState<BranchState | null>(null)
   const info = useRepoQuery(repo.github?.owner ?? '', repo.github?.repo ?? '', !repo.local && !!repo.github)
@@ -113,6 +115,11 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const name = filter.trim().replace(/\s+/g, '-')
   const branches = all.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()))
   const exists = local.branches.data?.some((b) => b.name === name)
+
+  const showBranchTab = () => {
+    const home = workspacePath(repo, account.host)
+    if (home && home !== pathname) navigate(home)
+  }
 
   const branchOptions = async (b: BranchState) => {
     const git = local.git
@@ -193,6 +200,7 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
                     setPicked(repo.local ? null : b.name)
                     if (repo.local && !b.current) local.switchBranch(b.name)
                     setFilter('')
+                    showBranchTab()
                   }}
                 >
                   {b.name}
@@ -209,6 +217,7 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
                       setPicked(null)
                       local.op.mutate(() => local.git!.createBranch(name))
                       setFilter('')
+                      showBranchTab()
                     }}
                   >
                     Create branch {name}

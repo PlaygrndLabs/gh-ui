@@ -324,16 +324,19 @@ const safeDecode = (s: string) => {
   }
 }
 
-/** The header segment for the open tab's items, when that tab has items to pick. */
+/** The header's pull request picker, on every page of the repository, then the picker for the open tab's own items. */
 export function TabItemPicker({ owner, repo }: { owner: string; repo: string }) {
   const { pathname } = useLocation()
   const { isOn } = useFeatures()
   const parts = pathname.split('/').filter(Boolean)
   const [section, a, b] = [parts[2] ?? '', parts[3] ?? '', parts[4] ?? '']
   const props = { key: `${owner}/${repo}/${section}`, owner, repo }
-  if (section === 'pull' || section === 'compare' || (section === 'pulls' && a !== 'all')) return <PullPicker {...props} current={section === 'pull' ? a : null} />
-  if (section === 'actions' && (a === '' || a === 'runs')) return <RunPicker {...props} current={a === 'runs' ? b : null} />
-  if (section === 'issues' && isOn('issues') && a !== 'new') return <IssuePicker {...props} current={/^\d+$/.test(a) ? a : null} />
-  if (section === 'releases' && (a === '' || a === 'tag')) return <ReleasePicker {...props} current={a === 'tag' ? safeDecode(parts.slice(4).join('/')) : null} />
-  return null
+  return (
+    <>
+      <PullPicker key={`${owner}/${repo}`} owner={owner} repo={repo} current={section === 'pull' ? a : null} />
+      {section === 'actions' && (a === '' || a === 'runs') && <RunPicker {...props} current={a === 'runs' ? b : null} />}
+      {section === 'issues' && isOn('issues') && a !== 'new' && <IssuePicker {...props} current={/^\d+$/.test(a) ? a : null} />}
+      {section === 'releases' && (a === '' || a === 'tag') && <ReleasePicker {...props} current={a === 'tag' ? safeDecode(parts.slice(4).join('/')) : null} />}
+    </>
+  )
 }

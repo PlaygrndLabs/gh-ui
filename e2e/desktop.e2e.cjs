@@ -196,6 +196,37 @@ exports.steps = [
     `,
   },
   {
+    name: 'the pull request picker is on every page, and picking a branch opens the Branch tab',
+    js: `${helpers}
+      const visible = (sel) => [...document.querySelectorAll(sel)].filter((s) => s.getClientRects().length)
+      const tab = (name) => visible('.ws-tabs a').find((a) => a.textContent.trim().startsWith(name))
+      const onPath = (test) => until(() => test(savedActiveUrl()), 8000)
+      const r = {}
+      tab('Branch').click()
+      r.onBranch = !!(await until(() => main()?.querySelector('.ws-branch-title'), 15000))
+      r.pickerOnBranch = visible('.ws-seg-pick').length === 1
+      visible('.ws-seg-pick')[0].click()
+      const pulls = await until(() => { const l = [...document.querySelectorAll('.ws-toolbar-panel [role=menuitemradio]')]; return l.length > 1 && l }, 15000)
+      pulls?.[0].click()
+      r.movedToPull = !!(await onPath((u) => u.includes('/pull/')))
+      r.url = savedActiveUrl()
+      await sleep(300)
+      visible('.ws-seg-branch')[0].click()
+      const branches = await until(() => { const l = [...document.querySelectorAll('.ws-toolbar-panel [role=menuitemradio]')]; return l.length > 1 && l }, 8000)
+      branches.find((i) => i.getAttribute('aria-checked') === 'true').click()
+      r.backOnBranch = !!(await onPath((u) => !u.includes('/pull')))
+      r.branchPage = !!(await until(() => main()?.querySelector('.ws-branch-title'), 8000))
+      tab('Actions').click()
+      await until(() => visible('.ws-seg-pick').length === 2, 15000)
+      r.pickersOnActions = visible('.ws-seg-pick').map((s) => s.querySelector('.ws-seg-key').textContent.split(' ')[0])
+      tab('Pull requests').click()
+      await onPath((u) => u.includes('/pull'))
+      r.fail = !(r.onBranch && r.pickerOnBranch && r.movedToPull && r.backOnBranch && r.branchPage && r.pickersOnActions.length === 2 && r.pickersOnActions[0] === 'Pull')
+      return r
+    `,
+    screenshot: 'pickers-everywhere',
+  },
+  {
     name: 'pull requests: commits and one commit’s changes',
     js: `${helpers}
       const link = [...main().querySelectorAll('.ws-pr-code .ws-tab')].find((a) => a.textContent.includes('Commits'))
@@ -220,7 +251,8 @@ exports.steps = [
       await sleep(200)
       const leftAt = filesPane().scrollTop
       ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Actions')).click()
-      const pick = () => [...document.querySelectorAll('.ws-header .ws-seg-pick')].find((s) => s.getClientRects().length)
+      // The run picker comes after the pull request picker, which is on every page.
+      const pick = () => [...document.querySelectorAll('.ws-header .ws-seg-pick')].filter((s) => s.getClientRects().length).at(-1)
       const row = await until(() => pick() && !pick().innerText.includes('Choose a run') && pick().innerText.includes('Run'), 20000)
       await until(() => main()?.querySelector('.run-title'), 20000)
       const r = { selected: !!row, seg: pick()?.innerText.replace(/\\s+/g, ' '), sideList: main()?.querySelectorAll('.ws-list').length, title: main()?.querySelector('.run-title')?.innerText.slice(0, 80), pageLink: !!main()?.innerHTML.includes('Copy link to this run') }
