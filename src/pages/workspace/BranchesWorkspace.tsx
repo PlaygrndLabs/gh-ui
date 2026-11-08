@@ -18,6 +18,7 @@ import { hostName, useRemoteBranches, type WorkspaceRepo } from '../../lib/works
 import { CopyButton, Loading } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
 import { SplitPane } from '../../components/SplitPane'
+import { BRANCH_SIDEBAR } from '../../lib/panes'
 import { PublishDialog } from '../../components/WorkspaceHeader'
 import { useTabBranch } from '../../lib/TabsProvider'
 
@@ -461,7 +462,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
                 )}
               </div>
               <div className="ws-branch-body">
-                {commitTab ? <SplitPane id="branch-timeline" firstLabel="Timeline" secondLabel="Details" defaultWidth={420} min={280} max={800} first={timeline} second={details} /> : timeline}
+                {commitTab ? <SplitPane {...BRANCH_SIDEBAR} firstLabel="Timeline" secondLabel="Details" first={timeline} second={details} /> : timeline}
               </div>
             </>
           ) : (

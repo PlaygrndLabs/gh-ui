@@ -159,6 +159,28 @@ exports.steps = [
     `,
   },
   {
+    name: 'the toolbar menus share one panel: full height, the branch menu at the sidebar width and a picker at its button width',
+    js: `${helpers}
+      const visible = (sel) => [...document.querySelectorAll(sel)].find((s) => s.getClientRects().length)
+      const measure = async (sel) => {
+        const button = visible(sel)
+        button.click()
+        const panel = await until(() => document.querySelector('.ws-toolbar-panel'), 8000)
+        await sleep(200)
+        const b = panel.getBoundingClientRect()
+        const seen = { left: b.left, top: b.top, width: b.width, bottom: b.bottom, buttonLeft: button.getBoundingClientRect().left, buttonWidth: button.getBoundingClientRect().width }
+        button.click()
+        await until(() => !document.querySelector('.ws-toolbar-panel'), 3000)
+        return seen
+      }
+      const branch = await measure('.ws-header .ws-seg-branch')
+      const pick = await measure('.ws-header .ws-seg-pick')
+      const r = { branch, pick, windowH: innerHeight }
+      r.fail = !(branch.left === 0 && branch.width === 420 && Math.abs(pick.width - pick.buttonWidth) < 1 && Math.abs(pick.left - pick.buttonLeft) < 1 && branch.bottom === innerHeight && pick.bottom === innerHeight && branch.top === pick.top)
+      return r
+    `,
+  },
+  {
     name: 'pull requests: commits and one commit’s changes',
     js: `${helpers}
       const link = [...main().querySelectorAll('.ws-pr-code .ws-tab')].find((a) => a.textContent.includes('Commits'))
@@ -808,12 +830,12 @@ exports.steps = [
       await until(() => main()?.querySelector('.ws-pane-sized'))
       await sleep(16000) // The branch list refreshes on a timer.
       seg().click()
-      const row = (n) => [...document.querySelectorAll('.ws-branch-panel [role=menuitemradio], .ws-branch-panel li')].find((x) => x.textContent.includes(n))
+      const row = (n) => [...document.querySelectorAll('.ws-toolbar-panel-body [role=menuitemradio], .ws-toolbar-panel-body li')].find((x) => x.textContent.includes(n))
       await until(() => row('menu-old'), 5000)
       await sleep(200)
-      const box = document.querySelector('.ws-branch-overlay').getBoundingClientRect()
+      const box = document.querySelector('.ws-toolbar-panel').getBoundingClientRect()
       const side = main().querySelector('.ws-pane-sized').getBoundingClientRect()
-      const list = document.querySelector('.ws-branch-panel .ws-menu-list').getBoundingClientRect()
+      const list = document.querySelector('.ws-toolbar-panel-body').getBoundingClientRect()
       Object.assign(r, { box: [box.left, box.top, box.width, box.bottom], side: [side.left, side.width], windowH: innerHeight, listBottom: list.bottom, segBottom: seg().getBoundingClientRect().bottom })
       r.aligned = Math.abs(box.left - side.left) < 1 && Math.abs(box.width - side.width) < 1 && Math.abs(box.bottom - innerHeight) < 1 && Math.abs(box.top - r.segBottom) < 1 && Math.abs(list.bottom - innerHeight) < 2
       const rightClick = (n) => row(n).querySelector('span').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))

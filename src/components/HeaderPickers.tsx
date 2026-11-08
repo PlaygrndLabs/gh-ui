@@ -7,6 +7,7 @@ import { useGitHub } from '../lib/github'
 import { useFeatures } from '../lib/features'
 import { firstLine } from '../lib/format'
 import { CheckStatusIcon, CommitStatusMark, PullStateIcon } from './Status'
+import { useToolbarPanel } from './toolbarPanel'
 import { REVIEW_NOTE, usePullList, type PullFilter } from '../pages/workspace/PullsWorkspace'
 import { useCheckedOutBranch, useRunList, type RunFilter } from '../pages/workspace/ActionsWorkspace'
 
@@ -28,6 +29,7 @@ interface PickerProps<F extends string> {
 function Picker<F extends string>({ icon: Glyph, kind, value, placeholder, filters, filter, onFilter, loading, empty, foot, children }: PickerProps<F>) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const { anchor, frame } = useToolbarPanel(open, 'button')
   const close = () => {
     setOpen(false)
     setQuery('')
@@ -35,7 +37,7 @@ function Picker<F extends string>({ icon: Glyph, kind, value, placeholder, filte
   const items = children(query.trim().toLowerCase(), close)
   const none = Array.isArray(items) && items.length === 0
   return (
-    <ActionMenu open={open} onOpenChange={setOpen}>
+    <ActionMenu open={open} onOpenChange={setOpen} anchorRef={anchor}>
       <ActionMenu.Anchor>
         <button type="button" className="ws-seg ws-seg-pick" aria-label={`${kind}: ${value}`}>
           <Glyph />
@@ -46,28 +48,30 @@ function Picker<F extends string>({ icon: Glyph, kind, value, placeholder, filte
           <TriangleDownIcon />
         </button>
       </ActionMenu.Anchor>
-      <ActionMenu.Overlay width="large">
-        <div className="ws-menu-filter">
-          <TextInput block autoFocus aria-label={placeholder} placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+      <ActionMenu.Overlay width="medium" className="ws-toolbar-panel" style={frame}>
+        <div className="ws-toolbar-panel-body">
+          <div className="ws-menu-filter">
+            <TextInput block autoFocus aria-label={placeholder} placeholder={placeholder} value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+          </div>
+          {filters && filter && onFilter && (
+            <div className="ws-filters ws-menu-filters" role="group" aria-label={`Filter ${kind.toLowerCase()}s`}>
+              {filters.map(([id, label]) => (
+                <button key={id} type="button" className="ws-filter" aria-pressed={filter === id} onClick={() => onFilter(id)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+          <ActionList selectionVariant="single" className="ws-menu-list">
+            {items}
+          </ActionList>
+          {loading ? <p className="ws-note p-3">Loading…</p> : none && <p className="ws-note p-3">{empty}</p>}
+          {foot && (
+            <div className="ws-list-foot" onClick={close}>
+              {foot}
+            </div>
+          )}
         </div>
-        {filters && filter && onFilter && (
-          <div className="ws-filters ws-menu-filters" role="group" aria-label={`Filter ${kind.toLowerCase()}s`}>
-            {filters.map(([id, label]) => (
-              <button key={id} type="button" className="ws-filter" aria-pressed={filter === id} onClick={() => onFilter(id)}>
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-        <ActionList selectionVariant="single" className="ws-menu-list">
-          {items}
-        </ActionList>
-        {loading ? <p className="ws-note p-3">Loading…</p> : none && <p className="ws-note p-3">{empty}</p>}
-        {foot && (
-          <div className="ws-list-foot" onClick={close}>
-            {foot}
-          </div>
-        )}
       </ActionMenu.Overlay>
     </ActionMenu>
   )

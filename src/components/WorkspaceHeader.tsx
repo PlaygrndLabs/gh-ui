@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, IconButton, TextInput, useConfirm } from '@primer/react'
@@ -18,6 +18,7 @@ import { CloneDialog } from '../pages/Local'
 import { AccountMenu } from './AppHeader'
 import { InboxMenu } from './InboxMenu'
 import { TabItemPicker } from './HeaderPickers'
+import { useToolbarPanel } from './toolbarPanel'
 import { RepoSettingsDialog } from './RepoSettingsDialog'
 import { displayRemote } from '../lib/links'
 
@@ -60,14 +61,6 @@ function useCurrentRepo(): WorkspaceRepo | null {
   return { key: `${account.host}/${key}`.toLowerCase(), name: parts[1], location: 'github', local: null, github: { host: account.host, owner: parts[0], repo: parts[1] }, remote: null }
 }
 
-/** Where the branch panel goes: over the sidebar, from under the toolbar to the bottom of the window. */
-function branchPanelFrame(anchor: HTMLElement): CSSProperties {
-  const sidebar = (anchor.closest('.tab-pane') ?? document).querySelector('.ws-split > .ws-pane-sized:first-child')
-  const button = anchor.getBoundingClientRect()
-  const { left, width } = sidebar?.getClientRects().length ? sidebar.getBoundingClientRect() : button
-  return { '--ws-branch-top': `${button.bottom}px`, '--ws-branch-left': `${left}px`, '--ws-branch-width': `${width}px` } as CSSProperties
-}
-
 function RenameBranchDialog({ branch, where, taken, onRename, onClose }: { branch: BranchState; where: string; taken: string[]; onRename(name: string): void; onClose(): void }) {
   const [value, setValue] = useState(branch.name)
   const name = value.trim().replace(/\s+/g, '-')
@@ -101,12 +94,11 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const confirm = useConfirm()
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const anchor = useRef<HTMLButtonElement>(null)
-  const [frame, setFrame] = useState<CSSProperties>()
   const [renaming, setRenaming] = useState<BranchState | null>(null)
   const info = useRepoQuery(repo.github?.owner ?? '', repo.github?.repo ?? '', !repo.local && !!repo.github)
   const [filter, setFilter] = useState('')
   const [open, setOpen] = useState(false)
+  const { anchor, frame } = useToolbarPanel(open, 'start')
   const remote = useRemoteBranches(repo)
   const { picked, setPicked, showBranch, shownBranch } = useTabBranch()
   const all = (repo.local ? local.branches.data : remote.data) ?? []
@@ -121,14 +113,6 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const name = filter.trim().replace(/\s+/g, '-')
   const branches = all.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()))
   const exists = local.branches.data?.some((b) => b.name === name)
-
-  useLayoutEffect(() => {
-    if (!open) return
-    const measure = () => setFrame(branchPanelFrame(anchor.current!))
-    measure()
-    window.addEventListener('resize', measure)
-    return () => window.removeEventListener('resize', measure)
-  }, [open])
 
   const branchOptions = async (b: BranchState) => {
     const git = local.git
@@ -189,8 +173,8 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
             <TriangleDownIcon />
           </button>
         </ActionMenu.Anchor>
-        <ActionMenu.Overlay width="medium" className="ws-branch-overlay" style={frame}>
-          <div className="ws-branch-panel">
+        <ActionMenu.Overlay width="medium" className="ws-toolbar-panel" style={frame}>
+          <div className="ws-toolbar-panel-body">
             <div className="ws-menu-filter">
               <TextInput block autoFocus aria-label={repo.local ? 'Filter or name a new branch' : 'Filter branches'} placeholder={repo.local ? 'Filter or name a new branch' : 'Filter branches'} value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
             </div>
