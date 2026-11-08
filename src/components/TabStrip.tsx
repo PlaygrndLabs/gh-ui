@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent } from 'react'
+import { useEffect, useRef, useState, type ElementType, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type WheelEvent } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import {
   CodeIcon,
@@ -9,11 +9,13 @@ import {
   HomeIcon,
   InboxIcon,
   IssueOpenedIcon,
+  MarkGithubIcon,
   PersonIcon,
   PinIcon,
   PlayIcon,
   RepoIcon,
   SearchIcon,
+  ServerIcon,
   XIcon,
   type Icon,
 } from '@primer/octicons-react'
@@ -22,9 +24,11 @@ import { UpdateNotice } from './UpdateNotice'
 import { tabButtonId, tabPanelId, useTabs } from '../lib/TabsProvider'
 import { native, openExternal, type ContextMenuItem } from '../lib/platform'
 import { useGitHub } from '../lib/github'
+import { tabIdentities, type TabIdentity, type TabServer } from '../lib/tabIdentity'
+import { useWorkspaceRepos } from '../lib/workspace'
 import { copyText } from '../lib/format'
 import { webUrl } from '../lib/links'
-import { iconFromPath, repoKeyFromUrl, tabTitle, type Tab, type TabIcon } from '../lib/tabs'
+import { iconFromPath, repoKeyFromUrl, type Tab, type TabIcon } from '../lib/tabs'
 
 const ICONS: Record<TabIcon, Icon> = {
   home: HomeIcon,
@@ -41,6 +45,19 @@ const ICONS: Record<TabIcon, Icon> = {
   person: PersonIcon,
 }
 
+function GitLabMark({ className, size }: { className?: string; size?: number }) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#fc6d26"
+        d="m23.6004 9.5927-.0337-.0862L20.3.9814a.851.851 0 0 0-.3362-.405.8748.8748 0 0 0-.9997.0539.8748.8748 0 0 0-.29.4399l-2.2055 6.748H7.5375l-2.2057-6.748a.8573.8573 0 0 0-.29-.4412.8748.8748 0 0 0-.9997-.0537.8585.8585 0 0 0-.3362.4049L.4332 9.5015l-.0325.0862a6.0657 6.0657 0 0 0 2.0119 7.0105l.0113.0087.03.0213 4.976 3.7264 2.462 1.8633 1.4995 1.1321a1.0085 1.0085 0 0 0 1.2197 0l1.4995-1.1321 2.4619-1.8633 5.006-3.7489.0125-.01a6.0682 6.0682 0 0 0 2.0094-7.003z"
+      />
+    </svg>
+  )
+}
+
+const SERVER_ICONS: Record<TabServer, ElementType> = { github: MarkGithubIcon, gitlab: GitLabMark, mac: DeviceDesktopIcon, server: ServerIcon }
+
 // A press has to travel this far before it counts as dragging the tab.
 const DRAG_THRESHOLD = 4
 const AUTO_SCROLL_EDGE = 24
@@ -54,6 +71,8 @@ type Side = 'left' | 'right'
 export function TabStrip() {
   const { state, active, select, close, split, toggleSplit, pin } = useTabs()
   const { account } = useGitHub()
+  const { repos } = useWorkspaceRepos()
+  const identities = tabIdentities(state.tabs, repos, account.host)
   const list = useRef<HTMLDivElement>(null)
   const [dropSide, setDropSide] = useState<Side | null>(null)
 
@@ -121,6 +140,7 @@ export function TabStrip() {
           <TabItem
             key={tab.id}
             tab={tab}
+            identity={identities.get(tab.id)!}
             active={tab.id === active.id}
             inSplit={!!state.split?.includes(tab.id)}
             live={state.live.includes(tab.id)}
@@ -142,6 +162,7 @@ export function TabStrip() {
 
 function TabItem({
   tab,
+  identity,
   active,
   inSplit,
   live,
@@ -150,6 +171,7 @@ function TabItem({
   onMenu,
 }: {
   tab: Tab
+  identity: TabIdentity
   active: boolean
   inSplit: boolean
   live: boolean
@@ -158,8 +180,8 @@ function TabItem({
   onMenu(): void
 }) {
   const { state, select, close, move, split } = useTabs()
-  const title = tabTitle(tab)
-  const Icon = repoKeyFromUrl(tab.url) ? RepoIcon : ICONS[iconFromPath(tab.url)]
+  const title = identity.branch ? `${identity.name} - ${identity.branch}` : identity.name
+  const Icon = identity.server ? SERVER_ICONS[identity.server] : repoKeyFromUrl(tab.url) ? RepoIcon : ICONS[iconFromPath(tab.url)]
   const stateRef = useRef(state)
   stateRef.current = state
 
@@ -250,7 +272,8 @@ function TabItem({
     <div
       className={`tab-item${active ? ' is-active' : ''}${inSplit ? ' in-split' : ''}${tab.pinned ? ' is-pinned' : ''}`}
       role="presentation"
-      title={title}
+      title={identity.tooltip}
+      data-server={identity.server ?? undefined}
       onPointerDown={onPointerDown}
       onContextMenu={(e) => {
         e.preventDefault()
@@ -271,7 +294,10 @@ function TabItem({
         onClick={() => select(tab.id)}
       >
         <Icon className="tab-icon" size={16} />
-        <span className="tab-title">{title}</span>
+        <span className="tab-title">
+          <span className="tab-name">{identity.name}</span>
+          {identity.branch && <span className="tab-branch">{` - ${identity.branch}`}</span>}
+        </span>
       </button>
       {tab.pinned ? (
         <PinIcon className="tab-pin" size={12} aria-label="Pinned" />

@@ -138,7 +138,9 @@ export function parseRemote(remote: string): { host: string; owner: string; repo
   if (ssh) return { host: ssh[1], owner: ssh[2], repo: ssh[3] }
   try {
     const url = new URL(remote)
-    const [owner, repo] = url.pathname.replace(/^\//, '').replace(/\.git$/, '').split('/')
+    // GitLab nests groups, so everything after the first part is kept, as for SSH above.
+    const [owner, ...rest] = url.pathname.replace(/^\//, '').replace(/\/$/, '').replace(/\.git$/, '').split('/')
+    const repo = rest.join('/')
     if (owner && repo) return { host: url.hostname, owner, repo }
   } catch {
     // not a URL

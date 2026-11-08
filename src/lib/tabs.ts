@@ -382,7 +382,7 @@ const REPO_SECTIONS: Record<string, string> = {
   compare: 'Compare',
 }
 
-const pathParts = (url: string) =>
+export const pathParts = (url: string) =>
   pathnameOf(url)
     .split('/')
     .filter(Boolean)
