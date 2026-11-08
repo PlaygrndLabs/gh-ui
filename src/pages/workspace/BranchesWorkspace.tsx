@@ -33,12 +33,12 @@ function ChangeBadge({ e }: { e: StatusEntry }) {
   )
 }
 
-type BranchTab = 'changes' | 'local' | 'github' | 'pull' | 'checks'
+type BranchTab = 'changes' | 'history' | 'pull' | 'checks'
 
 /** One tab's content. The tab names it, so a heading only appears when there's an action to hold. */
-function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+function Section({ title, action, flush, children }: { title: string; action?: ReactNode; flush?: boolean; children: ReactNode }) {
   return (
-    <section className="ws-section" aria-label={title}>
+    <section className={`ws-section ${flush ? 'ws-section-flush' : ''}`} aria-label={title}>
       {action && <div className="ws-section-head">{action}</div>}
       {children}
     </section>
@@ -47,7 +47,7 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
 
 function CommitRow({ commit, selected, mark, onSelect }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; onSelect(): void }) {
   return (
-    <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''}`} aria-pressed={selected} title={`${shortSha(commit.sha)} · ${firstLine(commit.subject)}`} onClick={onSelect}>
+    <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''}`} aria-pressed={selected} onClick={onSelect}>
       <span className="ws-commit-text">
         <span className="ws-commit-subject">{firstLine(commit.subject)}</span>
         <span className="ws-row-sub">
@@ -61,8 +61,8 @@ function CommitRow({ commit, selected, mark, onSelect }: { commit: LogEntry; sel
         </span>
       </span>
       {mark && (
-        <span className="ws-commit-mark" title={mark === '↑' ? 'Not pushed yet' : 'Not pulled yet'}>
-          {mark === '↑' ? <ArrowUpIcon size={14} /> : <ArrowDownIcon size={14} />}
+        <span className={`ws-commit-mark ${mark === '↑' ? 'is-unpushed' : ''}`} title={mark === '↑' ? 'Not pushed yet' : 'Not pulled yet'}>
+          {mark === '↑' ? <ArrowUpIcon size={12} /> : <ArrowDownIcon size={12} />}
         </span>
       )}
     </button>
@@ -81,6 +81,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const [description, setDescription] = useState('')
   const [dialog, setDialog] = useState<'publish' | null>(null)
   const [chosenTab, setChosenTab] = useState<{ branch: string; tab: BranchTab } | null>(null)
+  const [notPushedOn, setNotPushedOn] = useState<string | null>(null)
   const [genError, setGenError] = useState<string | null>(null)
   const split = readPref('diffSplit', false)
 
@@ -130,10 +131,15 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const data = commits.data
   const shown = [...(data?.local ?? []), ...(data?.incoming ?? []), ...(data?.remote ?? [])]
   // Until you choose a tab, this branch opens on whichever has something to do.
-  const tab: BranchTab = chosenTab && chosenTab.branch === branch?.name && !(chosenTab.tab === 'pull' && isDefault) ? chosenTab.tab : !repo.local ? 'github' : entries.length || stashes.data?.length ? 'changes' : data?.local.length ? 'local' : github || repo.remote ? 'github' : 'changes'
+  const tab: BranchTab = chosenTab && chosenTab.branch === branch?.name && !(chosenTab.tab === 'pull' && isDefault) ? chosenTab.tab : !repo.local ? 'history' : entries.length || stashes.data?.length ? 'changes' : data?.local.length || github || repo.remote ? 'history' : 'changes'
   // The pull request and checks tabs link elsewhere, so they leave the commit pane out.
-  const commitTab = tab === 'changes' || tab === 'local' || tab === 'github'
-  const tabCommits = tab === 'local' ? (data?.local ?? []) : tab === 'github' ? [...(data?.incoming ?? []), ...(data?.remote ?? [])] : tab === 'changes' ? shown : []
+  const commitTab = tab === 'changes' || tab === 'history'
+  // With nowhere to push to, every commit is "not pushed", so saying so tells you nothing.
+  const canPush = !!(github || repo.remote)
+  const unpushed = canPush ? (data?.local ?? []) : []
+  // Pushing the last one empties the filter, so it lets go by itself.
+  const onlyNotPushed = notPushedOn === branch?.name && unpushed.length > 0
+  const tabCommits = tab === 'history' && onlyNotPushed ? unpushed : commitTab ? shown : []
   const entry = tab === 'changes' ? (entries.find((e) => selection?.kind === 'file' && e.path === selection.path) ?? entries[0] ?? null) : null
   const commit = entry ? null : (tabCommits.find((c) => selection?.kind === 'commit' && c.sha === selection.sha) ?? tabCommits[0] ?? null)
 
@@ -207,14 +213,13 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       await local.git!.undoCommit()
       setSummary(firstLine(subject))
       setSelection(null)
+      // The commit's files and message are back in Changes, so show them there.
+      if (branch) setChosenTab({ branch: branch.name, tab: 'changes' })
     })
 
-  const localCount = isCurrent ? (data?.local.length ?? 0) : branch?.ahead ?? 0
-  const githubCount = (data?.remote.length ?? 0) + (data?.incoming.length ?? 0)
   const tabs: Array<{ id: BranchTab; label: string; count?: number; show: boolean }> = [
     { id: 'changes', label: 'Changes', count: entries.length, show: !!repo.local },
-    { id: 'local', label: 'On this Mac', count: localCount, show: !!repo.local },
-    { id: 'github', label: `On ${host}`, count: githubCount, show: true },
+    { id: 'history', label: 'History', show: true },
     { id: 'pull', label: 'Pull request', show: !!github && !isDefault },
     { id: 'checks', label: 'Checks', show: !!github },
   ]
@@ -288,32 +293,42 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           </Section>
         )}
 
-        {tab === 'local' && (
+        {tab === 'history' && (
           <Section
-            title="Only on this Mac"
+            title="History"
+            flush
             action={
-              isCurrent && data?.local.length ? (
-                <Button size="small" leadingVisual={UndoIcon} onClick={() => undo(data.local[0].subject)}>
-                  Undo last commit
-                </Button>
+              unpushed.length > 0 || (isCurrent && !!data?.local.length) ? (
+                <>
+                  {unpushed.length > 0 && (
+                    <button
+                      type="button"
+                      className="ws-history-filter"
+                      aria-pressed={onlyNotPushed}
+                      onClick={() => {
+                        setNotPushedOn(onlyNotPushed ? null : branch.name)
+                        setSelection(null)
+                      }}
+                    >
+                      <ArrowUpIcon size={12} />
+                      Not pushed
+                      <span className="ws-pill">{unpushed.length}</span>
+                    </button>
+                  )}
+                  {isCurrent && !!data?.local.length && (
+                    <Button size="small" variant="invisible" leadingVisual={UndoIcon} className="ws-history-end" onClick={() => undo(data.local[0].subject)}>
+                      Undo last commit
+                    </Button>
+                  )}
+                </>
               ) : undefined
             }
           >
-            {data?.local.map((c) => <CommitRow key={c.sha} commit={c} mark="↑" selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
-            {data && !data.local.length && <p className="ws-note">Everything on this branch is pushed.</p>}
-          </Section>
-        )}
-
-        {tab === 'github' && (
-          <Section title={`On ${host}`}>
-            {!github && !repo.remote && (
-              <>
-                <p className="ws-note">This repository isn’t on GitHub yet.</p>
-              </>
-            )}
-            {data?.incoming.map((c) => <CommitRow key={c.sha} commit={c} mark="↓" selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
-            {data?.remote.map((c) => <CommitRow key={c.sha} commit={c} selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
-            {(github || repo.remote) && branch.location === 'local' && <p className="ws-note">This branch isn’t on {host} yet.</p>}
+            {data?.local.map((c) => <CommitRow key={c.sha} commit={c} mark={canPush ? '↑' : undefined} selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
+            {!onlyNotPushed && data?.incoming.map((c) => <CommitRow key={c.sha} commit={c} mark="↓" selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
+            {!onlyNotPushed && data?.remote.map((c) => <CommitRow key={c.sha} commit={c} selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
+            {data && !shown.length && <p className="ws-note">No commits on this branch yet.</p>}
+            {canPush && branch.location === 'local' && <p className="ws-note">This branch isn’t on {host} yet.</p>}
           </Section>
         )}
 
