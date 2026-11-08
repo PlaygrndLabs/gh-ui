@@ -29,7 +29,7 @@ interface PickerProps<F extends string> {
 function Picker<F extends string>({ icon: Glyph, kind, value, placeholder, filters, filter, onFilter, loading, empty, foot, children }: PickerProps<F>) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const { anchor, frame } = useToolbarPanel(open, 'button')
+  const { anchor, frame } = useToolbarPanel(open)
   const close = () => {
     setOpen(false)
     setQuery('')

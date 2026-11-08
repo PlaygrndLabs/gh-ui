@@ -42,9 +42,6 @@ export function keyWidth(width: number, key: string, bounds: PaneBounds, sized: 
   return clampWidth(width + toward * PANE_KEY_STEP * (sized === 'first' ? 1 : -1), bounds)
 }
 
-/** The Branch tab's sidebar. The toolbar's menus take their width from it. */
-export const BRANCH_SIDEBAR = { id: 'branch-timeline', defaultWidth: 420, min: 280, max: 800 }
-
 /** A saved state as a valid one: the bounds may have changed since, and preferences can be edited or truncated. */
 export function restorePaneState(saved: Partial<PaneState> | null | undefined, defaultWidth: number, bounds: PaneBounds): PaneState {
   const width = typeof saved?.width === 'number' && Number.isFinite(saved.width) ? saved.width : defaultWidth

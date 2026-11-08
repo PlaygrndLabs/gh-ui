@@ -159,7 +159,7 @@ exports.steps = [
     `,
   },
   {
-    name: 'the toolbar menus share one panel: full height, the branch menu at the sidebar width and a picker at its button width',
+    name: 'the toolbar menus share one panel: full height, each as wide as its button',
     js: `${helpers}
       const visible = (sel) => [...document.querySelectorAll(sel)].find((s) => s.getClientRects().length)
       const measure = async (sel) => {
@@ -176,7 +176,22 @@ exports.steps = [
       const branch = await measure('.ws-header .ws-seg-branch')
       const pick = await measure('.ws-header .ws-seg-pick')
       const r = { branch, pick, windowH: innerHeight }
-      r.fail = !(branch.left === 0 && branch.width === 420 && Math.abs(pick.width - pick.buttonWidth) < 1 && Math.abs(pick.left - pick.buttonLeft) < 1 && branch.bottom === innerHeight && pick.bottom === innerHeight && branch.top === pick.top)
+      r.fail = !(branch.width >= 340 && Math.abs(branch.width - branch.buttonWidth) < 1 && Math.abs(branch.left - branch.buttonLeft) < 1 && Math.abs(pick.width - pick.buttonWidth) < 1 && Math.abs(pick.left - pick.buttonLeft) < 1 && branch.bottom === innerHeight && pick.bottom === innerHeight && branch.top === pick.top)
+      return r
+    `,
+  },
+  {
+    name: 'the Location button offers Clone, with no separate sync button',
+    js: `${helpers}
+      const r = { sync: [...document.querySelectorAll('.ws-seg-sync')].filter((s) => s.getClientRects().length).length }
+      const action = [...document.querySelectorAll('.ws-seg-where .ws-seg-action')].find((s) => s.getClientRects().length)
+      r.label = action?.textContent.trim()
+      action.click()
+      const dialog = await until(() => document.querySelector('[role=dialog]'), 5000)
+      r.dialog = dialog?.textContent.includes('Clone a repository')
+      byText('[role=dialog] button', 'Cancel').click()
+      await until(() => !document.querySelector('[role=dialog]'), 3000)
+      r.fail = !(r.sync === 0 && r.label === 'On GitHubClone repository' && r.dialog)
       return r
     `,
   },
@@ -660,10 +675,12 @@ exports.steps = [
         showsUntracked: text.includes('scratch.txt'),
         commitButton: !!byText('button', 'Commit to main'),
         branch: !!byText('.ws-seg-value', 'main'),
-        sync: !!byText('.ws-seg-value', 'Publish repository'),
+        sync: !!byText('.ws-seg-where .ws-seg-value', 'Publish repository') && ![...document.querySelectorAll('.ws-seg-sync')].some((s) => s.getClientRects().length),
         navigation: [...document.querySelectorAll('.ws-tabs')].filter((n) => n.getClientRects().length).map((n) => /^Branch\\b/.test(n.innerText))[0],
       }
-      r.fail = !(r.showsUntracked && r.commitButton && r.branch && r.sync && r.navigation)
+      const publish = byText('.ws-seg-where .ws-seg-value', 'Publish repository')
+      r.fullLabel = publish.scrollWidth <= publish.clientWidth
+      r.fail = !(r.showsUntracked && r.commitButton && r.branch && r.sync && r.navigation && r.fullLabel)
       return r
     `,
   },
@@ -673,7 +690,7 @@ exports.steps = [
     js: `${helpers}
       const seg = () => [...document.querySelectorAll('.ws-seg-where')].find((x) => x.getClientRects().length)
       const r = { before: seg()?.textContent.trim() }
-      seg().click()
+      seg().querySelector('.ws-seg-gear').click()
       const dialog = await until(() => document.querySelector('[role=dialog]'), 5000)
       r.empty = dialog.textContent.includes('No remote yet')
       const set = (label, value) => {
@@ -821,7 +838,7 @@ exports.steps = [
     `,
   },
   {
-    name: 'branches: the panel covers the sidebar, and a right-click renames, copies and deletes',
+    name: 'branches: the panel fits its button, and a right-click renames, copies and deletes',
     js: `${helpers}
       const r = {}
       const seg = () => [...document.querySelectorAll('.ws-header .ws-seg-branch')].find((s) => s.getClientRects().length)
@@ -837,7 +854,8 @@ exports.steps = [
       const side = main().querySelector('.ws-pane-sized').getBoundingClientRect()
       const list = document.querySelector('.ws-toolbar-panel-body').getBoundingClientRect()
       Object.assign(r, { box: [box.left, box.top, box.width, box.bottom], side: [side.left, side.width], windowH: innerHeight, listBottom: list.bottom, segBottom: seg().getBoundingClientRect().bottom })
-      r.aligned = Math.abs(box.left - side.left) < 1 && Math.abs(box.width - side.width) < 1 && Math.abs(box.bottom - innerHeight) < 1 && Math.abs(box.top - r.segBottom) < 1 && Math.abs(list.bottom - innerHeight) < 2
+      const button = seg().getBoundingClientRect()
+      r.aligned = Math.abs(box.left - button.left) < 1 && Math.abs(box.width - button.width) < 1 && Math.abs(box.bottom - innerHeight) < 1 && Math.abs(box.top - r.segBottom) < 1 && Math.abs(list.bottom - innerHeight) < 2
       const rightClick = (n) => row(n).querySelector('span').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
       // Nothing picked: the panel stays and the items can be read.
       window.__e2eMenuPick = null

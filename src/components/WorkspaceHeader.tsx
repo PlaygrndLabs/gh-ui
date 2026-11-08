@@ -98,7 +98,7 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const info = useRepoQuery(repo.github?.owner ?? '', repo.github?.repo ?? '', !repo.local && !!repo.github)
   const [filter, setFilter] = useState('')
   const [open, setOpen] = useState(false)
-  const { anchor, frame } = useToolbarPanel(open, 'start')
+  const { anchor, frame } = useToolbarPanel(open)
   const remote = useRemoteBranches(repo)
   const { picked, setPicked, showBranch, shownBranch } = useTabBranch()
   const all = (repo.local ? local.branches.data : remote.data) ?? []
@@ -225,13 +225,19 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   )
 }
 
-/** Where this repository lives. For a folder it also opens the folder's settings. */
+/**
+ * Where this repository lives, and the one-time step that puts it in a second place: Clone for a repository only on
+ * GitHub, Publish for a folder only on this Mac. A folder also opens its settings from here.
+ */
 function LocationSeg({ repo }: { repo: WorkspaceRepo }) {
-  const [open, setOpen] = useState(false)
+  const [dialog, setDialog] = useState<'settings' | 'clone' | 'publish' | null>(null)
+  const close = () => setDialog(null)
   const Icon = repo.location === 'local' ? DeviceDesktopIcon : hostName(repo) === 'GitHub' ? MarkGithubIcon : CloudIcon
+  const setup = repo.location === 'github' ? 'clone' : repo.location === 'local' ? 'publish' : null
   // The label holds "On this Mac and", so the name that matters is never the part cut off.
-  const key = repo.remote ? 'On this Mac and' : 'Location'
-  const value = repo.remote ? repo.remote.provider : repo.location === 'github' ? 'GitHub' : 'Only on this Mac'
+  const key = setup === 'clone' ? 'On GitHub' : setup === 'publish' ? 'Only on this Mac' : 'On this Mac and'
+  const value = setup === 'clone' ? SYNC_LABEL.clone : setup === 'publish' ? SYNC_LABEL['publish-repo'] : repo.remote?.provider
+  const title = repo.remote ? `${repoWhere(repo)} · ${repo.remote.name}: ${displayRemote(repo.remote.url)}` : repoWhere(repo)
   const body = (
     <>
       <Icon />
@@ -241,35 +247,42 @@ function LocationSeg({ repo }: { repo: WorkspaceRepo }) {
       </span>
     </>
   )
-  const title = repo.remote ? `${repoWhere(repo)} · ${repo.remote.name}: ${displayRemote(repo.remote.url)}` : repoWhere(repo)
-  if (!repo.local)
-    return (
-      <div className="ws-seg ws-seg-where" title={title}>
-        {body}
-      </div>
-    )
+  const settings = (
+    <button type="button" className="ws-seg-gear" title="Repository settings" aria-label="Repository settings" onClick={() => setDialog('settings')}>
+      <GearIcon />
+    </button>
+  )
   return (
     <>
-      <button type="button" className="ws-seg ws-seg-where" title={title} aria-label={`Repository settings. ${repoWhere(repo)}`} onClick={() => setOpen(true)}>
-        {body}
-        <GearIcon />
-      </button>
-      {open && <RepoSettingsDialog repo={repo} onClose={() => setOpen(false)} />}
+      {setup ? (
+        <div className="ws-seg ws-seg-where ws-seg-merged" title={title}>
+          <button type="button" className="ws-seg ws-seg-action" onClick={() => setDialog(setup)}>
+            {body}
+          </button>
+          {repo.local && settings}
+        </div>
+      ) : (
+        <button type="button" className="ws-seg ws-seg-where" title={title} aria-label={`Repository settings. ${repoWhere(repo)}`} onClick={() => setDialog('settings')}>
+          {body}
+          <GearIcon />
+        </button>
+      )}
+      {dialog === 'settings' && <RepoSettingsDialog repo={repo} onClose={close} />}
+      {dialog === 'publish' && <PublishDialog repo={repo} onClose={close} />}
+      {dialog === 'clone' && repo.github && <CloneDialog initial={`${repo.github.owner}/${repo.github.repo}`} onClose={close} onCloned={close} />}
     </>
   )
 }
 
 function SyncButton({ repo }: { repo: WorkspaceRepo }) {
   const local = useLocalRepo(repo.local)
-  const [publishing, setPublishing] = useState(false)
-  const [cloning, setCloning] = useState(false)
   const action = syncAction(repo.location, local.status.data)
   const [fetched, setFetched] = useState<Date | null>(null)
+  // The Location button offers these.
+  if (action?.kind === 'clone' || action?.kind === 'publish-repo') return null
   if (!action) return <div className="ws-seg ws-seg-sync" />
   const run = () => {
     const { git, op } = local
-    if (action.kind === 'clone') return setCloning(true)
-    if (action.kind === 'publish-repo') return setPublishing(true)
     op.mutate(async () => {
       if (action.kind === 'publish-branch') await git!.publishBranch()
       else if (action.kind === 'pull') await git!.pull()
@@ -278,11 +291,11 @@ function SyncButton({ repo }: { repo: WorkspaceRepo }) {
       setFetched(new Date())
     })
   }
-  const hint = local.op.isPending ? 'Working…' : repo.location === 'github' ? 'Not on this Mac yet' : repo.location === 'local' ? 'Not on GitHub yet' : action.kind === 'publish-branch' ? 'Only on this Mac' : fetched ? `Synced at ${fetched.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not synced this session'
+  const hint = local.op.isPending ? 'Working…' : action.kind === 'publish-branch' ? 'Only on this Mac' : fetched ? `Synced at ${fetched.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not synced this session'
   return (
     <>
       <button type="button" className="ws-seg ws-seg-sync" disabled={local.op.isPending} onClick={run}>
-        <SyncIcon />
+        <SyncIcon className={local.op.isPending ? 'ws-spin' : undefined} />
         <span className="ws-seg-text">
           <span className="ws-seg-key">{hint}</span>
           <span className="ws-seg-value">{SYNC_LABEL[action.kind].replace('origin', repo.remote?.name ?? 'origin')}</span>
@@ -293,8 +306,6 @@ function SyncButton({ repo }: { repo: WorkspaceRepo }) {
           </span>
         )}
       </button>
-      {publishing && repo.local && <PublishDialog repo={repo} onClose={() => setPublishing(false)} />}
-      {cloning && repo.github && <CloneDialog initial={`${repo.github.owner}/${repo.github.repo}`} onClose={() => setCloning(false)} onCloned={() => setCloning(false)} />}
       {local.error && <Banner className="ws-error" variant="critical" title="Git said" description={local.error} onDismiss={local.clearError} />}
     </>
   )
