@@ -159,6 +159,74 @@ exports.steps = [
     `,
   },
   {
+    name: 'the toolbar menus share one panel: full height, each as wide as its button',
+    js: `${helpers}
+      const visible = (sel) => [...document.querySelectorAll(sel)].find((s) => s.getClientRects().length)
+      const measure = async (sel) => {
+        const button = visible(sel)
+        button.click()
+        const panel = await until(() => document.querySelector('.ws-toolbar-panel'), 8000)
+        await sleep(200)
+        const b = panel.getBoundingClientRect()
+        const seen = { left: b.left, top: b.top, width: b.width, bottom: b.bottom, buttonLeft: button.getBoundingClientRect().left, buttonWidth: button.getBoundingClientRect().width }
+        button.click()
+        await until(() => !document.querySelector('.ws-toolbar-panel'), 3000)
+        return seen
+      }
+      const branch = await measure('.ws-header .ws-seg-branch')
+      const pick = await measure('.ws-header .ws-seg-pick')
+      const r = { branch, pick, windowH: innerHeight }
+      r.fail = !(branch.width >= 340 && Math.abs(branch.width - branch.buttonWidth) < 1 && Math.abs(branch.left - branch.buttonLeft) < 1 && Math.abs(pick.width - pick.buttonWidth) < 1 && Math.abs(pick.left - pick.buttonLeft) < 1 && branch.bottom === innerHeight && pick.bottom === innerHeight && branch.top === pick.top)
+      return r
+    `,
+  },
+  {
+    name: 'the Location button offers Clone, with no separate sync button',
+    js: `${helpers}
+      const r = { sync: [...document.querySelectorAll('.ws-seg-sync')].filter((s) => s.getClientRects().length).length }
+      const action = [...document.querySelectorAll('.ws-seg-where .ws-seg-action')].find((s) => s.getClientRects().length)
+      r.label = action?.textContent.trim()
+      action.click()
+      const dialog = await until(() => document.querySelector('[role=dialog]'), 5000)
+      r.dialog = dialog?.textContent.includes('Clone a repository')
+      byText('[role=dialog] button', 'Cancel').click()
+      await until(() => !document.querySelector('[role=dialog]'), 3000)
+      r.fail = !(r.sync === 0 && r.label === 'On GitHubClone repository' && r.dialog)
+      return r
+    `,
+  },
+  {
+    name: 'the pull request picker is on every page, and picking a branch opens the Branch tab',
+    js: `${helpers}
+      const visible = (sel) => [...document.querySelectorAll(sel)].filter((s) => s.getClientRects().length)
+      const tab = (name) => visible('.ws-tabs a').find((a) => a.textContent.trim().startsWith(name))
+      const onPath = (test) => until(() => test(savedActiveUrl()), 8000)
+      const r = {}
+      tab('Branch').click()
+      r.onBranch = !!(await until(() => main()?.querySelector('.ws-branch-title'), 15000))
+      r.pickerOnBranch = visible('.ws-seg-pick').length === 1
+      visible('.ws-seg-pick')[0].click()
+      const pulls = await until(() => { const l = [...document.querySelectorAll('.ws-toolbar-panel [role=menuitemradio]')]; return l.length > 1 && l }, 15000)
+      pulls?.[0].click()
+      r.movedToPull = !!(await onPath((u) => u.includes('/pull/')))
+      r.url = savedActiveUrl()
+      await sleep(300)
+      visible('.ws-seg-branch')[0].click()
+      const branches = await until(() => { const l = [...document.querySelectorAll('.ws-toolbar-panel [role=menuitemradio]')]; return l.length > 1 && l }, 8000)
+      branches.find((i) => i.getAttribute('aria-checked') === 'true').click()
+      r.backOnBranch = !!(await onPath((u) => !u.includes('/pull')))
+      r.branchPage = !!(await until(() => main()?.querySelector('.ws-branch-title'), 8000))
+      tab('Actions').click()
+      await until(() => visible('.ws-seg-pick').length === 2, 15000)
+      r.pickersOnActions = visible('.ws-seg-pick').map((s) => s.querySelector('.ws-seg-key').textContent.split(' ')[0])
+      tab('Pull requests').click()
+      await onPath((u) => u.includes('/pull'))
+      r.fail = !(r.onBranch && r.pickerOnBranch && r.movedToPull && r.backOnBranch && r.branchPage && r.pickersOnActions.length === 2 && r.pickersOnActions[0] === 'Pull')
+      return r
+    `,
+    screenshot: 'pickers-everywhere',
+  },
+  {
     name: 'pull requests: commits and one commit’s changes',
     js: `${helpers}
       const link = [...main().querySelectorAll('.ws-pr-code .ws-tab')].find((a) => a.textContent.includes('Commits'))
@@ -183,7 +251,8 @@ exports.steps = [
       await sleep(200)
       const leftAt = filesPane().scrollTop
       ;[...document.querySelectorAll('.ws-tabs a')].filter((a) => a.getClientRects().length).find((a) => a.textContent.includes('Actions')).click()
-      const pick = () => [...document.querySelectorAll('.ws-header .ws-seg-pick')].find((s) => s.getClientRects().length)
+      // The run picker comes after the pull request picker, which is on every page.
+      const pick = () => [...document.querySelectorAll('.ws-header .ws-seg-pick')].filter((s) => s.getClientRects().length).at(-1)
       const row = await until(() => pick() && !pick().innerText.includes('Choose a run') && pick().innerText.includes('Run'), 20000)
       await until(() => main()?.querySelector('.run-title'), 20000)
       const r = { selected: !!row, seg: pick()?.innerText.replace(/\\s+/g, ' '), sideList: main()?.querySelectorAll('.ws-list').length, title: main()?.querySelector('.run-title')?.innerText.slice(0, 80), pageLink: !!main()?.innerHTML.includes('Copy link to this run') }
@@ -638,10 +707,12 @@ exports.steps = [
         showsUntracked: text.includes('scratch.txt'),
         commitButton: !!byText('button', 'Commit to main'),
         branch: !!byText('.ws-seg-value', 'main'),
-        sync: !!byText('.ws-seg-value', 'Publish repository'),
+        sync: !!byText('.ws-seg-where .ws-seg-value', 'Publish repository') && ![...document.querySelectorAll('.ws-seg-sync')].some((s) => s.getClientRects().length),
         navigation: [...document.querySelectorAll('.ws-tabs')].filter((n) => n.getClientRects().length).map((n) => /^Branch\\b/.test(n.innerText))[0],
       }
-      r.fail = !(r.showsUntracked && r.commitButton && r.branch && r.sync && r.navigation)
+      const publish = byText('.ws-seg-where .ws-seg-value', 'Publish repository')
+      r.fullLabel = publish.scrollWidth <= publish.clientWidth
+      r.fail = !(r.showsUntracked && r.commitButton && r.branch && r.sync && r.navigation && r.fullLabel)
       return r
     `,
   },
@@ -651,7 +722,7 @@ exports.steps = [
     js: `${helpers}
       const seg = () => [...document.querySelectorAll('.ws-seg-where')].find((x) => x.getClientRects().length)
       const r = { before: seg()?.textContent.trim() }
-      seg().click()
+      seg().querySelector('.ws-seg-gear').click()
       const dialog = await until(() => document.querySelector('[role=dialog]'), 5000)
       r.empty = dialog.textContent.includes('No remote yet')
       const set = (label, value) => {
@@ -799,7 +870,7 @@ exports.steps = [
     `,
   },
   {
-    name: 'branches: the panel covers the sidebar, and a right-click renames, copies and deletes',
+    name: 'branches: the panel fits its button, and a right-click renames, copies and deletes',
     js: `${helpers}
       const r = {}
       const seg = () => [...document.querySelectorAll('.ws-header .ws-seg-branch')].find((s) => s.getClientRects().length)
@@ -808,14 +879,15 @@ exports.steps = [
       await until(() => main()?.querySelector('.ws-pane-sized'))
       await sleep(16000) // The branch list refreshes on a timer.
       seg().click()
-      const row = (n) => [...document.querySelectorAll('.ws-branch-panel [role=menuitemradio], .ws-branch-panel li')].find((x) => x.textContent.includes(n))
+      const row = (n) => [...document.querySelectorAll('.ws-toolbar-panel-body [role=menuitemradio], .ws-toolbar-panel-body li')].find((x) => x.textContent.includes(n))
       await until(() => row('menu-old'), 5000)
       await sleep(200)
-      const box = document.querySelector('.ws-branch-overlay').getBoundingClientRect()
+      const box = document.querySelector('.ws-toolbar-panel').getBoundingClientRect()
       const side = main().querySelector('.ws-pane-sized').getBoundingClientRect()
-      const list = document.querySelector('.ws-branch-panel .ws-menu-list').getBoundingClientRect()
+      const list = document.querySelector('.ws-toolbar-panel-body').getBoundingClientRect()
       Object.assign(r, { box: [box.left, box.top, box.width, box.bottom], side: [side.left, side.width], windowH: innerHeight, listBottom: list.bottom, segBottom: seg().getBoundingClientRect().bottom })
-      r.aligned = Math.abs(box.left - side.left) < 1 && Math.abs(box.width - side.width) < 1 && Math.abs(box.bottom - innerHeight) < 1 && Math.abs(box.top - r.segBottom) < 1 && Math.abs(list.bottom - innerHeight) < 2
+      const button = seg().getBoundingClientRect()
+      r.aligned = Math.abs(box.left - button.left) < 1 && Math.abs(box.width - button.width) < 1 && Math.abs(box.bottom - innerHeight) < 1 && Math.abs(box.top - r.segBottom) < 1 && Math.abs(list.bottom - innerHeight) < 2
       const rightClick = (n) => row(n).querySelector('span').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
       // Nothing picked: the panel stays and the items can be read.
       window.__e2eMenuPick = null

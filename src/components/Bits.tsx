@@ -62,6 +62,22 @@ export function Loading({ label = 'Loading' }: { label?: string }) {
   )
 }
 
+/** The whole window while the app starts: its icon, a commit graph, drawing itself. */
+export function AppLoading({ label = 'Loading' }: { label?: string }) {
+  return (
+    <div className="app-loading" role="status" aria-label={label}>
+      <svg className="boot-mark" viewBox="0 0 32 32" width="88" height="88" fill="none" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true">
+        <circle className="boot-node boot-a" cx="10" cy="9" r="2.6" />
+        <path className="boot-line boot-trunk" pathLength={1} d="M10 11.6v8.8" />
+        <circle className="boot-node boot-b" cx="10" cy="23" r="2.6" />
+        <circle className="boot-node boot-c" cx="22" cy="23" r="2.6" />
+        <path className="boot-line boot-branch" pathLength={1} d="M22 20.4V14a3 3 0 0 0-3-3h-4" />
+        <path className="boot-line boot-head" pathLength={1} d="m17 8-2.6 3 2.6 3" />
+      </svg>
+    </div>
+  )
+}
+
 export function ErrorBox({ error, title = 'Something went wrong' }: { error: unknown; title?: string }) {
   const status = (error as { status?: number } | null)?.status
   const hint =
