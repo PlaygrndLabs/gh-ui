@@ -972,7 +972,10 @@ exports.steps = [
       clickLink('/PlaygrndLabs/gh-ui/actions/runs/42027302260')
       const paths = await until(() => document.querySelectorAll('.run-graph-lines path').length, 20000)
       const r = { paths, cards: document.querySelectorAll('.graph-card').length }
-      r.fail = paths !== 3
+      const lines = [...main().querySelectorAll('nav [data-component="ActionList.Divider"]')]
+      r.dividers = lines.length
+      r.doubled = lines.filter((d) => d.nextElementSibling?.matches('[data-component="ActionList.Divider"]')).length
+      r.fail = paths !== 3 || r.dividers !== 2 || r.doubled !== 0
       return r
     `,
   },
