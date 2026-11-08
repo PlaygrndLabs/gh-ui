@@ -13,12 +13,26 @@ describe('buildWorkspaceRepos', () => {
     expect(repo.local?.id).toBe('checkout')
   })
 
-  it('keeps a folder without a remote, or with one that isn’t a GitHub URL', () => {
-    const repos = buildWorkspaceRepos([folder('notes', 1), folder('odd', 2, '/mnt/backup/odd.git')], [])
-    expect(repos.map((r) => [r.key, r.location, r.github])).toEqual([
-      ['local/notes', 'local', null],
-      ['local/odd', 'local', null],
+  it('keeps a folder without a remote as local', () => {
+    const [repo] = buildWorkspaceRepos([folder('notes', 1)], [])
+    expect([repo.key, repo.location, repo.github, repo.remote]).toEqual(['local/notes', 'local', null, null])
+  })
+
+  it('never treats a folder with any remote as unpublished, or a non-GitHub remote as GitHub', () => {
+    const repos = buildWorkspaceRepos([folder('lab', 1, 'git@gitlab.com:acme/web.git'), folder('corp', 2, 'https://git.corp.example/x/y.git'), folder('odd', 3, '/mnt/backup/odd.git'), folder('nested', 4, 'https://gitlab.com/a/b/c.git')], [])
+    expect(repos.map((r) => [r.key, r.location, r.github, r.remote?.provider])).toEqual([
+      ['local/lab', 'both', null, 'GitLab'],
+      ['local/corp', 'both', null, 'git.corp.example'],
+      ['local/odd', 'both', null, 'another folder'],
+      ['local/nested', 'both', null, 'GitLab'],
     ])
+    expect(repos.every((r) => syncAction(r.location, { upstream: 'origin/main', ahead: 0, behind: 0 })?.kind !== 'publish-repo')).toBe(true)
+  })
+
+  it('treats the signed-in Enterprise server as GitHub', () => {
+    const [repo] = buildWorkspaceRepos([folder('ghe', 1, 'https://ghe.example.com/acme/web.git')], [], 'ghe.example.com')
+    expect(repo.github).toEqual({ host: 'ghe.example.com', owner: 'acme', repo: 'web' })
+    expect(repo.remote?.provider).toBe('GitHub')
   })
 
   it('merges a GitHub-only repository with a folder of it, ignoring case', () => {

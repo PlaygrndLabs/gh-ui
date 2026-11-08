@@ -37,5 +37,5 @@ function WorkspaceHome() {
   if (isLoading) return <Loading />
   const key = githubKey({ host: account.host, owner, repo })
   const known = repos.find((r) => r.key === key)
-  return <BranchesWorkspace key={key} repo={known ?? { key, name: repo, location: 'github', local: null, github: { host: account.host, owner, repo } }} />
+  return <BranchesWorkspace key={key} repo={known ?? { key, name: repo, location: 'github', local: null, github: { host: account.host, owner, repo }, remote: null }} />
 }

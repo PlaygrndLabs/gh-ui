@@ -6,7 +6,7 @@ import { ArrowDownIcon, ArrowUpIcon, CheckIcon, LinkExternalIcon, LinkIcon, Spar
 import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { generateCommitMessage } from '../../lib/agent/oneshot'
 import type { FileDiff } from '../../lib/diff'
-import { changePaths, isStaged, isUnmerged, type BranchState, type LogEntry, type StatusEntry } from '../../lib/git'
+import { changePaths, isStaged, isUnmerged, type LogEntry, type StatusEntry } from '../../lib/git'
 import { errorMessage, useGitHub } from '../../lib/github'
 import { webUrl } from '../../lib/links'
 import { openExternal } from '../../lib/platform'
@@ -14,14 +14,12 @@ import { firstLine, shortSha } from '../../lib/format'
 import { readPref } from '../../lib/storage'
 import { useLocalRepo } from '../../lib/useLocalRepo'
 import { useRepoQuery } from '../../lib/repo'
-import { useRemoteBranches, type WorkspaceRepo } from '../../lib/workspace'
+import { hostName, useRemoteBranches, type WorkspaceRepo } from '../../lib/workspace'
 import { CopyButton, Loading } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
 import { SplitPane } from '../../components/SplitPane'
 import { PublishDialog } from '../../components/WorkspaceHeader'
 import { useTabBranch } from '../../lib/TabsProvider'
-
-const PLACE: Record<BranchState['location'], string> = { both: 'On this Mac and GitHub', local: 'Only on this Mac', remote: 'Only on GitHub' }
 
 type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | null
 
@@ -87,6 +85,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const split = readPref('diffSplit', false)
 
   const remoteBranches = useRemoteBranches(repo)
+  const host = hostName(repo)
   const branches = (repo.local ? local.branches.data : remoteBranches.data) ?? []
   const status = local.status.data
   // The top menu chooses: in a folder by checking out, without one by picking.
@@ -131,7 +130,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const data = commits.data
   const shown = [...(data?.local ?? []), ...(data?.incoming ?? []), ...(data?.remote ?? [])]
   // Until you choose a tab, this branch opens on whichever has something to do.
-  const tab: BranchTab = chosenTab && chosenTab.branch === branch?.name && !(chosenTab.tab === 'pull' && isDefault) ? chosenTab.tab : !repo.local ? 'github' : entries.length || stashes.data?.length ? 'changes' : data?.local.length ? 'local' : github ? 'github' : 'changes'
+  const tab: BranchTab = chosenTab && chosenTab.branch === branch?.name && !(chosenTab.tab === 'pull' && isDefault) ? chosenTab.tab : !repo.local ? 'github' : entries.length || stashes.data?.length ? 'changes' : data?.local.length ? 'local' : github || repo.remote ? 'github' : 'changes'
   // The pull request and checks tabs link elsewhere, so they leave the commit pane out.
   const commitTab = tab === 'changes' || tab === 'local' || tab === 'github'
   const tabCommits = tab === 'local' ? (data?.local ?? []) : tab === 'github' ? [...(data?.incoming ?? []), ...(data?.remote ?? [])] : tab === 'changes' ? shown : []
@@ -175,7 +174,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     label: `the branches of ${github ? `${github.owner}/${github.repo}` : repo.name}${repo.local ? ` with a local folder at ${repo.local.path}` : ''}`,
     owner: github?.owner,
     repo: github?.repo,
-    details: { branch: branch?.name, where: branch ? PLACE[branch.location] : undefined, ahead: branch?.ahead, behind: branch?.behind, changed_files: repo.local ? entries.length : undefined, note: repo.local ? 'Agent GitHub tools see only pushed code, not local changes.' : undefined },
+    details: { branch: branch?.name, where: branch ? { both: `On this Mac and ${host}`, local: 'Only on this Mac', remote: `Only on ${host}` }[branch.location] : undefined, ahead: branch?.ahead, behind: branch?.behind, changed_files: repo.local ? entries.length : undefined, note: repo.local ? 'Agent GitHub tools see only pushed code, not local changes.' : undefined },
   })
 
   const toggleAll = async () => {
@@ -215,7 +214,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const tabs: Array<{ id: BranchTab; label: string; count?: number; show: boolean }> = [
     { id: 'changes', label: 'Changes', count: entries.length, show: !!repo.local },
     { id: 'local', label: 'On this Mac', count: localCount, show: !!repo.local },
-    { id: 'github', label: 'On GitHub', count: githubCount, show: true },
+    { id: 'github', label: `On ${host}`, count: githubCount, show: true },
     { id: 'pull', label: 'Pull request', show: !!github && !isDefault },
     { id: 'checks', label: 'Checks', show: !!github },
   ]
@@ -306,15 +305,15 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
         )}
 
         {tab === 'github' && (
-          <Section title="On GitHub">
-            {!github && (
+          <Section title={`On ${host}`}>
+            {!github && !repo.remote && (
               <>
                 <p className="ws-note">This repository isn’t on GitHub yet.</p>
               </>
             )}
             {data?.incoming.map((c) => <CommitRow key={c.sha} commit={c} mark="↓" selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
             {data?.remote.map((c) => <CommitRow key={c.sha} commit={c} selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
-            {github && branch.location === 'local' && <p className="ws-note">This branch isn’t on GitHub yet.</p>}
+            {(github || repo.remote) && branch.location === 'local' && <p className="ws-note">This branch isn’t on {host} yet.</p>}
           </Section>
         )}
 
@@ -432,7 +431,6 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
               <div className="ws-branch-head">
                 <div className="ws-branch-title">
                   <span className="text-mono text-bold">{branch.name}</span>
-                  <span className="ws-tag">{PLACE[branch.location]}</span>
                   {isCurrent && (
                     <span className="ws-tag ws-tag-ok">
                       <CheckIcon size={12} /> Current branch
