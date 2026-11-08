@@ -3,10 +3,16 @@ import { createRequire } from 'node:module'
 import { checkoutPlan } from '../src/lib/checkout'
 
 const require = createRequire(import.meta.url)
-const { validateGitArgs, gitAuthEnv } = require('./git-policy.cjs') as {
+const { validateGitArgs, worktreeFolder, gitAuthEnv } = require('./git-policy.cjs') as {
   validateGitArgs(args: string[]): void
+  worktreeFolder(repoName: string, branch: string): string
   gitAuthEnv(auth?: { token: string; host: string }): Record<string, string>
 }
+
+describe('worktreeFolder', () => {
+  it('names the folder after the repository and branch', () => expect(worktreeFolder('web', 'feat/a#b')).toBe('web-feat-a-b'))
+  it.each(['', '-x', 'a b', '--detach'])('refuses %j', (b) => expect(() => worktreeFolder('web', b)).toThrow())
+})
 
 describe('validateGitArgs', () => {
   it.each([
@@ -23,6 +29,8 @@ describe('validateGitArgs', () => {
     [['branch', '--all', '--format=%(refname)%1f%(upstream:short)']],
     [['log', '-n', '200', '--pretty=format:%H', 'origin/release', '--']],
     [['reset', '--soft', 'HEAD~1']],
+    [['branch', '-m', '--', 'old', 'new']],
+    [['branch', '-D', '--', 'old']],
     [['remote', 'add', 'origin', 'https://github.com/acme/web.git']],
     [['remote', 'add', 'gitlab', 'git@gitlab.com:acme/web.git']],
     [['remote', 'set-url', 'origin', 'ssh://git@gitlab.example/acme/web.git']],
@@ -48,6 +56,8 @@ describe('validateGitArgs', () => {
     [['diff', '--output=/etc/passwd']],
     [['reset', '--hard']],
     [['branch', '-D', 'main']],
+    [['branch', '-D', '--', 'a', 'b']],
+    [['worktree', 'add', '--', '/tmp/x', 'main']],
     [['remote', 'add', 'x', 'y']],
     [['diff', '--no-index', '--', '/etc/passwd', 'x']],
     [['diff', '--no-index', '--', '/dev/null', '../../etc/passwd']],

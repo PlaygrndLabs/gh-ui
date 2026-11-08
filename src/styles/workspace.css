@@ -110,6 +110,10 @@ a.ws-tab, .ws-tab { display: inline-flex; align-items: center; gap: 6px; padding
 
 .ws-menu-filter { padding: 8px; border-bottom: 1px solid var(--ws-line); }
 .ws-menu-list { max-height: 380px; overflow: auto; }
+/* Primer positions overlays inline, so these have to win over its style attribute. */
+.ws-branch-overlay { position: fixed !important; top: var(--ws-branch-top) !important; left: var(--ws-branch-left) !important; bottom: 0 !important; width: var(--ws-branch-width) !important; height: auto !important; max-width: none !important; max-height: none !important; border-radius: 0 !important; }
+.ws-branch-panel { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.ws-branch-panel .ws-menu-list { flex: 1; min-height: 0; max-height: none; }
 .ws-menu-filters { display: flex; border-bottom: 1px solid var(--ws-line); }
 
 /* ---------- Repository picker ---------- */

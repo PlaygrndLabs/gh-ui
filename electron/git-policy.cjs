@@ -50,6 +50,8 @@ function validateGitArgs(args) {
   const [sub, ...rest] = args
   if (!ALLOWED_SUBCOMMANDS.has(sub)) throw new Error(`git ${sub} is not allowed`)
   if (sub === 'remote') return validateRemoteArgs(rest)
+  // Force-deleting one named branch is the only deletion; the page confirms it first.
+  if (sub === 'branch' && rest[0] === '-D' && rest[1] === '--' && rest.length === 3) return
   // Only this repository's commit identity; any other setting could make git run a program.
   if (sub === 'config') {
     const ok = rest.length === 3 && rest[0] === '--local' && ['--get', '--unset'].includes(rest[1]) && IDENTITY_KEYS.has(rest[2])
@@ -78,4 +80,10 @@ function validateGitArgs(args) {
   }
 }
 
-module.exports = { HOST_RE, gitAuthEnv, validateGitArgs, GIT_BASE_ENV }
+/** The folder a branch's worktree goes in, named after the repository and the branch. */
+function worktreeFolder(repoName, branch) {
+  if (typeof branch !== 'string' || !branch || branch.startsWith('-') || /[\s\0-\x1f]/.test(branch)) throw new Error('Invalid branch name')
+  return `${repoName}-${branch.replace(/[^\w.-]+/g, '-')}`
+}
+
+module.exports = { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, GIT_BASE_ENV }

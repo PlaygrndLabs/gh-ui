@@ -124,6 +124,21 @@ describe('createGitClient against a real repository', () => {
     expect(by.HEAD).toBeUndefined()
   })
 
+  it('renames and deletes a branch, even one with commits nothing else has', async () => {
+    await raw(work, 'branch', 'old-name')
+    await client.renameBranch('old-name', 'new-name')
+    expect(await client.branchNames()).toContain('new-name')
+    await raw(work, 'switch', 'new-name')
+    await commitFile(work, 'unmerged.txt', 'unmerged')
+    await raw(work, 'switch', 'spike')
+    await client.deleteBranch('new-name')
+    expect(await client.branchNames()).not.toContain('new-name')
+  })
+
+  it('knows the default branch from the remote', async () => {
+    expect(await client.defaultBranch()).toBe('main')
+  })
+
   it('reads the log of a branch that is not checked out', async () => {
     expect((await client.log('origin/release')).map((c) => c.subject)).toEqual(['release', 'theirs', 'first'])
     expect((await client.log()).map((c) => c.subject)).toEqual(['first'])

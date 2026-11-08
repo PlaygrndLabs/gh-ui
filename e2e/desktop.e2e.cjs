@@ -799,6 +799,63 @@ exports.steps = [
     `,
   },
   {
+    name: 'branches: the panel covers the sidebar, and a right-click renames, copies and deletes',
+    js: `${helpers}
+      const r = {}
+      const seg = () => [...document.querySelectorAll('.ws-header .ws-seg-branch')].find((s) => s.getClientRects().length)
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      await g.git(repo.id, ['branch', 'menu-old'])
+      await until(() => main()?.querySelector('.ws-pane-sized'))
+      await sleep(16000) // The branch list refreshes on a timer.
+      seg().click()
+      const row = (n) => [...document.querySelectorAll('.ws-branch-panel [role=menuitemradio], .ws-branch-panel li')].find((x) => x.textContent.includes(n))
+      await until(() => row('menu-old'), 5000)
+      await sleep(200)
+      const box = document.querySelector('.ws-branch-overlay').getBoundingClientRect()
+      const side = main().querySelector('.ws-pane-sized').getBoundingClientRect()
+      const list = document.querySelector('.ws-branch-panel .ws-menu-list').getBoundingClientRect()
+      Object.assign(r, { box: [box.left, box.top, box.width, box.bottom], side: [side.left, side.width], windowH: innerHeight, listBottom: list.bottom, segBottom: seg().getBoundingClientRect().bottom })
+      r.aligned = Math.abs(box.left - side.left) < 1 && Math.abs(box.width - side.width) < 1 && Math.abs(box.bottom - innerHeight) < 1 && Math.abs(box.top - r.segBottom) < 1 && Math.abs(list.bottom - innerHeight) < 2
+      const rightClick = (n) => row(n).querySelector('span').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+      // Nothing picked: the panel stays and the items can be read.
+      window.__e2eMenuPick = null
+      window.__e2eMenuItems = null
+      rightClick('main')
+      await until(() => window.__e2eMenuItems, 3000)
+      r.currentItems = window.__e2eMenuItems.map((i) => i.label ? i.label + (i.enabled ? '' : ' (off)') : '-')
+      window.__e2eMenuItems = null
+      window.__e2eMenuPick = 'Rename…'
+      rightClick('menu-old')
+      const dialog = await until(() => document.querySelector('[role=dialog]'), 5000)
+      r.otherItems = window.__e2eMenuItems.map((i) => i.label ? i.label + (i.enabled ? '' : ' (off)') : '-')
+      setInput(dialog.querySelector('input'), 'menu-new')
+      await sleep(100)
+      byText('[role=dialog] button', 'Rename').click()
+      await sleep(1500)
+      r.renamed = (await g.git(repo.id, ['branch', '--format=%(refname:short)'])).stdout.split('\\n')
+      seg().click()
+      await until(() => row('menu-new'), 5000)
+      await sleep(200)
+      window.__e2eMenuPick = 'Delete…'
+      rightClick('menu-new')
+      await until(() => byText('[role=alertdialog] button, [role=dialog] button', 'Delete'), 5000)
+      byText('[role=alertdialog] button, [role=dialog] button', 'Delete').click()
+      await sleep(1500)
+      window.__e2eMenuPick = null
+      r.deleted = (await g.git(repo.id, ['branch', '--format=%(refname:short)'])).stdout.split('\\n')
+      const added = await g.repos.addWorktree(repo.id, ${j(PARENT)}, 'wt-test-missing').catch((e) => e.message)
+      r.worktreeBadBranch = typeof added === 'string'
+      await g.git(repo.id, ['branch', 'wt-branch'])
+      const wt = await g.repos.addWorktree(repo.id, ${j(PARENT)}, 'wt-branch')
+      r.worktree = wt.path
+      r.worktreeBranch = (await g.git(wt.id, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()
+      await g.repos.remove(wt.id)
+      r.fail = !(r.aligned && r.renamed.includes('menu-new') && !r.renamed.includes('menu-old') && !r.deleted.includes('menu-new') && r.worktreeBranch === 'wt-branch' && r.otherItems.includes('Rename…') && r.otherItems.includes('Delete…'))
+      return r
+    `,
+    screenshot: 'branch-panel',
+  },
+  {
     name: 'panes: drag a divider with the real pointer',
     inputJs: `${helpers}
       const handle = [...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)

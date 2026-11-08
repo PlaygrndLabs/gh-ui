@@ -106,7 +106,7 @@ function run(cmd, args, opts = {}) {
   })
 }
 
-const { HOST_RE, gitAuthEnv, validateGitArgs, GIT_BASE_ENV } = require('./git-policy.cjs')
+const { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, GIT_BASE_ENV } = require('./git-policy.cjs')
 
 // ---------------------------------------------------------------------------
 // Local repository registry
@@ -229,6 +229,18 @@ function registerIpc() {
     if (fs.existsSync(dest)) throw new Error(`${dest} already exists`)
     const res = await run('git', ['clone', '--', url, dest], { env: { ...GIT_BASE_ENV, ...gitAuthEnv(auth) }, timeout: 30 * 60_000 })
     if (res.code !== 0) throw new Error(res.stderr.trim() || 'git clone failed')
+    return addRepo(dest)
+  })
+
+  // Its own channel, as cloning is: the renderer's git commands never name a folder outside their repository.
+  ipcMain.handle('repos:addWorktree', async (_e, repoId, parentDir, branch) => {
+    const repo = await repoById(repoId)
+    const name = worktreeFolder(repo.name, branch)
+    if (typeof parentDir !== 'string' || !path.isAbsolute(parentDir)) throw new Error('Choose a parent folder')
+    const dest = path.join(parentDir, name)
+    if (fs.existsSync(dest)) throw new Error(`${dest} already exists`)
+    const res = await run('git', ['worktree', 'add', '--', dest, branch], { cwd: repo.path, env: GIT_BASE_ENV })
+    if (res.code !== 0) throw new Error(res.stderr.trim() || 'git worktree add failed')
     return addRepo(dest)
   })
 

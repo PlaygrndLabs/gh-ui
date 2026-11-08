@@ -208,6 +208,16 @@ export function createGitClient(run: GitRunner) {
     push: () => git(['push'], true),
     fetch: async () => git(['fetch', '--prune', await remoteName()], true),
     switchTo: (branch: string) => git(['switch', branch]),
+    renameBranch: (from: string, to: string) => git(['branch', '-m', '--', from, to]),
+    /** Forced, as GitHub Desktop's is: the app asks first, and a branch that was never merged is what people delete. */
+    deleteBranch: (branch: string) => git(['branch', '-D', '--', branch]),
+    /** What the remote's HEAD names, or null when this clone doesn't know. */
+    async defaultBranch() {
+      const remote = await remoteName()
+      const res = await run(['rev-parse', '--abbrev-ref', `${remote}/HEAD`], false)
+      const name = res.stdout.trim().slice(remote.length + 1)
+      return res.code === 0 && name && name !== 'HEAD' ? name : null
+    },
     createBranch: (branch: string) => git(['switch', '-c', branch]),
     /** Saves every change, new files too, and leaves the working tree clean. */
     stash: () => git(['stash', 'push', '-u']),

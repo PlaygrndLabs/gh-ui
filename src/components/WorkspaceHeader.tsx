@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, IconButton, TextInput } from '@primer/react'
+import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, IconButton, TextInput, useConfirm } from '@primer/react'
 import { CloudIcon, DeviceDesktopIcon, GearIcon, GitBranchIcon, MarkGithubIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgent } from '../lib/agent/AgentProvider'
 import { useFeatures } from '../lib/features'
 import { errorMessage, useGitHub } from '../lib/github'
-import { plural } from '../lib/format'
+import { copyText, plural } from '../lib/format'
+import type { BranchState } from '../lib/git'
 import { native } from '../lib/platform'
 import { useRepoCounts, useRepoQuery } from '../lib/repo'
 import { useLocalRepo } from '../lib/useLocalRepo'
@@ -59,8 +60,50 @@ function useCurrentRepo(): WorkspaceRepo | null {
   return { key: `${account.host}/${key}`.toLowerCase(), name: parts[1], location: 'github', local: null, github: { host: account.host, owner: parts[0], repo: parts[1] }, remote: null }
 }
 
+/** Where the branch panel goes: over the sidebar, from under the toolbar to the bottom of the window. */
+function branchPanelFrame(anchor: HTMLElement): CSSProperties {
+  const sidebar = (anchor.closest('.tab-pane') ?? document).querySelector('.ws-split > .ws-pane-sized:first-child')
+  const button = anchor.getBoundingClientRect()
+  const { left, width } = sidebar?.getClientRects().length ? sidebar.getBoundingClientRect() : button
+  return { '--ws-branch-top': `${button.bottom}px`, '--ws-branch-left': `${left}px`, '--ws-branch-width': `${width}px` } as CSSProperties
+}
+
+function RenameBranchDialog({ branch, where, taken, onRename, onClose }: { branch: BranchState; where: string; taken: string[]; onRename(name: string): void; onClose(): void }) {
+  const [value, setValue] = useState(branch.name)
+  const name = value.trim().replace(/\s+/g, '-')
+  const ok = !!name && name !== branch.name && !taken.includes(name)
+  const submit = () => {
+    if (!ok) return
+    onRename(name)
+    onClose()
+  }
+  return (
+    <Dialog
+      title={`Rename ${branch.name}`}
+      onClose={onClose}
+      footerButtons={[
+        { content: 'Cancel', onClick: onClose },
+        { content: 'Rename', buttonType: 'primary', disabled: !ok, onClick: submit },
+      ]}
+    >
+      <FormControl>
+        <FormControl.Label>Name</FormControl.Label>
+        <TextInput block autoFocus value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} />
+        {taken.includes(name) && name !== branch.name && <FormControl.Validation variant="error">A branch with this name already exists.</FormControl.Validation>}
+      </FormControl>
+      {branch.location === 'both' && <p className="ws-note mt-2">This only renames it on this Mac. The branch on {where} keeps its name.</p>}
+    </Dialog>
+  )
+}
+
 function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const local = useLocalRepo(repo.local)
+  const confirm = useConfirm()
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  const anchor = useRef<HTMLButtonElement>(null)
+  const [frame, setFrame] = useState<CSSProperties>()
+  const [renaming, setRenaming] = useState<BranchState | null>(null)
   const info = useRepoQuery(repo.github?.owner ?? '', repo.github?.repo ?? '', !repo.local && !!repo.github)
   const [filter, setFilter] = useState('')
   const [open, setOpen] = useState(false)
@@ -79,6 +122,54 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   const branches = all.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()))
   const exists = local.branches.data?.some((b) => b.name === name)
 
+  useLayoutEffect(() => {
+    if (!open) return
+    const measure = () => setFrame(branchPanelFrame(anchor.current!))
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [open])
+
+  const branchOptions = async (b: BranchState) => {
+    const git = local.git
+    const here = !!git && b.location !== 'remote'
+    const isDefault = b.name === (git ? await git.defaultBranch() : info.data?.default_branch)
+    const action = await native!.contextMenu(
+      git
+        ? [
+            { id: 'rename', label: 'Rename…', enabled: here && !isDefault },
+            { id: 'copy', label: 'Copy Branch Name' },
+            { id: 'worktree', label: 'Checkout in New Worktree…', enabled: !b.current },
+            { type: 'separator' },
+            { id: 'delete', label: 'Delete…', enabled: here && !b.current && !isDefault },
+          ]
+        : [{ id: 'copy', label: 'Copy Branch Name' }],
+    )
+    if (!action) return
+    setOpen(false)
+    if (action === 'copy') void copyText(b.name)
+    if (action === 'rename') setRenaming(b)
+    if (action === 'worktree') {
+      const parent = await native!.pickDirectory('Choose where to put the worktree')
+      if (!parent) return
+      local.op.mutate(async () => {
+        const added = await native!.repos.addWorktree(repo.local!.id, parent, b.name)
+        await qc.invalidateQueries({ queryKey: ['local-repos'] })
+        await qc.invalidateQueries({ queryKey: ['workspace-folders'] })
+        navigate(`/local/${added.id}`)
+      })
+    }
+    if (action === 'delete') {
+      const ok = await confirm({
+        title: `Delete ${b.name}?`,
+        content: b.location === 'both' ? `This removes it from this Mac. The branch on ${hostName(repo)} stays.` : 'It’s only on this Mac, so any commits no other branch has will be lost.',
+        confirmButtonContent: 'Delete',
+        confirmButtonType: 'danger',
+      })
+      if (ok) local.op.mutate(() => git!.deleteBranch(b.name))
+    }
+  }
+
   const label = (
     <>
       <GitBranchIcon />
@@ -91,52 +182,60 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
   if (!repo.local && !repo.github) return <div className="ws-seg ws-seg-branch">{label}</div>
   return (
     <>
-      <ActionMenu open={open} onOpenChange={setOpen}>
+      <ActionMenu open={open} onOpenChange={setOpen} anchorRef={anchor}>
         <ActionMenu.Anchor>
           <button type="button" className="ws-seg ws-seg-branch" aria-label={`Current branch: ${current}`}>
             {label}
             <TriangleDownIcon />
           </button>
         </ActionMenu.Anchor>
-        <ActionMenu.Overlay width="medium">
-          <div className="ws-menu-filter">
-            <TextInput block autoFocus aria-label={repo.local ? 'Filter or name a new branch' : 'Filter branches'} placeholder={repo.local ? 'Filter or name a new branch' : 'Filter branches'} value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
-          </div>
-          <ActionList selectionVariant="single" className="ws-menu-list">
-            {branches.map((b) => (
-              <ActionList.Item
-                key={b.name}
-                selected={b.name === current}
-                onSelect={() => {
-                  // What's checked out is what the page should show from here on.
-                  setPicked(repo.local ? null : b.name)
-                  if (repo.local && !b.current) local.switchBranch(b.name)
-                  setFilter('')
-                }}
-              >
-                {b.name}
-                <ActionList.Description variant="block">
-                  {!repo.local ? (b.name === info.data?.default_branch ? 'Default branch' : 'On GitHub') : [b.location === 'remote' ? `Only on ${hostName(repo)}` : b.location === 'local' ? 'Only on this Mac' : `On this Mac and ${hostName(repo)}`, b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : ''].filter(Boolean).join(' · ')}
-                </ActionList.Description>
-              </ActionList.Item>
-            ))}
-            {repo.local && name && !exists && (
-              <>
-                {branches.length > 0 && <ActionList.Divider />}
+        <ActionMenu.Overlay width="medium" className="ws-branch-overlay" style={frame}>
+          <div className="ws-branch-panel">
+            <div className="ws-menu-filter">
+              <TextInput block autoFocus aria-label={repo.local ? 'Filter or name a new branch' : 'Filter branches'} placeholder={repo.local ? 'Filter or name a new branch' : 'Filter branches'} value={filter} onChange={(e) => setFilter(e.target.value)} onKeyDown={(e) => e.stopPropagation()} />
+            </div>
+            <ActionList selectionVariant="single" className="ws-menu-list">
+              {branches.map((b) => (
                 <ActionList.Item
+                  key={b.name}
+                  selected={b.name === current}
+                  onContextMenu={(e) => {
+                    if (!native) return
+                    e.preventDefault()
+                    void branchOptions(b)
+                  }}
                   onSelect={() => {
-                    setPicked(null)
-                    local.op.mutate(() => local.git!.createBranch(name))
+                    // What's checked out is what the page should show from here on.
+                    setPicked(repo.local ? null : b.name)
+                    if (repo.local && !b.current) local.switchBranch(b.name)
                     setFilter('')
                   }}
                 >
-                  Create branch {name}
+                  {b.name}
+                  <ActionList.Description variant="block">
+                    {!repo.local ? (b.name === info.data?.default_branch ? 'Default branch' : 'On GitHub') : [b.location === 'remote' ? `Only on ${hostName(repo)}` : b.location === 'local' ? 'Only on this Mac' : `On this Mac and ${hostName(repo)}`, b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : ''].filter(Boolean).join(' · ')}
+                  </ActionList.Description>
                 </ActionList.Item>
-              </>
-            )}
-          </ActionList>
+              ))}
+              {repo.local && name && !exists && (
+                <>
+                  {branches.length > 0 && <ActionList.Divider />}
+                  <ActionList.Item
+                    onSelect={() => {
+                      setPicked(null)
+                      local.op.mutate(() => local.git!.createBranch(name))
+                      setFilter('')
+                    }}
+                  >
+                    Create branch {name}
+                  </ActionList.Item>
+                </>
+              )}
+            </ActionList>
+          </div>
         </ActionMenu.Overlay>
       </ActionMenu>
+      {renaming && <RenameBranchDialog branch={renaming} where={hostName(repo)} taken={all.map((b) => b.name)} onRename={(to) => local.op.mutate(() => local.git!.renameBranch(renaming.name, to))} onClose={() => setRenaming(null)} />}
       {local.error && <Banner className="ws-error" variant="critical" title="Git said" description={local.error} onDismiss={local.clearError} />}
     </>
   )

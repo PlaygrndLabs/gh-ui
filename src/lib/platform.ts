@@ -60,6 +60,8 @@ export interface NativeBridge {
     remove(id: string): Promise<void>
     cloneTarget(parentDir: string, name: string): Promise<{ exists: boolean; path?: string; isRepo?: boolean; origin?: string | null }>
     clone(url: string, parentDir: string, name: string, auth?: GitAuth): Promise<LocalRepo>
+    /** Checks a branch out in a new folder under parentDir and adds that folder as a repository. */
+    addWorktree(repoId: string, parentDir: string, branch: string): Promise<LocalRepo>
   }
   /** Runs an allow-listed git subcommand inside a registered local repository. */
   git(repoId: string, args: string[], auth?: GitAuth): Promise<GitResult>
