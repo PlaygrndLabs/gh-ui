@@ -191,7 +191,10 @@ body:has(.app-shell) { overflow: hidden; }
 .tab-main:focus-visible { outline: none; }
 .tab-item:has(> .tab-main:focus-visible) { outline: 2px solid var(--focus-outlineColor); outline-offset: -2px; }
 .tab-icon { flex-shrink: 0; color: var(--fgColor-muted); }
-.tab-title { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tab-title { display: flex; min-width: 0; white-space: nowrap; }
+.tab-name, .tab-branch { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The toolbar names the branch too, so it gives up its room first. */
+.tab-branch { flex-shrink: 1000; white-space: pre; }
 .tab-close {
   display: inline-flex;
   visibility: hidden;

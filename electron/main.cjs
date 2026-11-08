@@ -32,6 +32,7 @@ const CSP = [
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' https: data: blob:",
+  "media-src 'self' https: blob:",
   "connect-src 'self' https:",
   "font-src 'self' data:",
   "object-src 'none'",

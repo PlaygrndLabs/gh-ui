@@ -180,7 +180,6 @@ export function RunPage() {
               </NavList.LeadingVisual>
               Summary
             </NavList.Item>
-            <NavList.Divider />
             <NavList.Group title="All jobs">
               {orderedJobs.map((j) => (
                 <NavList.Item key={j.id} as={Link} to={`/${owner}/${repo}/actions/runs/${run_id}/job/${j.id}`} aria-current={String(j.id) === jobId ? 'page' : undefined}>
@@ -191,7 +190,6 @@ export function RunPage() {
                 </NavList.Item>
               ))}
             </NavList.Group>
-            <NavList.Divider />
             <NavList.Group title="Run details">
               <NavList.Item
                 href={webUrl(account.host, `/${owner}/${repo}/actions/runs/${run_id}/usage`)}
