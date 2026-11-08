@@ -248,7 +248,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       </div>
       <div className="ws-scroll" role="tabpanel">
         {tab === 'changes' && (
-          <Section title="Changes">
+          <Section title="Changes" flush>
             {isCurrent && entries.length > 0 && (
               <>
                 <label className="ws-row ws-row-check">
@@ -333,7 +333,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
         )}
 
         {github && tab === 'pull' && (
-          <Section title="Pull request">
+          <Section title="Pull request" flush>
             {pull ? (
               <Link className="ws-row ws-row-link-block" to={`/${github.owner}/${github.repo}/pull/${pull.number}`}>
                 <span className="ws-row-main">{pull.title}</span>
@@ -343,9 +343,11 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
               <>
                 <p className="ws-note">No open pull request for this branch.</p>
                 {branch.location !== 'local' && (
-                  <Button size="small" as={Link} to={`/${github.owner}/${github.repo}/compare/${encodeURIComponent(branch.name)}`}>
-                    Create pull request
-                  </Button>
+                  <div className="ws-section-pad">
+                    <Button size="small" as={Link} to={`/${github.owner}/${github.repo}/compare/${encodeURIComponent(branch.name)}`}>
+                      Create pull request
+                    </Button>
+                  </div>
                 )}
               </>
             )}
@@ -353,7 +355,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
         )}
 
         {github && tab === 'checks' && (
-          <Section title="Checks">
+          <Section title="Checks" flush>
             {runs.data?.map((run) => (
               <Link key={run.id} className="ws-row ws-row-link-block" to={`/${github.owner}/${github.repo}/actions/runs/${run.id}`}>
                 <span className={`ws-mark ${run.status !== 'completed' ? 'ws-run' : run.conclusion === 'success' ? 'ws-ok' : run.conclusion === 'failure' ? 'ws-bad' : ''}`} title={run.conclusion ?? run.status ?? ''}>
