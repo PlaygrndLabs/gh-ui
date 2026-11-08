@@ -4,12 +4,12 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { changePaths, createGitClient, isStaged, isUnmerged, parseBranches, parseCommitLog, parseStatus, type GitClient } from './git'
 
 const exec = promisify(execFile)
 const require = createRequire(import.meta.url)
-const { validateGitArgs } = require('../../electron/git-policy.cjs') as { validateGitArgs(args: string[]): void }
+const { validateGitArgs, gitCommandEnv } = require('../../electron/git-policy.cjs') as { validateGitArgs(args: string[]): void; gitCommandEnv(sub: string): Record<string, string> }
 
 describe('parseStatus', () => {
   it('reads the branch, its upstream and the counts', () => {
@@ -32,6 +32,29 @@ describe('parseStatus', () => {
     expect(isStaged({ path: 'a', index: '?', worktree: '?' })).toBe(false)
     expect(isUnmerged({ path: 'a', index: 'U', worktree: 'U' })).toBe(true)
     expect(isStaged({ path: 'a', index: 'A', worktree: 'A' })).toBe(false)
+  })
+})
+
+describe('when another program holds the index', () => {
+  const locked = { code: 128, stdout: '', stderr: "fatal: Unable to create '/r/.git/index.lock': File exists." }
+  const ok = { code: 0, stdout: '', stderr: '' }
+
+  it('tries again until it clears', async () => {
+    const run = vi.fn().mockResolvedValueOnce(locked).mockResolvedValueOnce(locked).mockResolvedValue(ok)
+    await createGitClient(run).stage({ path: 'a', index: ' ', worktree: 'M' })
+    expect(run).toHaveBeenCalledTimes(3)
+  })
+
+  it('gives up with git’s message if it never does', async () => {
+    const run = vi.fn().mockResolvedValue(locked)
+    await expect(createGitClient(run).stage({ path: 'a', index: ' ', worktree: 'M' })).rejects.toThrow(/index\.lock/)
+    expect(run).toHaveBeenCalledTimes(5)
+  }, 5000)
+
+  it('does not retry other failures', async () => {
+    const run = vi.fn().mockResolvedValue({ code: 128, stdout: '', stderr: 'fatal: pathspec did not match' })
+    await expect(createGitClient(run).stage({ path: 'a', index: ' ', worktree: 'M' })).rejects.toThrow(/pathspec/)
+    expect(run).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -104,7 +127,7 @@ describe('createGitClient against a real repository', () => {
     client = createGitClient(async (args) => {
       validateGitArgs(args)
       try {
-        const { stdout, stderr } = await exec('git', args, { cwd: work, env })
+        const { stdout, stderr } = await exec('git', args, { cwd: work, env: { ...env, ...gitCommandEnv(args[0]) } })
         return { code: 0, stdout, stderr }
       } catch (e) {
         const err = e as { code?: number; stdout?: string; stderr?: string }
@@ -122,6 +145,21 @@ describe('createGitClient against a real repository', () => {
     expect(by.main).toMatchObject({ current: false, location: 'both', upstream: 'origin/main', behind: 1, ahead: 0 })
     expect(by.release).toMatchObject({ current: false, location: 'remote', upstream: null })
     expect(by.HEAD).toBeUndefined()
+  })
+
+  it('renames and deletes a branch, even one with commits nothing else has', async () => {
+    await raw(work, 'branch', 'old-name')
+    await client.renameBranch('old-name', 'new-name')
+    expect(await client.branchNames()).toContain('new-name')
+    await raw(work, 'switch', 'new-name')
+    await commitFile(work, 'unmerged.txt', 'unmerged')
+    await raw(work, 'switch', 'spike')
+    await client.deleteBranch('new-name')
+    expect(await client.branchNames()).not.toContain('new-name')
+  })
+
+  it('knows the default branch from the remote', async () => {
+    expect(await client.defaultBranch()).toBe('main')
   })
 
   it('reads the log of a branch that is not checked out', async () => {
@@ -150,7 +188,7 @@ describe('createGitClient against a real repository', () => {
     await client.undoCommit()
     status = await client.status()
     expect(status.entries).toMatchObject([{ path: 'new.txt', index: 'A' }])
-    await client.unstageAll()
+    await client.unstage(...status.entries)
     await client.discard((await client.status()).entries[0])
     expect((await client.status()).entries).toEqual([])
   })
@@ -171,7 +209,7 @@ describe('createGitClient against a real repository', () => {
     expect(release).toMatchObject({ local: [], incoming: [] })
     expect(release.remote.map((c) => c.subject)).toEqual(['release', 'theirs', 'first'])
     await client.undoCommit()
-    await client.unstageAll()
+    await client.unstage(...(await client.status()).entries)
     await client.discard({ path: 'mine.txt', index: '?', worktree: '?' })
     await client.switchTo('spike')
   })
@@ -193,6 +231,49 @@ describe('createGitClient against a real repository', () => {
     await client.switchTo('spike')
     expect(await client.branchNames()).toContain('feature/x')
     expect(await client.remoteUrl()).toContain('origin.git')
+  })
+
+  it('stages and unstages several files in one command', async () => {
+    await writeFile(join(work, 'one.txt'), '1\n')
+    await writeFile(join(work, 'two.txt'), '2\n')
+    await client.stage(...(await client.status()).entries)
+    expect((await client.status()).entries.map((e) => e.index)).toEqual(['A', 'A'])
+    await client.unstage(...(await client.status()).entries)
+    const { entries } = await client.status()
+    expect(entries.map((e) => e.index)).toEqual(['?', '?'])
+    for (const e of entries) await client.discard(e)
+  })
+
+  it('takes a path with glob characters for that one file', async () => {
+    await mkdir(join(work, 'app/[id]'), { recursive: true })
+    await mkdir(join(work, 'app/i'), { recursive: true })
+    await writeFile(join(work, 'app/[id]/page.tsx'), 'route\n')
+    await writeFile(join(work, 'app/i/page.tsx'), 'keep me\n')
+    await client.discard({ path: 'app/[id]/page.tsx', index: '?', worktree: '?' })
+    expect((await client.status()).entries.map((e) => e.path)).toEqual(['app/i/page.tsx'])
+    await client.discard({ path: 'app/i/page.tsx', index: '?', worktree: '?' })
+  })
+
+  it('discards by what git says now, not what the row said', async () => {
+    await writeFile(join(work, 'late.txt'), 'late\n')
+    const stale = (await client.status()).entries[0]
+    await client.stage(stale)
+    await client.discard(stale)
+    expect((await client.status()).entries).toEqual([])
+  })
+
+  it('unstages before the first commit', async () => {
+    const fresh = join(root, 'fresh')
+    await mkdir(fresh)
+    await raw(fresh, 'init', '-b', 'main')
+    await writeFile(join(fresh, 'a.txt'), 'a\n')
+    await raw(fresh, 'add', 'a.txt')
+    const inFresh = createGitClient(async (args) => {
+      const { stdout, stderr } = await exec('git', args, { cwd: fresh, env })
+      return { code: 0, stdout, stderr }
+    })
+    await inFresh.unstage({ path: 'a.txt', index: 'A', worktree: ' ' })
+    expect((await inFresh.status()).entries).toMatchObject([{ path: 'a.txt', index: '?' }])
   })
 
   it('throws git’s own message when a command fails', async () => {

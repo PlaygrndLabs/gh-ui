@@ -11,7 +11,9 @@ const crypto = require('node:crypto')
 const { execFile } = require('node:child_process')
 const { pathToFileURL } = require('node:url')
 
-const DEV_URL = process.env.GH_UI_DEV_URL
+// Only outside a packaged app: anything that can set the environment could otherwise point the window, and with it
+// the whole bridge, at a page of its choosing.
+const DEV_URL = app.isPackaged ? undefined : process.env.GH_UI_DEV_URL
 const DIST = path.join(__dirname, '..', 'dist')
 const APP_ORIGIN = 'app://gh-ui'
 const isMac = process.platform === 'darwin'
@@ -46,9 +48,18 @@ const CSP = [
 const dataFile = (name) => path.join(app.getPath('userData'), name)
 
 async function readJson(name, fallback) {
+  let raw
   try {
-    return JSON.parse(await fsp.readFile(dataFile(name), 'utf8'))
+    raw = await fsp.readFile(dataFile(name), 'utf8')
+  } catch (e) {
+    if (e.code === 'ENOENT') return fallback
+    throw e // Unreadable isn't empty: answering "nothing there" here would let the next write replace it.
+  }
+  try {
+    return JSON.parse(raw)
   } catch {
+    // Kept to one side, because the next write would otherwise replace whatever could still be saved from it.
+    await fsp.rename(dataFile(name), dataFile(`${name}.corrupt-${Date.now()}`)).catch(() => {})
     return fallback
   }
 }
@@ -56,8 +67,22 @@ async function readJson(name, fallback) {
 async function writeJson(name, value) {
   await fsp.mkdir(app.getPath('userData'), { recursive: true })
   const tmp = dataFile(`${name}.tmp`)
-  await fsp.writeFile(tmp, JSON.stringify(value, null, 2), { mode: 0o600 })
+  // Flushed before the rename, so a crash leaves the old file or the new one and never an empty one.
+  await fsp.writeFile(tmp, JSON.stringify(value, null, 2), { mode: 0o600, flush: true })
   await fsp.rename(tmp, dataFile(name))
+}
+
+const fileQueues = new Map()
+
+/** Read, change, write, one at a time per file: two changes at once would otherwise each save over the other. */
+function updateJson(name, fallback, change) {
+  const result = (fileQueues.get(name) ?? Promise.resolve()).then(async () => {
+    const next = change(await readJson(name, fallback))
+    await writeJson(name, next)
+    return next
+  })
+  fileQueues.set(name, result.catch(() => {}))
+  return result
 }
 
 // Secrets: encrypted with the OS keychain via safeStorage when available. A throwaway
@@ -76,17 +101,14 @@ async function secretsGet(key) {
 }
 
 async function secretsSet(key, value) {
-  const store = await readJson('secrets.json', {})
-  store[key] = canEncrypt()
+  const entry = canEncrypt()
     ? { enc: true, value: safeStorage.encryptString(String(value)).toString('base64') }
     : { enc: false, value: String(value) }
-  await writeJson('secrets.json', store)
+  await updateJson('secrets.json', {}, (store) => ({ ...store, [key]: entry }))
 }
 
 async function secretsDelete(key) {
-  const store = await readJson('secrets.json', {})
-  delete store[key]
-  await writeJson('secrets.json', store)
+  await updateJson('secrets.json', {}, ({ [key]: _removed, ...rest }) => rest)
 }
 
 // ---------------------------------------------------------------------------
@@ -106,13 +128,20 @@ function run(cmd, args, opts = {}) {
   })
 }
 
-const { HOST_RE, gitAuthEnv, validateGitArgs, GIT_BASE_ENV } = require('./git-policy.cjs')
+const { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, gitCommandEnv, GIT_BASE_ENV } = require('./git-policy.cjs')
 
 // ---------------------------------------------------------------------------
 // Local repository registry
 
+// Every git command looks its repository up, and only this file's own code changes the list, so it's read once.
+let reposCache = null
+
 async function listRepos() {
-  return readJson('repos.json', [])
+  return (reposCache ??= await readJson('repos.json', []))
+}
+
+async function changeRepos(change) {
+  reposCache = await updateJson('repos.json', [], change)
 }
 
 async function addRepo(dir) {
@@ -120,11 +149,13 @@ async function addRepo(dir) {
   const top = await run('git', ['-C', dir, 'rev-parse', '--show-toplevel'], { env: GIT_BASE_ENV, timeout: 20_000 })
   if (top.code !== 0) throw new Error(`${dir} is not a git repository`)
   const root = path.resolve(top.stdout.trim())
-  const repos = await listRepos()
-  const existing = repos.find((r) => r.path === root)
-  if (existing) return existing
-  const repo = { id: crypto.randomUUID(), path: root, name: path.basename(root), addedAt: Date.now() }
-  await writeJson('repos.json', [...repos, repo])
+  let repo
+  await changeRepos((repos) => {
+    repo = repos.find((r) => r.path === root)
+    if (repo) return repos
+    repo = { id: crypto.randomUUID(), path: root, name: path.basename(root), addedAt: Date.now() }
+    return [...repos, repo]
+  })
   return repo
 }
 
@@ -142,7 +173,10 @@ function isSafeRemote(url) {
 // HTTP for GitHub endpoints without CORS
 
 function isPrivateHost(host) {
-  return /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.|\[::1\]|::1)/i.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  const name = host.replace(/^\[|\]$/g, '').toLowerCase()
+  // An IPv6 address: loopback, unique-local, link-local, or an IPv4 address written as one.
+  if (name.includes(':')) return name === '::' || name === '::1' || /^f[cd]/.test(name) || /^fe[89ab]/.test(name) || name.startsWith('::ffff:')
+  return /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(name) || /^172\.(1[6-9]|2\d|3[01])\./.test(name)
 }
 
 async function httpRequest(req) {
@@ -154,7 +188,7 @@ async function httpRequest(req) {
   // Follow one redirect (Actions logs → pre-signed blob URL) without the token.
   if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
     const next = new URL(res.headers.get('location'), url)
-    if (next.protocol !== 'https:') throw new Error('Refusing non-https redirect')
+    if (next.protocol !== 'https:' || isPrivateHost(next.hostname)) throw new Error('Refusing a redirect to a non-public address')
     res = await net.fetch(next.toString(), { headers: { 'user-agent': 'gh-ui' } })
   }
   const outHeaders = {}
@@ -165,50 +199,62 @@ async function httpRequest(req) {
 // ---------------------------------------------------------------------------
 // IPC
 
-function registerIpc() {
-  ipcMain.handle('secrets:get', (_e, key) => secretsGet(String(key)))
-  ipcMain.handle('secrets:set', (_e, key, value) => secretsSet(String(key), value))
-  ipcMain.handle('secrets:delete', (_e, key) => secretsDelete(String(key)))
-  ipcMain.handle('secrets:isEncrypted', () => canEncrypt())
+/** Only the app's own top-level page may use the bridge; a frame or anything navigated-to gets nothing. */
+function fromApp(e) {
+  const frame = e.senderFrame
+  return !!frame && frame === e.sender.mainFrame && isAppUrl(frame.url)
+}
 
-  ipcMain.handle('gh:token', async (_e, host) => {
+function registerIpc() {
+  const handle = (channel, listener) =>
+    ipcMain.handle(channel, (e, ...args) => {
+      if (!fromApp(e)) throw new Error('Not allowed')
+      return listener(e, ...args)
+    })
+
+  handle('secrets:get', (_e, key) => secretsGet(String(key)))
+  handle('secrets:set', (_e, key, value) => secretsSet(String(key), value))
+  handle('secrets:delete', (_e, key) => secretsDelete(String(key)))
+  handle('secrets:isEncrypted', () => canEncrypt())
+
+  handle('gh:token', async (_e, host) => {
     if (!HOST_RE.test(host || '')) return { error: 'Invalid host' }
     const res = await run('gh', ['auth', 'token', '--hostname', host], { timeout: 15_000 })
     if (res.code !== 0) return { error: (res.stderr || 'gh is not installed or not signed in').trim() }
     return { token: res.stdout.trim() }
   })
 
-  ipcMain.handle('http', (_e, req) => httpRequest(req))
+  handle('http', (_e, req) => httpRequest(req))
 
-  ipcMain.handle('shell:openExternal', async (_e, url) => {
+  handle('shell:openExternal', async (_e, url) => {
     const u = new URL(String(url))
     if (['https:', 'http:', 'mailto:'].includes(u.protocol)) await shell.openExternal(u.toString())
   })
 
   // A Homebrew install keeps its record in the Caskroom. Nothing outside these fixed paths is touched.
-  ipcMain.handle('app:installKind', () =>
+  handle('app:installKind', () =>
     process.platform === 'darwin' && ['/opt/homebrew/Caskroom/gh-ui', '/usr/local/Caskroom/gh-ui', '/opt/homebrew/Caskroom/github-ui', '/usr/local/Caskroom/github-ui'].some((dir) => fs.existsSync(dir)) ? 'homebrew' : 'direct',
   )
-  ipcMain.handle('app:openTerminal', async () => {
+  handle('app:openTerminal', async () => {
     if (process.platform === 'darwin') await shell.openPath('/System/Applications/Utilities/Terminal.app')
   })
 
   // A right-click menu drawn by the system. Items are plain data from the page: an id and a label each, or a separator.
-  ipcMain.handle('menu:popup', (e, items) => showContextMenu(e.sender, items))
+  handle('menu:popup', (e, items) => showContextMenu(e.sender, items))
 
-  ipcMain.handle('dialog:pickDirectory', async (e, title) => {
+  handle('dialog:pickDirectory', async (e, title) => {
     const win = BrowserWindow.fromWebContents(e.sender)
     const res = await dialog.showOpenDialog(win, { title: title || 'Choose a folder', properties: ['openDirectory', 'createDirectory'] })
     return res.canceled ? null : res.filePaths[0]
   })
 
-  ipcMain.handle('repos:list', () => listRepos())
-  ipcMain.handle('repos:add', (_e, dir) => addRepo(dir))
-  ipcMain.handle('repos:remove', async (_e, id) => {
-    await writeJson('repos.json', (await listRepos()).filter((r) => r.id !== id))
+  handle('repos:list', () => listRepos())
+  handle('repos:add', (_e, dir) => addRepo(dir))
+  handle('repos:remove', async (_e, id) => {
+    await changeRepos((repos) => repos.filter((r) => r.id !== id))
   })
   // What's already at the place a clone would go, so the dialog can say before anything runs.
-  ipcMain.handle('repos:cloneTarget', async (_e, parentDir, name) => {
+  handle('repos:cloneTarget', async (_e, parentDir, name) => {
     if (typeof parentDir !== 'string' || !path.isAbsolute(parentDir) || typeof name !== 'string' || !/^[\w.-]+$/.test(name) || name === '.' || name === '..') return { exists: false }
     const dest = path.join(parentDir, name)
     const stat = await fsp.stat(dest).catch(() => null)
@@ -219,7 +265,7 @@ function registerIpc() {
     const origin = isRepo ? await run('git', ['remote', 'get-url', 'origin'], { cwd: dest, env: GIT_BASE_ENV }) : null
     return { exists: true, path: dest, isRepo, origin: origin?.code === 0 ? origin.stdout.trim() : null }
   })
-  ipcMain.handle('repos:clone', async (_e, url, parentDir, name, auth) => {
+  handle('repos:clone', async (_e, url, parentDir, name, auth) => {
     if (!isSafeRemote(url)) throw new Error('Enter an https:// or SSH clone URL')
     if (typeof name !== 'string' || !/^[\w.-]+$/.test(name) || name === '.' || name === '..') throw new Error('Invalid folder name')
     if (typeof parentDir !== 'string' || !path.isAbsolute(parentDir)) throw new Error('Choose a parent folder')
@@ -232,15 +278,27 @@ function registerIpc() {
     return addRepo(dest)
   })
 
-  ipcMain.handle('git', async (_e, repoId, args, auth) => {
+  // Its own channel, as cloning is: the renderer's git commands never name a folder outside their repository.
+  handle('repos:addWorktree', async (_e, repoId, parentDir, branch) => {
+    const repo = await repoById(repoId)
+    const name = worktreeFolder(repo.name, branch)
+    if (typeof parentDir !== 'string' || !path.isAbsolute(parentDir)) throw new Error('Choose a parent folder')
+    const dest = path.join(parentDir, name)
+    if (fs.existsSync(dest)) throw new Error(`${dest} already exists`)
+    const res = await run('git', ['worktree', 'add', '--', dest, branch], { cwd: repo.path, env: GIT_BASE_ENV })
+    if (res.code !== 0) throw new Error(res.stderr.trim() || 'git worktree add failed')
+    return addRepo(dest)
+  })
+
+  handle('git', async (_e, repoId, args, auth) => {
     const repo = await repoById(repoId)
     validateGitArgs(args)
     const network = ['push', 'pull', 'fetch'].includes(args[0])
-    return run('git', args, { cwd: repo.path, env: { ...GIT_BASE_ENV, ...(network ? gitAuthEnv(auth) : {}) } })
+    return run('git', args, { cwd: repo.path, env: { ...gitCommandEnv(args[0]), ...(network ? gitAuthEnv(auth) : {}) } })
   })
 
-  ipcMain.handle('repo:reveal', async (_e, repoId) => shell.showItemInFolder((await repoById(repoId)).path))
-  ipcMain.handle('repo:openEditor', async (_e, repoId) => {
+  handle('repo:reveal', async (_e, repoId) => shell.showItemInFolder((await repoById(repoId)).path))
+  handle('repo:openEditor', async (_e, repoId) => {
     const repo = await repoById(repoId)
     const res = await run('code', [repo.path], { timeout: 15_000 })
     if (res.code !== 0) await shell.openPath(repo.path)
@@ -347,7 +405,7 @@ function createWindow() {
   mainWindow.on('enter-full-screen', sendFullScreen)
   mainWindow.on('leave-full-screen', sendFullScreen)
   mainWindow.webContents.on('did-finish-load', sendFullScreen)
-  if (process.env.GH_UI_E2E) e2eTest(mainWindow, process.env.GH_UI_E2E)
+  if (process.env.GH_UI_E2E && !app.isPackaged) e2eTest(mainWindow, process.env.GH_UI_E2E)
   else if (process.env.GH_UI_SMOKE_TEST) smokeTest(mainWindow)
 }
 
@@ -481,7 +539,7 @@ app.whenReady().then(() => {
   protocol.handle('app', async (request) => {
     const { pathname } = new URL(request.url)
     let file = path.normalize(path.join(DIST, decodeURIComponent(pathname)))
-    if (!file.startsWith(DIST)) return new Response('Forbidden', { status: 403 })
+    if (file !== DIST && !file.startsWith(DIST + path.sep)) return new Response('Forbidden', { status: 403 })
     const stat = await fsp.stat(file).catch(() => null)
     if (!stat || stat.isDirectory()) file = path.join(DIST, 'index.html') // SPA fallback
     const res = await net.fetch(pathToFileURL(file).toString())

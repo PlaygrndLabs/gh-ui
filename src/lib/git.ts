@@ -148,12 +148,22 @@ export type IdentityKey = 'user.name' | 'user.email'
 
 export type GitClient = ReturnType<typeof createGitClient>
 
+/** Another program (an editor, a terminal) holds the index for a moment. Git changes nothing when it says this, so trying again is safe. */
+const INDEX_LOCKED = /index\.lock|another git process/i
+const LOCK_RETRY_MS = [100, 250, 500, 1000]
+
 export function createGitClient(run: GitRunner) {
   const git = async (args: string[], withAuth = false) => {
-    const res = await run(args, withAuth)
+    let res = await run(args, withAuth)
+    for (const wait of LOCK_RETRY_MS) {
+      if (res.code === 0 || !INDEX_LOCKED.test(res.stderr)) break
+      await new Promise((resolve) => setTimeout(resolve, wait))
+      res = await run(args, withAuth)
+    }
     if (res.code !== 0) throw new Error((res.stderr || res.stdout || `git ${args[0]} failed`).trim())
     return res.stdout
   }
+  const status = async () => parseStatus(await git(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all']))
   const log = async (revisions: string[], limit = 200): Promise<LogEntry[]> => {
     const res = await run(['log', '-n', String(limit), LOG_FORMAT, ...revisions, '--'], false)
     return res.code === 0 ? parseCommitLog(res.stdout) : []
@@ -161,7 +171,7 @@ export function createGitClient(run: GitRunner) {
   const remotes = async () => parseRemotes(await git(['remote', '-v']))
   const remoteName = async () => primaryRemote(await remotes().catch(() => []))?.name ?? 'origin'
   return {
-    status: async () => parseStatus(await git(['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'])),
+    status,
     /** Empty when there's no origin. */
     remoteUrl: async () => (await git(['remote', 'get-url', 'origin']).catch(() => '')).trim(),
     branchNames: async () => (await git(['branch', '--format=%(refname:short)'])).split('\n').filter(Boolean),
@@ -208,20 +218,33 @@ export function createGitClient(run: GitRunner) {
     push: () => git(['push'], true),
     fetch: async () => git(['fetch', '--prune', await remoteName()], true),
     switchTo: (branch: string) => git(['switch', branch]),
+    renameBranch: (from: string, to: string) => git(['branch', '-m', '--', from, to]),
+    /** Forced, as GitHub Desktop's is: the app asks first, and a branch that was never merged is what people delete. */
+    deleteBranch: (branch: string) => git(['branch', '-D', '--', branch]),
+    /** What the remote's HEAD names, or null when this clone doesn't know. */
+    async defaultBranch() {
+      const remote = await remoteName()
+      const res = await run(['rev-parse', '--abbrev-ref', `${remote}/HEAD`], false)
+      const name = res.stdout.trim().slice(remote.length + 1)
+      return res.code === 0 && name && name !== 'HEAD' ? name : null
+    },
     createBranch: (branch: string) => git(['switch', '-c', branch]),
     /** Saves every change, new files too, and leaves the working tree clean. */
     stash: () => git(['stash', 'push', '-u']),
     stashPop: () => git(['stash', 'pop']),
     stashList: async () => (await git(['stash', 'list', '--format=%s'])).split('\n').filter(Boolean),
-    // A path-less `git reset` would also drop MERGE_HEAD / CHERRY_PICK_HEAD.
-    unstageAll: () => git(['reset', '-q', '--', '.']),
-    stageAll: () => git(['add', '-A']),
-    stage: (e: StatusEntry) => git(['add', '--', ...changePaths(e)]),
-    unstage: (e: StatusEntry) => git(['restore', '--staged', '--', ...changePaths(e)]),
+    stage: (...entries: StatusEntry[]) => git(['add', '--', ...entries.flatMap(changePaths)]),
+    // With paths, reset leaves MERGE_HEAD / CHERRY_PICK_HEAD alone, and unlike restore it works before the first commit.
+    unstage: (...entries: StatusEntry[]) => git(['reset', '-q', '--', ...entries.flatMap(changePaths)]),
     commit: (summary: string, description = '') => git(['commit', '-m', summary, ...(description.trim() ? ['-m', description] : [])]),
     /** Takes back the last commit and leaves its changes staged. */
     undoCommit: () => git(['reset', '--soft', 'HEAD~1']),
-    discard: (e: StatusEntry) => (e.index === '?' ? git(['clean', '-f', '--', e.path]) : git(['restore', '--staged', '--worktree', '--source=HEAD', '--', ...changePaths(e)])),
+    /** Asks git about the file first: the row that was clicked can be out of date by the time the dialog is answered. */
+    async discard({ path }: StatusEntry) {
+      const e = (await status()).entries.find((entry) => entry.path === path)
+      if (!e) return
+      await (e.index === '?' ? git(['clean', '-f', '--', e.path]) : git(['restore', '--staged', '--worktree', '--source=HEAD', '--', ...changePaths(e)]))
+    },
   }
 }
 

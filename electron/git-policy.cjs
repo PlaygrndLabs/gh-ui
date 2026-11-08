@@ -21,14 +21,69 @@ function gitAuthEnv(auth) {
 const GIT_BASE_ENV = { GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C' }
 
 // ---------------------------------------------------------------------------
-// git allow-list. The renderer only ever runs these subcommands, and never with
-// options that execute programs, write arbitrary files, or point git elsewhere.
+// git allow-list. args[0] is always the subcommand, so global options (-c, -C, --git-dir…) can't appear.
+//
+// Each subcommand lists the options the app really uses, spelled the way it spells them. A list of forbidden options
+// can't work: git accepts abbreviations (--upload-pa), joined short flags (-fu) and new options in every release.
+//   flags:    options taken exactly       prefixes: options with a value after "="
+//   valued:   options whose next argument is their value, and what that value may be
+//   args:     'none', or 'any' for bare arguments such as a revision; they can never start with "-"
+//   paths:    whether "--" and file paths may follow
+const ANYTHING = /^/
+const RULES = {
+  status: { flags: ['--porcelain=v1', '-b', '-z', '--untracked-files=all'], args: 'none' },
+  diff: { flags: ['--cached'], args: 'any', paths: true },
+  log: { flags: ['--not'], prefixes: ['--format=', '--pretty=', '--remotes='], valued: { '-n': /^\d+$/ }, args: 'any', paths: true },
+  show: { flags: ['--patch', '--no-color'], prefixes: ['--format='], args: 'any' },
+  branch: { flags: ['--all'], prefixes: ['--format='], args: 'any' },
+  switch: { flags: ['-c'], args: 'any' },
+  add: { args: 'none', paths: true },
+  restore: { flags: ['--staged', '--worktree'], prefixes: ['--source='], args: 'none', paths: true },
+  reset: { flags: ['-q', '--soft'], args: 'any', paths: true },
+  commit: { valued: { '-m': ANYTHING }, args: 'none' },
+  'rev-parse': { flags: ['--abbrev-ref'], args: 'any' },
+  'ls-tree': { flags: ['-r', '--name-only'], args: 'any' },
+  // The first bare argument names a configured remote, never a URL or folder, which could connect anywhere or run its hooks.
+  push: { flags: ['-u'], args: 'remote' },
+  pull: { flags: ['--ff-only'], args: 'remote' },
+  fetch: { flags: ['--prune'], args: 'remote' },
+}
+const ALLOWED_SUBCOMMANDS = new Set([...Object.keys(RULES), 'remote', 'config', 'stash', 'clean'])
 
-const ALLOWED_SUBCOMMANDS = new Set(['status', 'diff', 'log', 'show', 'branch', 'switch', 'add', 'restore', 'reset', 'commit', 'push', 'pull', 'fetch', 'remote', 'config', 'rev-parse', 'stash', 'clean', 'ls-tree'])
-// args[0] is always the subcommand, so global options (-c, -C, --git-dir…) can't
-// appear; these are the per-command options that run programs, write files or destroy work.
-const FORBIDDEN_FLAG = /^(--upload-pack|--receive-pack|--exec|--output|--ext-diff|--textconv|--template|--config|--git-dir|--work-tree|--separate-git-dir|--hard|--force|--force-with-lease|--mirror|--delete|-f|-d|-D)(=|$)/
-const VALUE_FLAGS = new Set(['-m', '--message', '-F', '--format', '--pretty', '-n', '--max-count'])
+/**
+ * The environment for one command. Where the app names files, a path means that one file: otherwise discarding
+ * app/[id]/page.tsx also matches app/i/page.tsx. Not for every command, because stash runs `git clean -- :/` internally
+ * and a literal ":/" matches nothing, which would leave untracked files behind.
+ */
+const gitCommandEnv = (sub) => ({ ...GIT_BASE_ENV, ...(sub === 'clean' || RULES[sub]?.paths ? { GIT_LITERAL_PATHSPECS: '1' } : {}) })
+
+// One ref, or source:destination. No leading "+" (forces the update) and no leading ":" (deletes the remote branch).
+const REFSPEC = /^[^\s:+~^?*[\\-][^\s:~^?*[\\]*(:[^\s:~^?*[\\]+)?$/
+const STASH_FORMS = [['push', '-u'], ['pop']]
+
+function validateOptions(sub, rest) {
+  const { flags = [], prefixes = [], valued = {}, args: kind, paths } = RULES[sub]
+  const bare = []
+  for (let i = 0; i < rest.length; i++) {
+    const a = rest[i]
+    if (a === '--') {
+      if (!paths) throw new Error(`git ${sub} does not take paths`)
+      break
+    }
+    if (Object.hasOwn(valued, a)) {
+      const value = rest[++i]
+      if (value === undefined || !valued[a].test(value)) throw new Error(`git option ${a} needs a value`)
+    } else if (a.startsWith('-')) {
+      if (!flags.includes(a) && !prefixes.some((p) => a.startsWith(p))) throw new Error(`git option ${a} is not allowed`)
+    } else bare.push(a)
+  }
+  if (kind === 'none' && bare.length) throw new Error(`git ${sub} does not take ${bare[0]}`)
+  if (kind === 'remote') {
+    const [remote, ...refspecs] = bare
+    if (remote !== undefined && !REMOTE_NAME.test(remote)) throw new Error(`${remote} is not a remote's name`)
+    for (const refspec of refspecs) if (!REFSPEC.test(refspec)) throw new Error(`Refspec ${refspec} is not allowed`)
+  }
+}
 
 const IDENTITY_KEYS = new Set(['user.name', 'user.email'])
 const REMOTE_NAME = /^[A-Za-z0-9][\w.-]*$/
@@ -50,6 +105,14 @@ function validateGitArgs(args) {
   const [sub, ...rest] = args
   if (!ALLOWED_SUBCOMMANDS.has(sub)) throw new Error(`git ${sub} is not allowed`)
   if (sub === 'remote') return validateRemoteArgs(rest)
+  // Force-deleting one named branch is the only deletion; the page confirms it first.
+  if (sub === 'branch' && rest[0] === '-D' && rest[1] === '--' && rest.length === 3) return
+  if (sub === 'branch' && rest[0] === '-m' && rest[1] === '--' && rest.length === 4) return
+  if (sub === 'stash') {
+    const listing = rest.length === 2 && rest[0] === 'list' && rest[1].startsWith('--format=')
+    if (!listing && !STASH_FORMS.some((form) => form.join('\0') === rest.join('\0'))) throw new Error('That `git stash` command is not allowed')
+    return
+  }
   // Only this repository's commit identity; any other setting could make git run a program.
   if (sub === 'config') {
     const ok = rest.length === 3 && rest[0] === '--local' && ['--get', '--unset'].includes(rest[1]) && IDENTITY_KEYS.has(rest[2])
@@ -64,18 +127,17 @@ function validateGitArgs(args) {
     if (!ok) throw new Error('Unsupported diff --no-index usage')
     return
   }
-  const forceAllowed = sub === 'clean' // clean requires -f; it is limited to paths after --
-  if (sub === 'clean' && !(rest[0] === '-f' && rest[1] === '--' && rest.length > 2)) throw new Error('Only `git clean -f -- <paths>` is allowed')
-  for (let i = 0; i < rest.length; i++) {
-    const a = rest[i]
-    if (a === '--') break // everything after is a pathspec
-    if (VALUE_FLAGS.has(a)) {
-      i++ // skip the free-text value (commit message, format string)
-      continue
-    }
-    if (a.startsWith('--format=') || a.startsWith('--pretty=') || a.startsWith('--source=')) continue
-    if (FORBIDDEN_FLAG.test(a) && !(forceAllowed && a === '-f')) throw new Error(`git option ${a} is not allowed`)
+  if (sub === 'clean') {
+    if (!(rest[0] === '-f' && rest[1] === '--' && rest.length > 2)) throw new Error('Only `git clean -f -- <paths>` is allowed')
+    return
   }
+  validateOptions(sub, rest)
 }
 
-module.exports = { HOST_RE, gitAuthEnv, validateGitArgs, GIT_BASE_ENV }
+/** The folder a branch's worktree goes in, named after the repository and the branch. */
+function worktreeFolder(repoName, branch) {
+  if (typeof branch !== 'string' || !branch || branch.startsWith('-') || /[\s\0-\x1f]/.test(branch)) throw new Error('Invalid branch name')
+  return `${repoName}-${branch.replace(/[^\w.-]+/g, '-')}`
+}
+
+module.exports = { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, gitCommandEnv, GIT_BASE_ENV }

@@ -81,7 +81,12 @@ button.ws-seg:focus-visible { outline: 2px solid var(--ws-chrome-text); outline-
 button.ws-seg:disabled { cursor: default; opacity: 0.75; }
 .ws-seg-where { flex: 0 1 190px; width: 190px; }
 .ws-seg-where > svg:last-child { flex: none; color: var(--ws-chrome-muted); }
-.ws-seg-branch { width: 270px; }
+.ws-seg-merged { flex: 0 1 220px; width: 220px; align-items: stretch; gap: 0; padding: 0; }
+.ws-seg-action { flex: 1; border-right: 0; }
+.ws-seg-gear { flex: none; width: 36px; padding: 0; color: var(--ws-chrome-muted); background: none; border: 0; cursor: pointer; }
+.ws-seg-gear:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-hover); }
+.ws-seg-gear:focus-visible { outline: 2px solid var(--ws-chrome-text); outline-offset: -2px; }
+.ws-seg-branch { flex: none; width: 340px; }
 .ws-seg-sync { width: 240px; }
 .ws-seg-pick { flex: 0 1 380px; width: 380px; }
 .ws-seg-text { display: flex; flex: 1; flex-direction: column; min-width: 0; line-height: 1.25; }
@@ -101,15 +106,24 @@ a.ws-tab, .ws-tab { display: inline-flex; align-items: center; gap: 6px; padding
 .ws-tab:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
 .ws-tab[aria-current='page'], .ws-tab[aria-selected='true'] { font-weight: 600; color: var(--ws-text); border-bottom-color: var(--ws-accent); }
 .ws-tabs-end { display: flex; align-items: center; gap: 2px; margin-left: auto; padding-left: 8px; }
-.ws-refreshing svg { animation: gd-spin 1s linear infinite; }
+.ws-refreshing svg, .ws-spin { animation: gd-spin 1s linear infinite; }
 .ws-pill { padding: 0 6px; font-size: 11px; font-weight: 600; line-height: 17px; color: var(--ws-text); background: var(--ws-hover); border-radius: 9px; }
 .ws-mark { font-size: 12px; font-weight: 700; }
 .ws-ok { color: var(--ws-ok); }
 .ws-bad { color: var(--ws-bad); }
 .ws-run { color: var(--ws-warn); }
 
+/* Rows in every dropdown run edge to edge with square corners, as GitHub Desktop's do, instead of Primer's inset cards. */
+ul:is([role='menu'], [role='listbox']) { padding-block: 0; }
+:is([role='menu'], [role='listbox']) li[class*='ActionList-ActionListItem-'] { margin-inline: 0; border-radius: 0; }
+:is([role='menu'], [role='listbox']) [class*='ActionList-ActionListContent-'] { padding-inline: 16px; border-radius: 0; }
 .ws-menu-filter { padding: 8px; border-bottom: 1px solid var(--ws-line); }
 .ws-menu-list { max-height: 380px; overflow: auto; }
+/* Primer positions overlays inline, so these have to win over its style attribute. */
+.ws-toolbar-panel { position: fixed !important; top: var(--ws-panel-top) !important; left: var(--ws-panel-left) !important; bottom: 0 !important; width: var(--ws-panel-width) !important; min-width: min(340px, calc(100vw - var(--ws-panel-left))) !important; height: auto !important; max-width: none !important; max-height: none !important; border-radius: 0 !important; }
+.ws-toolbar-panel-body { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.ws-toolbar-panel-body .ws-menu-list { flex: 0 1 auto; min-height: 0; max-height: none; }
+.ws-toolbar-panel-body .ws-list-foot { margin-top: auto; }
 .ws-menu-filters { display: flex; border-bottom: 1px solid var(--ws-line); }
 
 /* ---------- Repository picker ---------- */
