@@ -182,6 +182,9 @@ const unmarked = (c: LogEntry): HistoryRow => c
 /** What the repository has stopped in the middle of. */
 export type RepoOperation = 'merge' | 'rebase'
 
+/** What git diffs against for a commit with no parent. */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
 /** Another program (an editor, a terminal) holds the index for a moment. Git changes nothing when it says this, so trying again is safe. */
 const INDEX_LOCKED = /index\.lock|another git process/i
 const LOCK_RETRY_MS = [100, 250, 500, 1000]
@@ -272,6 +275,21 @@ export function createGitClient(run: GitRunner) {
       const res = await run(['show', '--format=%B%x1e', '--patch', '--no-color', sha], false)
       const [message, patch = ''] = res.stdout.split('\x1e')
       return { message: message.trim(), files: parseUnifiedDiff(patch) }
+    },
+    /**
+     * What a run of commits adds up to, newest first: from just before the oldest to the newest, so a change that was
+     * later undone doesn't show. `others` counts commits the span holds that weren't asked for, which a merge brings in.
+     */
+    async combinedDiff(shas: string[]) {
+      const newest = shas[0]
+      const oldest = shas[shas.length - 1]
+      // Commits on two lines of history have no single before and after.
+      if ((await log([oldest, '--not', newest], 1)).length) return { related: false, others: 0, files: [] as FileDiff[] }
+      const parent = await run(['rev-parse', '-q', '--verify', `${oldest}^`], false)
+      const base = parent.code === 0 ? parent.stdout.trim() : null
+      const span = await log(base ? [newest, '--not', base] : [newest], shas.length + 1000)
+      const asked = new Set(shas)
+      return { related: true, others: span.filter((c) => !asked.has(c.sha)).length, files: parseUnifiedDiff(await git(['diff', base ?? EMPTY_TREE, newest])) }
     },
     addOrigin: (url: string) => git(['remote', 'add', 'origin', url]),
     publishBranch: async () => git(['push', '-u', await remoteName(), 'HEAD'], true),

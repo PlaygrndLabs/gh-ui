@@ -201,7 +201,7 @@ button.ws-row:hover, a.ws-row:hover, .ws-row-file:hover { color: var(--ws-text);
 .ws-file-path { display: flex; flex: 1; min-width: 0; white-space: nowrap; }
 .ws-file-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ws-muted); }
 .ws-file-name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-.ws-commit-row { gap: 10px; min-height: 52px; padding: 8px 12px; border-bottom: 1px solid var(--ws-line); border-radius: 0; }
+.ws-commit-row { gap: 10px; min-height: 52px; padding: 8px 12px; border-bottom: 1px solid var(--ws-line); border-radius: 0; user-select: none; }
 .ws-commit-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
 .ws-commit-subject { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
 .ws-commit-text .ws-row-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

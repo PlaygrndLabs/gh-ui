@@ -182,6 +182,48 @@ describe('createGitClient against a real repository', () => {
     }
   })
 
+  it('adds a run of commits up to its net change', async () => {
+    const tree = join(root, 'range')
+    await raw(work, 'worktree', 'add', '-b', 'range', tree)
+    const head = async () => (await raw(tree, 'rev-parse', 'HEAD')).trim()
+    const paths = (r: { files: Array<{ newPath: string }> }) => r.files.map((f) => f.newPath)
+    try {
+      await commitFile(tree, 'x.txt', 'one')
+      const one = await head()
+      await commitFile(tree, 'x.txt', 'two')
+      const two = await head()
+      await commitFile(tree, 'y.txt', 'why')
+      const three = await head()
+
+      const net = await client.combinedDiff([two, one])
+      expect(net).toMatchObject({ related: true, others: 0 })
+      expect(net.files.map((f) => [f.newPath, f.status])).toEqual([['x.txt', 'added']])
+      expect(net.files[0].patch).toContain('+two')
+      expect(net.files[0].patch).not.toContain('one')
+      expect(paths(await client.combinedDiff([three, two]))).toEqual(['x.txt', 'y.txt'])
+
+      // From the very first commit there's nothing before it to compare with.
+      const [first] = (await raw(tree, 'rev-list', '--max-parents=0', 'HEAD')).trim().split('\n')
+      expect(paths(await client.combinedDiff([three, first]))).toEqual(['a.txt', 'x.txt', 'y.txt'])
+
+      // Two lines of history have no combined change.
+      const release = (await raw(work, 'rev-parse', 'origin/release')).trim()
+      expect(await client.combinedDiff([three, release])).toEqual({ related: false, others: 0, files: [] })
+
+      // The commit a merge brought in is part of the span even though it wasn't picked.
+      await raw(tree, 'switch', '-c', 'range-side', one)
+      await commitFile(tree, 'side.txt', 'side')
+      await raw(tree, 'switch', 'range')
+      await raw(tree, 'merge', '--no-edit', 'range-side')
+      const merged = await client.combinedDiff([await head(), three])
+      expect(merged.others).toBe(1)
+      expect(paths(merged)).toEqual(['side.txt', 'y.txt'])
+    } finally {
+      await raw(work, 'worktree', 'remove', '--force', tree)
+      await raw(work, 'branch', '-D', 'range', 'range-side').catch(() => '')
+    }
+  })
+
   it('renames and deletes a branch, even one with commits nothing else has', async () => {
     await raw(work, 'branch', 'old-name')
     await client.renameBranch('old-name', 'new-name')

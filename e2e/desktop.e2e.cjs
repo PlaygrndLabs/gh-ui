@@ -1033,6 +1033,73 @@ exports.steps = [
     `,
   },
   {
+    name: 'history: shift-click shows what a run of commits adds up to',
+    js: `${helpers}
+      const r = {}
+      const need = (v, what) => { if (!v) throw new Error('No ' + what + ' in ' + savedActiveUrl() + ': ' + main()?.innerText.slice(0, 400)); return v }
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const branchTab = (name) => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes(name))
+      const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+      await g.git(repo.id, ['add', '--', 'scratch.txt'])
+      r.commit = await g.git(repo.id, ['commit', '-m', 'Range scratch'])
+      if (r.commit.code) throw new Error('commit: ' + r.commit.stderr + r.commit.stdout)
+      ;[...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      need(branchTab('History'), 'History tab').click()
+      await until(() => rows().some((c) => c.textContent.includes('Range scratch')), 20000)
+      need(rows()[0], 'first row').click()
+      rows()[rows().length - 1].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }))
+      await until(() => main().querySelector('.ws-details-head')?.textContent.includes('commits selected'), 5000)
+      await until(() => main().querySelector('.ws-file-row'), 8000)
+      r.rows = rows().length
+      r.selected = main().querySelectorAll('.ws-commit-row.is-selected').length
+      r.title = main().querySelector('.ws-details-head').textContent
+      r.files = [...main().querySelectorAll('.ws-file-row')].map((f) => f.textContent)
+      r.fail = !(r.rows >= 2 && r.selected === r.rows && r.title.includes(r.rows + ' commits selected') && r.files.some((f) => f.includes('scratch.txt')))
+      return r
+    `,
+    screenshot: 'history-range',
+  },
+  {
+    name: 'history: a plain click goes back to one commit',
+    js: `${helpers}
+      const r = {}
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+      rows()[0].click()
+      await until(() => !main().querySelector('.ws-details-head')?.textContent.includes('commits selected'), 5000)
+      r.selected = main().querySelectorAll('.ws-commit-row.is-selected').length
+      await g.git(repo.id, ['reset', '--soft', 'HEAD~1'])
+      ;[...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      ;[...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes('Changes')).click()
+      await sleep(500)
+      r.fail = r.selected !== 1
+      return r
+    `,
+  },
+  {
+    name: 'history: a repository only on GitHub combines commits too',
+    js: `${helpers}
+      const r = {}
+      const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+      tabs().find((t) => tabName(t) === 'jq').click()
+      await sleep(500)
+      clickLink('/jqlang/jq')
+      await until(() => rows().length >= 3, 20000)
+      rows()[0].click()
+      await sleep(200)
+      rows()[2].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }))
+      await until(() => main().querySelector('.ws-details-head')?.textContent.includes('3 commits selected'), 5000)
+      await until(() => main().querySelector('.ws-file-row') || main().querySelector('.ws-details .error-box'), 15000)
+      r.selected = main().querySelectorAll('.ws-commit-row.is-selected').length
+      r.files = main().querySelectorAll('.ws-file-row').length
+      r.error = main().querySelector('.ws-details .error-box')?.textContent
+      tabs().find((t) => tabName(t) === 'e2e-local').click()
+      await sleep(500)
+      r.fail = !(r.selected === 3 && r.files > 0 && !r.error)
+      return r
+    `,
+  },
+  {
     name: 'panes: drag a divider with the real pointer',
     inputJs: `${helpers}
       const handle = [...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)
