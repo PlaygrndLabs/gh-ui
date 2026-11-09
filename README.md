@@ -1,15 +1,12 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/cover-dark.png" />
-    <img src="docs/assets/cover-light.png" alt="gh-ui: a GUI for GitHub, with a code review agent" width="100%" />
-  </picture>
+  <img src="docs/assets/cover-dark.png" alt="gh-ui: a GUI for GitHub, with a code review agent" width="100%" />
 </p>
 
 # gh-ui: a GUI for GitHub, with a built-in code review agent
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**GitHub Desktop's simplicity, with your pull requests and Actions in the same window.** See every branch's local and GitHub state in one place, review pull requests as a chat beside the code, and follow Actions runs, with a Claude agent beside them. Sign in with just a token, or reuse your `gh` login.
+**A simple desktop app with your branches, pull requests and Actions in the same window.** See every branch's local and GitHub state in one place, review pull requests as a chat beside the code, and follow Actions runs, with a Claude agent beside them. Sign in with just a token, or reuse your `gh` login.
 
 ## Why gh-ui
 
@@ -67,4 +64,4 @@ To package the app, run `npm run electron:dist`.
 
 ## License
 
-[MIT](LICENSE). gh-ui is an independent project, not affiliated with GitHub.
+[MIT](LICENSE).

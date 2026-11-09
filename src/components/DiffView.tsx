@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
 import { Button, IconButton, Tooltip } from '@primer/react'
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from '@primer/octicons-react'
 import { hunkIndexOf, lineOn, parsePatch, rangeContains, selectLines, type DiffLine, type DiffSide, type LineRange, type LineSelection } from '../lib/diff'
@@ -286,6 +286,43 @@ export interface FileDiffInput {
   sha?: string | null
 }
 
+// How far ahead of the screen a diff starts drawing, so scrolling at a normal speed never reaches an empty one.
+const DRAW_AHEAD = '1500px'
+const ROW_HEIGHT = 20
+
+const nearScreenCallbacks = new WeakMap<Element, () => void>()
+let nearScreen: IntersectionObserver | null = null
+
+/** One observer for every diff. scrollMargin because diffs scroll inside their panes, and rootMargin only reaches the window's edge. */
+function watchNearScreen(el: Element, onNear: () => void) {
+  if (typeof IntersectionObserver === 'undefined') {
+    onNear()
+    return () => {}
+  }
+  nearScreen ??= new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue
+        nearScreenCallbacks.get(entry.target)?.()
+      }
+    },
+    { rootMargin: DRAW_AHEAD, scrollMargin: DRAW_AHEAD },
+  )
+  nearScreenCallbacks.set(el, onNear)
+  nearScreen.observe(el)
+  return () => {
+    nearScreenCallbacks.delete(el)
+    nearScreen?.unobserve(el)
+  }
+}
+
+function countLines(patch: string | null | undefined) {
+  if (!patch) return 0
+  let lines = patch.endsWith('\n') ? 0 : 1
+  for (let at = patch.indexOf('\n'); at !== -1; at = patch.indexOf('\n', at + 1)) lines++
+  return lines
+}
+
 const EMPTY_BLOB_SHA = 'e69de29bb2d1d6434b8b29ae775ad8c2e48c5391'
 const BINARY_EXT = /\.(png|jpe?g|gif|ico|icns|webp|bmp|tiff?|avif|heic|psd|pdf|zip|gz|tgz|bz2|xz|7z|rar|jar|war|whl|woff2?|ttf|otf|eot|mp3|mp4|m4a|mov|avi|webm|wav|ogg|flac|exe|dll|so|dylib|bin|class|wasm|pyc|o|a|lib|node|db|sqlite)$/i
 
@@ -307,14 +344,22 @@ interface FileDiffBoxProps extends Omit<DiffViewProps, 'path' | 'lines'> {
   collapsed?: boolean
   onToggle?(): void
   id?: string
+  /** Draws straight away. For what's on screen from the start; the rest wait until they're close to it. */
+  eager?: boolean
 }
 
 const LARGE_DIFF_LINES = 1200
 
-export function FileDiffBox({ file, actions, collapsed, onToggle, id, ...rest }: FileDiffBoxProps) {
-  const lines = useMemo(() => parsePatch(file.patch), [file.patch])
+export function FileDiffBox({ file, actions, collapsed, onToggle, id, eager = false, ...rest }: FileDiffBoxProps) {
+  const lineCount = useMemo(() => countLines(file.patch), [file.patch])
+  // Once drawn it stays drawn: a comment being written in it has to survive scrolling away.
+  const [near, setNear] = useState(eager)
+  const watch = useCallback((el: HTMLDivElement | null) => {
+    if (el) return watchNearScreen(el, () => setNear(true))
+  }, [])
+  const lines = useMemo(() => (near ? parsePatch(file.patch) : []), [near, file.patch])
   const [forceLoad, setForceLoad] = useState(false)
-  const tooLarge = lines.length > LARGE_DIFF_LINES && !forceLoad
+  const tooLarge = lineCount > LARGE_DIFF_LINES && !forceLoad
   return (
     <div className={`Box file-diff ${collapsed ? 'collapsed' : ''}`} id={id}>
       <div className="file-diff-header">
@@ -342,15 +387,17 @@ export function FileDiffBox({ file, actions, collapsed, onToggle, id, ...rest }:
           <div className="diff-empty-note">{missingPatchNote(file)}</div>
         ) : tooLarge ? (
           <div className="diff-hidden-note">
-            <Tooltip text={`${lines.length.toLocaleString()} lines`}>
+            <Tooltip text={`${lineCount.toLocaleString()} lines`}>
               <Button variant="invisible" onClick={() => setForceLoad(true)}>
                 <span className="diff-load-label">Load diff</span>
               </Button>
             </Tooltip>
             <p className="diff-hidden-note-text">Large diffs are not rendered by default.</p>
           </div>
-        ) : (
+        ) : near ? (
           <DiffView path={file.path} lines={lines} {...rest} />
+        ) : (
+          <div ref={watch} style={{ height: lineCount * ROW_HEIGHT }} />
         ))}
     </div>
   )

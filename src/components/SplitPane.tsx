@@ -20,10 +20,79 @@ interface SplitPaneViewProps extends SplitPaneBase {
   onChange(next: PaneState): void
 }
 
+interface PaneHandleProps {
+  /** Names the pane being resized. */
+  label: string
+  width: number
+  min: number
+  max: number
+  defaultWidth: number
+  sized?: PaneSide
+  onResize(width: number): void
+  /** `width` is what the pane had before the drag, to come back at. */
+  onCollapse(side: PaneSide, width: number): void
+}
+
+/** The draggable part of a divider, for layouts that can't be a SplitPane (its panes clip, which ends position: sticky inside them). */
+export function PaneHandle({ label, width, min, max, defaultWidth, sized = 'first', onResize, onCollapse }: PaneHandleProps) {
+  const bounds: PaneBounds = { min, max }
+  const drag = useRef<{ x: number; width: number } | null>(null)
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.currentTarget.setPointerCapture(e.pointerId)
+    drag.current = { x: e.clientX, width }
+  }
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (drag.current) onResize(dragWidth(drag.current.width, drag.current.x, e.clientX, bounds, sized))
+  }
+  // The browser can merge the last move into the release, so the release has the final say.
+  const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    const start = drag.current
+    drag.current = null
+    if (!start) return
+    const collapsed = dragCollapse(start.width, start.x, e.clientX, bounds, sized)
+    if (collapsed) onCollapse(collapsed, start.width)
+    else onResize(dragWidth(start.width, start.x, e.clientX, bounds, sized))
+  }
+  const onPointerCancel = () => {
+    drag.current = null
+  }
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      return onCollapse(sized, width)
+    }
+    const next = keyWidth(width, e.key, bounds, sized)
+    if (next === null) return
+    e.preventDefault()
+    onResize(next)
+  }
+
+  return (
+    <div
+      className="ws-divider-handle"
+      role="separator"
+      tabIndex={0}
+      aria-orientation="vertical"
+      aria-label={`Resize ${label}`}
+      aria-valuenow={width}
+      aria-valuemin={min}
+      aria-valuemax={max}
+      title="Drag to resize, or past the edge to hide. Double-click to reset."
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      onLostPointerCapture={onPointerCancel}
+      onKeyDown={onKeyDown}
+      onDoubleClick={() => onResize(defaultWidth)}
+    />
+  )
+}
+
 /** Both panes stay mounted when one collapses, so its scroll position and unsent text survive. */
 export function SplitPaneView({ first, second, firstLabel, secondLabel, min, max, defaultWidth, sized = 'first', state, onChange }: SplitPaneViewProps) {
   const bounds: PaneBounds = { min, max }
-  const drag = useRef<{ x: number; width: number } | null>(null)
   const sizedLabel = sized === 'first' ? firstLabel : secondLabel
   const paneProps = (side: PaneSide) => {
     const collapsed = state.collapsed === side
@@ -57,60 +126,21 @@ export function SplitPaneView({ first, second, firstLabel, secondLabel, min, max
       </button>
     )
 
-  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.currentTarget.setPointerCapture(e.pointerId)
-    drag.current = { x: e.clientX, width: state.width }
-  }
-  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (drag.current) onChange({ ...state, width: dragWidth(drag.current.width, drag.current.x, e.clientX, bounds, sized) })
-  }
-  // The browser can merge the last move into the release, so the release has the final say.
-  const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
-    const start = drag.current
-    drag.current = null
-    if (!start) return
-    const collapsed = dragCollapse(start.width, start.x, e.clientX, bounds, sized)
-    // Past the edge, the pane keeps the width it had, to come back at.
-    onChange(collapsed ? { width: start.width, collapsed } : { ...state, width: dragWidth(start.width, start.x, e.clientX, bounds, sized) })
-  }
-  const onPointerCancel = () => {
-    drag.current = null
-  }
-  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      return setCollapsed(sized)
-    }
-    const width = keyWidth(state.width, e.key, bounds, sized)
-    if (width === null) return
-    e.preventDefault()
-    onChange({ ...state, width })
-  }
-
   return (
     <div className="ws-split">
       <div {...paneProps('first')}>{first}</div>
       {strip('first', firstLabel)}
       {!state.collapsed && (
         <div className="ws-divider">
-          <div
-            className="ws-divider-handle"
-            role="separator"
-            tabIndex={0}
-            aria-orientation="vertical"
-            aria-label={`Resize ${sizedLabel}`}
-            aria-valuenow={state.width}
-            aria-valuemin={min}
-            aria-valuemax={max}
-            title="Drag to resize, or past the edge to hide. Double-click to reset."
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerCancel}
-            onLostPointerCapture={onPointerCancel}
-            onKeyDown={onKeyDown}
-            onDoubleClick={() => onChange({ ...state, width: defaultWidth })}
+          <PaneHandle
+            label={sizedLabel}
+            width={state.width}
+            min={min}
+            max={max}
+            defaultWidth={defaultWidth}
+            sized={sized}
+            onResize={(width) => onChange({ ...state, width })}
+            onCollapse={(collapsed, width) => onChange({ width, collapsed })}
           />
         </div>
       )}

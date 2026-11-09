@@ -16,7 +16,7 @@ import {
   CircleSlashIcon,
   ToolsIcon,
 } from '@primer/octicons-react'
-import { useAgent, type ChatItem } from '../lib/agent/AgentProvider'
+import { useAgent, useAgentChat, type ChatItem } from '../lib/agent/AgentProvider'
 import { MODELS } from '../lib/agent/settings'
 import { renderAgentMarkdown } from '../lib/agent/render'
 import { sanitizeAgent, useLinkInterceptor } from './Markdown'
@@ -40,7 +40,7 @@ function usageSummary({ input, output, cacheRead, cacheWrite }: { input: number;
 }
 
 export function AgentPanel() {
-  const agent = useAgent()
+  const agent = { ...useAgent(), ...useAgentChat() }
   const [draft, setDraft] = useState('')
   const scroller = useRef<HTMLDivElement>(null)
   const stickToBottom = useRef(true)

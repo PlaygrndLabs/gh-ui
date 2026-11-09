@@ -179,8 +179,8 @@ export function PullCommitsPane({ pr }: { pr: PullRequest }) {
         ) : (
           <>
             <div className="text-bold mb-2">{firstLine(commit.data?.commit.message ?? '')}</div>
-            {commit.data?.files?.map((f) => (
-              <FileDiffBox key={f.filename} file={{ path: f.filename, previousPath: f.previous_filename ?? null, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch ?? null }} />
+            {commit.data?.files?.map((f, i) => (
+              <FileDiffBox key={f.filename} eager={i < 3} file={{ path: f.filename, previousPath: f.previous_filename ?? null, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch ?? null }} />
             ))}
           </>
         )}

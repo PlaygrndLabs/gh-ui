@@ -287,6 +287,23 @@ exports.steps = [
     `,
   },
   {
+    name: 'actions: a finished job shows its log, which GitHub serves through a redirect',
+    js: `${helpers}
+      const accounts = JSON.parse((await g.secrets.get('accounts')) || '[]')
+      const api = async (path) => (await fetch('https://api.github.com/repos/jqlang/jq/actions/' + path, { headers: { Authorization: 'Bearer ' + accounts[0].token } })).json()
+      const run = (await api('runs?status=success&per_page=1')).workflow_runs[0]
+      const job = (await api('runs/' + run.id + '/jobs?per_page=30')).jobs.find((j) => j.conclusion === 'success')
+      clickLink('/jqlang/jq/actions/runs/' + run.id + '/job/' + job.id)
+      // Until the log arrives the steps are listed as plain rows; only a loaded log makes them buttons.
+      const step = await until(() => main()?.querySelector('.log-view button.log-step-header'), 25000)
+      step?.click()
+      const line = await until(() => main()?.querySelector('.log-view .log-line'), 5000)
+      const r = { job: job.name, step: !!step, line: line?.innerText.slice(0, 60), error: main()?.querySelector('.log-view .error-box')?.innerText.slice(0, 120) }
+      r.fail = !(step && line)
+      return r
+    `,
+  },
+  {
     name: 'new pull request: suggests recent branches to compare',
     screenshot: 'new-pull-request',
     js: `${helpers}

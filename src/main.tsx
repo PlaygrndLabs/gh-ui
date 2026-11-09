@@ -38,6 +38,8 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
+      // Going back to a page shows what it had while it refreshes, instead of a spinner.
+      gcTime: 30 * 60_000,
       refetchOnWindowFocus: true,
       retry: (count, err) => {
         const status = (err as { status?: number }).status

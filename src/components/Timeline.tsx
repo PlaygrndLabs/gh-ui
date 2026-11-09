@@ -342,7 +342,9 @@ interface ReviewThreadProps {
 export function ReviewThread({ thread, context, showHunk, viewerLogin, replyLabel = 'Reply', pendingReplies, onReply, onResolve, onAskAgent, agentPrompt, onEditComment, onDeleteComment }: ReviewThreadProps) {
   const resolved = thread.info?.isResolved ?? false
   const outdated = thread.info?.isOutdated ?? false
-  const [collapsed, setCollapsed] = useState(resolved)
+  // Follows `resolved` until the viewer toggles: thread status loads separately, usually after this mounts.
+  const [toggled, setCollapsed] = useState<boolean | null>(null)
+  const collapsed = toggled ?? resolved
   const [replying, setReplying] = useState(false)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -361,8 +363,8 @@ export function ReviewThread({ thread, context, showHunk, viewerLogin, replyLabe
   return (
     <div className={`diff-thread ${resolved ? 'resolved' : ''}`}>
       {showHunk && (
-        <div style={{ borderBottom: '1px solid var(--borderColor-muted)' }}>
-          <div className="flex-center gap-2 text-small" style={{ padding: '8px 16px', background: 'var(--bgColor-muted)', borderRadius: '6px 6px 0 0' }}>
+        <div style={{ borderBottom: collapsed ? undefined : '1px solid var(--borderColor-muted)' }}>
+          <div className="flex-center gap-2 text-small" style={{ padding: '8px 16px', background: 'var(--bgColor-muted)', borderRadius: collapsed ? 6 : '6px 6px 0 0' }}>
             <button type="button" onClick={() => setCollapsed(!collapsed)} style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'inherit', display: 'inline-flex' }} aria-label={collapsed ? 'Expand thread' : 'Collapse thread'}>
               {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
             </button>

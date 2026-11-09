@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Octokit } from '@octokit/rest'
 import type { RestEndpointMethodTypes } from '@octokit/rest'
 import { reportRejectedToken, useAccount, type Account } from './auth'
+import { native } from './platform'
 import { hunkSide } from './suggestions'
 
 const clients = new Map<string, Octokit>()
@@ -15,11 +16,24 @@ export const writesInFlight = () => writes
 // 304, which doesn't count against the rate limit. React Query does the caching.
 const revalidatingFetch: typeof fetch = (input, init) => fetch(input, { ...init, cache: 'no-cache' })
 
+const NO_BODY_STATUS = new Set([101, 204, 205, 304])
+
+/** In the desktop app reads go through the main process (`apiGet`), which saves the preflight every new URL costs a page. */
+const apiFetch: typeof fetch = async (input, init) => {
+  const isPlainGet = typeof input === 'string' && (init?.method ?? 'GET') === 'GET' && !init?.signal && init?.redirect !== 'manual'
+  if (!native || !isPlainGet) return revalidatingFetch(input, init)
+  const res = await native.apiGet({ url: input, headers: Object.fromEntries(new Headers(init?.headers)) })
+  if ('refused' in res) return revalidatingFetch(input, init)
+  const response = new Response(NO_BODY_STATUS.has(res.status) ? null : (res.body as BodyInit), { status: res.status, headers: res.headers })
+  Object.defineProperty(response, 'url', { value: res.url })
+  return response
+}
+
 export function octokitFor(account: Pick<Account, 'id' | 'token' | 'apiBase'>): Octokit {
   const key = `${account.id}\n${account.token}`
   let client = clients.get(key)
   if (!client) {
-    client = new Octokit({ auth: account.token, baseUrl: account.apiBase, request: { fetch: revalidatingFetch } })
+    client = new Octokit({ auth: account.token, baseUrl: account.apiBase, request: { fetch: apiFetch } })
     // 401 means GitHub no longer accepts this token (REST and GraphQL both go through this hook).
     client.hook.error('request', (error) => {
       if ((error as { status?: number }).status === 401) reportRejectedToken(account.id, account.token)
