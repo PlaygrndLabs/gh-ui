@@ -1,5 +1,5 @@
 import { flushSync } from 'react-dom'
-import { Activity, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Activity, createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPath, createRoutesFromElements, MemoryRouter, parsePath, Route, Router, RouterProvider, Routes, useLocation, type Navigator } from 'react-router-dom'
 import { AppShell, ErrorBoundary, pageRoutes } from './App'
 import { AgentPanel } from './components/AgentPanel'
@@ -11,7 +11,8 @@ import { useAuth } from './lib/auth'
 import { linkTarget } from './lib/links'
 import { native, openExternal } from './lib/platform'
 import { confirmDialogOpen, contentElementById } from './lib/scroll'
-import { CurrentTabProvider, forgetSavedTabs, tabButtonId, tabPanelId, TabsProvider, useCurrentTabId, useTabQueryPins, useTabs } from './lib/TabsProvider'
+import { CurrentTabProvider, CurrentTabViewProvider, forgetSavedTabs, tabButtonId, tabPanelId, TabsProvider, useCurrentTabId, useTabActions, useTabQueryPins, useTabs, type CurrentTabView } from './lib/TabsProvider'
+import { forgetRepoSnapshots } from './lib/repo'
 import { clampSplitRatio, repoKeyFromUrl, safeTabPath, titleFromLink, visibleTabs, type Tab } from './lib/tabs'
 
 const decodeId = (id: string) => {
@@ -43,22 +44,25 @@ function TabContent({ children }: { children: ReactNode }) {
   )
 }
 
-function TabPane({ tab, shown, side, focused }: { tab: Tab; shown: boolean; side: 'left' | 'right' | null; focused: boolean }) {
-  const { routerFor, select } = useTabs()
+const TabPane = memo(function TabPane({ tab, shown, side, focused }: { tab: Tab; shown: boolean; side: 'left' | 'right' | null; focused: boolean }) {
+  const { routerFor, select } = useTabActions()
+  const view = useMemo<CurrentTabView>(() => ({ focused, branch: tab.branch ?? null, pickedBranch: tab.pickedBranch ?? null }), [focused, tab.branch, tab.pickedBranch])
   const takeFocus = () => {
     if (side && !focused) select(tab.id)
   }
   const className = `tab-pane${side ? ` in-split is-${side}` : ''}${shown && focused ? ' is-focused' : ''}`
   return (
     <CurrentTabProvider value={tab.id}>
-      <TabShownContext.Provider value={shown}>
-        <div className={className} id={tabPanelId(tab.id)} role="tabpanel" aria-labelledby={tabButtonId(tab.id)} onPointerDownCapture={takeFocus} onFocusCapture={takeFocus}>
-          <RouterProvider router={routerFor(tab)} />
-        </div>
-      </TabShownContext.Provider>
+      <CurrentTabViewProvider value={view}>
+        <TabShownContext.Provider value={shown}>
+          <div className={className} id={tabPanelId(tab.id)} role="tabpanel" aria-labelledby={tabButtonId(tab.id)} onPointerDownCapture={takeFocus} onFocusCapture={takeFocus}>
+            <RouterProvider router={routerFor(tab)} />
+          </div>
+        </TabShownContext.Provider>
+      </CurrentTabViewProvider>
     </CurrentTabProvider>
   )
-}
+})
 
 const splitColumns = (ratio: number) => `minmax(0, ${ratio}fr) 1px minmax(0, ${1 - ratio}fr) auto`
 
@@ -317,7 +321,11 @@ export function NativeApp() {
   // A signed-out account's tabs name its repositories, so they don't stay behind.
   const known = useRef<string[]>([])
   useEffect(() => {
-    for (const id of known.current) if (!accounts.some((a) => a.id === id)) forgetSavedTabs(id)
+    for (const id of known.current) {
+      if (accounts.some((a) => a.id === id)) continue
+      forgetSavedTabs(id)
+      forgetRepoSnapshots(id)
+    }
     known.current = accounts.map((a) => a.id)
   }, [accounts])
 

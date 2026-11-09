@@ -1,6 +1,7 @@
 // One repository, wherever it lives: a folder on this computer, a repository on GitHub, or both, linked by the folder's
 // origin remote. The workspace's tabs and repository list work from these and don't care which kind they have.
 
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useGitHub } from './github'
 import { isGitHubRemote, parseRemote, remoteProvider } from './links'
@@ -33,6 +34,8 @@ export interface WorkspaceRepo {
   github: GitHubRepoRef | null
   /** A folder's remote. Any remote at all means the folder already has a home, so it's never offered Publish. */
   remote: RepoRemote | null
+  /** The list of folders hasn't loaded, so this may turn out to have one. */
+  pending?: boolean
 }
 
 /** GitHub ignores case in names, so two spellings of one repository share a key. */
@@ -124,8 +127,9 @@ export function useWorkspaceRepos() {
       )
     },
   })
+  const repos = useMemo(() => buildWorkspaceRepos(folders.data ?? [], githubOnly, account.host), [folders.data, githubOnly, account.host])
   return {
-    repos: buildWorkspaceRepos(folders.data ?? [], githubOnly, account.host),
+    repos,
     isLoading: folders.isLoading,
     addGitHubRepo: (ref: GitHubRepoRef) => setGitHubOnly((list) => addGitHubRepo(list, ref)),
     removeGitHubRepo: (key: string) => setGitHubOnly((list) => removeGitHubRepo(list, key)),
@@ -138,7 +142,7 @@ export function useRemoteBranches(repo: WorkspaceRepo) {
   const github = repo.github && repo.github.host.toLowerCase() === account.host.toLowerCase() ? repo.github : null
   return useQuery({
     queryKey: [key, 'workspace-branches', github?.owner, github?.repo],
-    enabled: !repo.local && !!github,
+    enabled: !repo.local && !repo.pending && !!github,
     queryFn: async () => {
       const [info, list] = await Promise.all([octokit.rest.repos.get({ owner: github!.owner, repo: github!.repo }), octokit.rest.repos.listBranches({ owner: github!.owner, repo: github!.repo, per_page: 100 })])
       const toState = (b: (typeof list.data)[number]): BranchState => ({ name: b.name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha: b.commit.sha, date: '' })

@@ -3,7 +3,7 @@
 // encrypted secrets, the gh CLI token, CORS-free requests to GitHub hosts, and
 // allow-listed git commands inside repositories the user registered.
 
-const { app, BrowserWindow, ipcMain, protocol, net, shell, dialog, safeStorage, Menu, nativeTheme } = require('electron')
+const { app, BrowserWindow, ipcMain, protocol, net, session, shell, dialog, safeStorage, Menu, nativeTheme } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const fsp = fs.promises
@@ -22,7 +22,7 @@ const isMac = process.platform === 'darwin'
 if (process.env.GH_UI_USER_DATA) app.setPath('userData', path.resolve(process.env.GH_UI_USER_DATA))
 
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } },
 ])
 
 // GUI apps on macOS don't inherit the shell PATH; make git/gh/code findable.
@@ -183,9 +183,9 @@ function isPrivateHost(host) {
  * One request that stops at a redirect and reports where it points, so the caller decides whether to go on and with
  * which headers. net.fetch can't do this: with redirect 'manual' it rejects with "Redirect was cancelled".
  */
-function requestWithoutRedirect(url, { method, headers, body }) {
+function requestWithoutRedirect(url, { method, headers, body, cache, bytes }) {
   return new Promise((resolve, reject) => {
-    const request = net.request({ url, method, redirect: 'manual' })
+    const request = net.request({ url, method, redirect: 'manual', ...(cache ? { cache } : {}) })
     for (const [name, value] of Object.entries(headers)) request.setHeader(name, value)
     request.on('redirect', (_status, _method, location) => {
       // Without the abort, a redirect nobody follows fails the request.
@@ -200,7 +200,8 @@ function requestWithoutRedirect(url, { method, headers, body }) {
       response.on('end', () => {
         const outHeaders = {}
         for (const [k, v] of Object.entries(response.headers)) outHeaders[k] = Array.isArray(v) ? v.join(', ') : v
-        resolve({ status: response.statusCode, headers: outHeaders, body: Buffer.concat(chunks).toString() })
+        const received = Buffer.concat(chunks)
+        resolve({ status: response.statusCode, headers: outHeaders, body: bytes ? received : received.toString() })
       })
     })
     if (body !== undefined && body !== null) request.write(typeof body === 'string' ? body : Buffer.from(body))
@@ -222,6 +223,29 @@ async function httpRequest(req) {
   const outHeaders = {}
   res.headers.forEach((v, k) => (outHeaders[k] = v))
   return { status: res.status, headers: outHeaders, body: await res.text() }
+}
+
+/**
+ * Reads from the GitHub API, asked from here instead of the page. A page's request with a token is cross-origin, so it
+ * first costs a preflight: one more round trip for every URL it hasn't asked for lately, which is most of them. Bytes,
+ * so anything the API sends survives. `no-cache` as the page's requests had: unchanged data comes back as a 304 the
+ * network layer answers from its cache, and that doesn't count against the rate limit.
+ */
+async function apiGet(req) {
+  let url = new URL(req.url)
+  // The page can still reach these itself, under the browser's rules. This bridge has none, so it won't.
+  if (url.protocol !== 'https:' || isPrivateHost(url.hostname)) return { refused: true }
+  let headers = { 'user-agent': 'gh-ui', ...(req.headers || {}) }
+  for (let hop = 0; hop < 5; hop++) {
+    const res = await requestWithoutRedirect(url.toString(), { method: 'GET', headers, cache: 'no-cache', bytes: true })
+    if (!res.location) return { url: url.toString(), status: res.status, headers: res.headers, body: res.body }
+    // A renamed repository answers this way, on the same host, and the token is still needed there. Nowhere else.
+    const next = new URL(res.location, url)
+    if (next.protocol !== 'https:' || isPrivateHost(next.hostname)) throw new Error('Refusing a redirect to a non-public address')
+    if (next.origin !== url.origin) headers = Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== 'authorization'))
+    url = next
+  }
+  throw new Error('Too many redirects')
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +277,7 @@ function registerIpc() {
   })
 
   handle('http', (_e, req) => httpRequest(req))
+  handle('api:get', (_e, req) => apiGet(req))
 
   handle('shell:openExternal', async (_e, url) => {
     const u = new URL(String(url))
@@ -423,6 +448,8 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      // Keeps compiled scripts from the first launch on, instead of after several.
+      v8CacheOptions: 'bypassHeatCheck',
       additionalArguments: [`--gh-ui-version=${app.getVersion()}`],
     },
   })
@@ -577,6 +604,8 @@ app.whenReady().then(() => {
   })
   registerIpc()
   buildMenu()
+  // The first thing the app will want. Connecting now means that time overlaps with loading the page.
+  session.defaultSession.preconnect({ url: 'https://api.github.com', numSockets: 1 })
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

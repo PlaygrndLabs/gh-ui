@@ -504,6 +504,7 @@ export function CommitPage() {
       {files.map((f, i) => (
         <FileDiffBox
           key={`${i}-${f.filename}`}
+          eager={i < 3}
           file={{ path: f.filename, previousPath: f.previous_filename, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch, sha: f.sha }}
           split={split}
           collapsed={collapsed[i]}

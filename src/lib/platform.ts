@@ -35,6 +35,8 @@ export interface HttpResponse {
   body: string
 }
 
+export type ApiGetResponse = { url: string; status: number; headers: Record<string, string>; body: Uint8Array } | { refused: true }
+
 export interface NativeBridge {
   platform: 'darwin' | 'win32' | 'linux'
   version: string
@@ -49,6 +51,8 @@ export interface NativeBridge {
   ghCliToken(host: string): Promise<{ token?: string; error?: string }>
   /** Requests to github.com / GHES hosts that browsers block with CORS (device flow, log blobs, release uploads). */
   http(req: HttpRequest): Promise<HttpResponse>
+  /** Reads the GitHub API without the round trip a page's cross-origin request costs first. `refused`: this one has to go the usual way. */
+  apiGet(req: { url: string; headers: Record<string, string> }): Promise<ApiGetResponse>
   openExternal(url: string): Promise<void>
   /** How this copy was installed, which decides how it updates. */
   installKind(): Promise<'homebrew' | 'direct'>

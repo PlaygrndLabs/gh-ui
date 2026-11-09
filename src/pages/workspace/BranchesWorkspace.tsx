@@ -1,10 +1,9 @@
-import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
 import { ArrowDownIcon, ArrowUpIcon, CheckIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
-import { generateCommitMessage } from '../../lib/agent/oneshot'
 import type { FileDiff } from '../../lib/diff'
 import { changePaths, isStaged, isUnmerged, type LogEntry, type StatusEntry } from '../../lib/git'
 import { errorMessage, useGitHub } from '../../lib/github'
@@ -80,6 +79,7 @@ function CommitBox({ local, draft, branchName, stagedCount, conflictCount, onCom
       // In the queue, so it sees the boxes just ticked.
       const staged = await local.ops!.run(() => local.git!.stagedDiff())
       if (!staged.trim()) throw new Error('Stage some changes first.')
+      const { generateCommitMessage } = await import('../../lib/agent/oneshot')
       return generateCommitMessage(staged, account)
     },
     onSuccess: (m) => {
@@ -159,9 +159,9 @@ function Section({ title, action, flush, children }: { title: string; action?: R
   )
 }
 
-function CommitRow({ commit, selected, mark, onSelect }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; onSelect(): void }) {
+const CommitRow = memo(function CommitRow({ commit, selected, mark, onSelect }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; onSelect(sha: string): void }) {
   return (
-    <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''}`} aria-pressed={selected} onClick={onSelect}>
+    <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''}`} aria-pressed={selected} onClick={() => onSelect(commit.sha)}>
       <span className="ws-commit-text">
         <span className="ws-commit-subject">{firstLine(commit.subject)}</span>
         <span className="ws-row-sub">
@@ -181,7 +181,7 @@ function CommitRow({ commit, selected, mark, onSelect }: { commit: LogEntry; sel
       )}
     </button>
   )
-}
+})
 
 /** A repository's front page in the desktop app: everything about the branch chosen in the top menu, a tab at a time. */
 export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
@@ -198,6 +198,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const stageError = useStageError(local.ops)
   const split = readPref('diffSplit', false)
   const selectFile = useCallback((path: string) => setSelection({ kind: 'file', path }), [])
+  const selectCommit = useCallback((sha: string) => setSelection({ kind: 'commit', sha }), [])
   const clearSelection = useCallback(() => setSelection(null), [])
 
   const remoteBranches = useRemoteBranches(repo)
@@ -378,9 +379,9 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
               ) : undefined
             }
           >
-            {data?.local.map((c) => <CommitRow key={c.sha} commit={c} mark={canPush ? '↑' : undefined} selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
-            {!onlyNotPushed && data?.incoming.map((c) => <CommitRow key={c.sha} commit={c} mark="↓" selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
-            {!onlyNotPushed && data?.remote.map((c) => <CommitRow key={c.sha} commit={c} selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
+            {data?.local.map((c) => <CommitRow key={c.sha} commit={c} mark={canPush ? '↑' : undefined} selected={commit?.sha === c.sha} onSelect={selectCommit} />)}
+            {!onlyNotPushed && data?.incoming.map((c) => <CommitRow key={c.sha} commit={c} mark="↓" selected={commit?.sha === c.sha} onSelect={selectCommit} />)}
+            {!onlyNotPushed && data?.remote.map((c) => <CommitRow key={c.sha} commit={c} selected={commit?.sha === c.sha} onSelect={selectCommit} />)}
             {data && !shown.length && <p className="ws-note">No commits on this branch yet.</p>}
             {canPush && branch.location === 'local' && <p className="ws-note">This branch isn’t on {host} yet.</p>}
           </Section>
@@ -440,7 +441,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           Discard
         </Button>
       </div>
-      <div className="ws-scroll ws-diff">{diff.isLoading ? <Loading /> : diff.data ? <LocalFileDiff file={diff.data} split={split} /> : <p className="ws-note">No textual changes to show.</p>}</div>
+      <div className="ws-scroll ws-diff">{diff.isLoading ? <Loading /> : diff.data ? <LocalFileDiff file={diff.data} split={split} eager /> : <p className="ws-note">No textual changes to show.</p>}</div>
     </div>
   ) : commit ? (
     <div className="ws-details">
@@ -536,14 +537,18 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
 }
 
 // A diff can be thousands of table rows. It only redraws when the diff itself changes.
-const LocalFileDiff = memo(function LocalFileDiff({ file, split }: { file: FileDiff; split: boolean }) {
+const LocalFileDiff = memo(function LocalFileDiff({ file, split, eager }: { file: FileDiff; split: boolean; eager?: boolean }) {
   return (
     <FileDiffBox
+      eager={eager}
       file={{ path: file.newPath, previousPath: file.oldPath !== file.newPath ? file.oldPath : null, status: file.status, additions: file.additions, deletions: file.deletions, patch: file.binary ? null : file.patch }}
       split={split}
     />
   )
 })
+
+/** The ones you see first don't wait for the observer, which would leave them blank for a frame. */
+const EAGER_FILES = 3
 
 const STATUS_MARK: Partial<Record<FileDiff['status'], { code: string; color: string; title: string }>> = {
   added: { code: 'A', color: 'fg-success', title: 'Added' },
@@ -563,7 +568,9 @@ function CommitFiles({ files, split, message }: { files: FileDiff[]; split: bool
   useEffect(() => {
     const el = scroller.current
     if (!el) return
-    const onScroll = () => {
+    let frame = 0
+    const markFileInView = () => {
+      frame = 0
       if (jumpedTo.current !== null && Math.abs(el.scrollTop - jumpedTo.current) < 2) return
       jumpedTo.current = null
       const top = el.getBoundingClientRect().top + 24
@@ -572,8 +579,15 @@ function CommitFiles({ files, split, message }: { files: FileDiff[]; split: bool
       for (const b of boxes) if (b.getBoundingClientRect().top <= top) at = Number(b.dataset.fileIndex)
       setCurrent(at)
     }
+    // At most once a frame: a trackpad sends several of these for each one.
+    const onScroll = () => {
+      frame ||= requestAnimationFrame(markFileInView)
+    }
     el.addEventListener('scroll', onScroll, { passive: true })
-    return () => el.removeEventListener('scroll', onScroll)
+    return () => {
+      el.removeEventListener('scroll', onScroll)
+      cancelAnimationFrame(frame)
+    }
   }, [])
 
   const show = (i: number) => {
@@ -610,15 +624,19 @@ function CommitFiles({ files, split, message }: { files: FileDiff[]; split: bool
     </div>
   )
 
-  const diffs = (
-    <div className="ws-scroll ws-diff" ref={scroller}>
-      {body && <pre className="ws-commit-message">{body}</pre>}
-      {files.map((f, i) => (
-        <div key={f.newPath} data-file-index={i}>
-          <LocalFileDiff file={f} split={split} />
-        </div>
-      ))}
-    </div>
+  // The file in view changes on every scroll; what's drawn doesn't.
+  const diffs = useMemo(
+    () => (
+      <div className="ws-scroll ws-diff" ref={scroller}>
+        {body && <pre className="ws-commit-message">{body}</pre>}
+        {files.map((f, i) => (
+          <div key={f.newPath} data-file-index={i}>
+            <LocalFileDiff file={f} split={split} eager={i < EAGER_FILES} />
+          </div>
+        ))}
+      </div>
+    ),
+    [files, split, body],
   )
 
   return <SplitPane id="commit-files" firstLabel="Changed files" secondLabel="Diff" defaultWidth={260} min={160} max={520} first={list} second={diffs} />

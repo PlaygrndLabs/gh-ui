@@ -479,13 +479,14 @@ export function FilesChanged({ pr, defaultTreeWidth = 296 }: { pr: PullRequest; 
         </div>
         {showTree && <FileTreeResizer defaultWidth={defaultTreeWidth} onHide={() => setTreeShown(false)} />}
         <div style={{ minWidth: 0 }}>
-          {shown.map((f) => {
+          {shown.map((f, index) => {
             const isViewed = viewed[f.filename] === f.sha
             const draftHere = draft?.path === f.filename ? draft : null
             return (
               <FileDiffBox
                 key={f.filename}
                 id={`diff-${cssId(f.filename)}`}
+                eager={index < 3}
                 file={{ path: f.filename, previousPath: f.previous_filename, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch, sha: f.sha }}
                 split={split}
                 collapsed={collapsed[f.filename] ?? isViewed}
