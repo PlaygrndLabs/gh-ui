@@ -85,7 +85,8 @@ function BranchMenu({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
     if (shown && shown !== shownBranch) showBranch(shown)
   }, [shown, shownBranch, showBranch])
   const name = filter.trim().replace(/\s+/g, '-')
-  const matches = useMemo(() => all.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase())), [all, filter])
+  // A checked-out commit is listed as HEAD, which isn't a branch to pick.
+  const matches = useMemo(() => all.filter((b) => b.name !== 'HEAD' && b.name.toLowerCase().includes(filter.toLowerCase())), [all, filter])
   const branches = matches.slice(0, MAX_BRANCHES_SHOWN)
   const exists = local.branches.data?.some((b) => b.name === name)
 
@@ -121,7 +122,7 @@ function BranchMenu({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
       <GitBranchIcon />
       <span className="ws-seg-text">
         <span className="ws-seg-key">{repo.local ? 'Current branch' : current === info.data?.default_branch ? 'Default branch' : 'Branch'}</span>
-        <span className="ws-seg-value">{current}</span>
+        <span className="ws-seg-value">{current === 'HEAD' ? 'Detached HEAD' : current}</span>
       </span>
     </>
   )

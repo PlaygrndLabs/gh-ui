@@ -8,7 +8,7 @@ import type { FileDiff } from '../../lib/diff'
 import { changePaths, isStaged, isUnmerged, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
 import { errorMessage, useGitHub } from '../../lib/github'
 import { webUrl } from '../../lib/links'
-import { openExternal } from '../../lib/platform'
+import { native, openExternal } from '../../lib/platform'
 import { firstLine, plural, shortSha } from '../../lib/format'
 import { readPref } from '../../lib/storage'
 import { useLocalRepo, useStageError, useStageIntents } from '../../lib/useLocalRepo'
@@ -19,6 +19,7 @@ import { FileDiffBox } from '../../components/DiffView'
 import { SplitPane } from '../../components/SplitPane'
 import { PublishDialog } from '../../components/WorkspaceHeader'
 import { useTabBranch } from '../../lib/TabsProvider'
+import { useCommitMenu } from './CommitMenu'
 
 type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | { kind: 'range'; anchor: string; focus: string } | null
 
@@ -110,7 +111,7 @@ function CommitBox({ local, draft, branchName, stagedCount, conflictCount, onCom
 }
 
 /** The changed files and the commit box. A box shows the click at once; git catches up behind it (lib/repoOps.ts). */
-function ChangesList({ local, draft, entries, selectedPath, branchName, onSelect, onCommitted }: { local: LocalRepoState; draft: CommitDraft; entries: StatusEntry[]; selectedPath: string | undefined; branchName: string; onSelect(path: string): void; onCommitted(): void }) {
+function ChangesList({ local, draft, entries, selectedPath, branchName, onSelect, onCommitted, beforeCommit }: { local: LocalRepoState; draft: CommitDraft; entries: StatusEntry[]; selectedPath: string | undefined; branchName: string; onSelect(path: string): void; onCommitted(): void; beforeCommit: ReactNode }) {
   const confirm = useConfirm()
   const intents = useStageIntents(local.ops)
   const { setStaged } = local
@@ -142,6 +143,7 @@ function ChangesList({ local, draft, entries, selectedPath, branchName, onSelect
       {entries.map((e) => (
         <ChangeRow key={e.path} entry={e} staged={stagedOf(e)} selected={selectedPath === e.path} onToggle={onToggle} onSelect={onSelect} />
       ))}
+      {beforeCommit}
       <CommitBox local={local} draft={draft} branchName={branchName} stagedCount={stagedCount} conflictCount={conflictCount} onCommitted={onCommitted} />
     </>
   )
@@ -162,18 +164,24 @@ interface GitHubFile {
 const toFileDiff = (f: GitHubFile): FileDiff => ({ oldPath: f.previous_filename ?? f.filename, newPath: f.filename, status: f.status as FileDiff['status'], binary: !f.patch && f.changes > 0, additions: f.additions, deletions: f.deletions, patch: f.patch ?? '' })
 
 /** One tab's content. The tab names it, so a heading only appears when there's an action to hold. */
-function Section({ title, action, flush, children }: { title: string; action?: ReactNode; flush?: boolean; children: ReactNode }) {
+function Section({ title, action, flush, fill, children }: { title: string; action?: ReactNode; flush?: boolean; fill?: boolean; children: ReactNode }) {
   return (
-    <section className={`ws-section ${flush ? 'ws-section-flush' : ''}`} aria-label={title}>
+    <section className={`ws-section ${flush ? 'ws-section-flush' : ''} ${fill ? 'ws-section-fill' : ''}`} aria-label={title}>
       {action && <div className="ws-section-head">{action}</div>}
       {children}
     </section>
   )
 }
 
-const CommitRow = memo(function CommitRow({ commit, selected, mark, onSelect }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; onSelect(sha: string, extend: boolean): void }) {
+const CommitRow = memo(function CommitRow({ commit, selected, mark, onSelect, onMenu }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; onSelect(sha: string, extend: boolean): void; onMenu(sha: string): void }) {
   return (
-    <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''}`} aria-pressed={selected} onClick={(e) => onSelect(commit.sha, e.shiftKey || e.metaKey || e.ctrlKey)}>
+    <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''}`} aria-pressed={selected} onClick={(e) => onSelect(commit.sha, e.shiftKey || e.metaKey || e.ctrlKey)}
+      onContextMenu={(e) => {
+        if (!native) return
+        e.preventDefault()
+        onMenu(commit.sha)
+      }}
+    >
       <span className="ws-commit-text">
         <span className="ws-commit-subject">{firstLine(commit.subject)}</span>
         <span className="ws-row-sub">
@@ -343,6 +351,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       if (branch) setChosenTab({ branch: branch.name, tab: 'changes' })
     })
 
+  const { openMenu: openCommitMenu, dialogs: commitDialogs } = useCommitMenu({ local, github, isCurrent, rows: shown, notOnRemote: data?.notOnRemote ?? [], undo })
+
   const notPulled = data?.incoming.length ?? 0
   const tabs: Array<{ id: BranchTab; label: string; count?: number; show: boolean }> = [
     { id: 'changes', label: 'Changes', count: entries.length, show: !!repo.local },
@@ -350,6 +360,18 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     { id: 'pull', label: 'Pull request', show: !!github && !isDefault },
     { id: 'checks', label: 'Checks', show: !!github },
   ]
+
+  const hasChanges = isCurrent && entries.length > 0
+  const stashRow = !!stashes.data?.length && (
+    <div className="ws-row ws-stash-row">
+      <span className="ws-row-main">
+        {stashes.data.length} stashed change{stashes.data.length === 1 ? '' : 's'}: {stashes.data[0]}
+      </span>
+      <Button size="small" onClick={() => local.op.mutate(() => local.git!.stashPop())}>
+        Restore
+      </Button>
+    </div>
+  )
 
   const timeline = branch && (
     <div className="ws-branch-timeline">
@@ -387,19 +409,9 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       </div>
       <div className="ws-scroll" role="tabpanel">
         {tab === 'changes' && (
-          <Section title="Changes" flush>
-            {isCurrent && entries.length > 0 && <ChangesList local={local} draft={draft} entries={entries} selectedPath={entry?.path} branchName={branch.name} onSelect={selectFile} onCommitted={clearSelection} />}
+          <Section title="Changes" flush fill>
+            {hasChanges ? <ChangesList local={local} draft={draft} entries={entries} selectedPath={entry?.path} branchName={branch.name} onSelect={selectFile} onCommitted={clearSelection} beforeCommit={stashRow} /> : stashRow}
             {isCurrent && !entries.length && <p className="ws-note">No uncommitted changes.</p>}
-            {!!stashes.data?.length && (
-              <div className="ws-row">
-                <span className="ws-row-main">
-                  {stashes.data.length} stashed change{stashes.data.length === 1 ? '' : 's'}: {stashes.data[0]}
-                </span>
-                <Button size="small" onClick={() => local.op.mutate(() => local.git!.stashPop())}>
-                  Restore
-                </Button>
-              </div>
-            )}
           </Section>
         )}
 
@@ -437,7 +449,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
             {shown
               .filter((c) => !onlyNotPushed || c.mark === '↑')
               .map((c) => (
-                <CommitRow key={c.sha} commit={c} mark={c.mark === '↑' && !canPush ? undefined : c.mark} selected={inRange ? rangeShas.has(c.sha) : commit?.sha === c.sha} onSelect={selectCommit} />
+                <CommitRow key={c.sha} commit={c} mark={c.mark === '↑' && !canPush ? undefined : c.mark} selected={inRange ? rangeShas.has(c.sha) : commit?.sha === c.sha} onSelect={selectCommit} onMenu={openCommitMenu} />
               ))}
             {data && !shown.length && <p className="ws-note">No commits on this branch yet.</p>}
             {canPush && branch.location === 'local' && <p className="ws-note">This branch isn’t on {host} yet.</p>}
@@ -591,8 +603,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
             <>
               <div className="ws-branch-head">
                 <div className="ws-branch-title">
-                  <span className="text-mono text-bold">{branch.name}</span>
-                  {isCurrent && (
+                  <span className="text-mono text-bold">{branch.name === 'HEAD' ? `Detached at ${shortSha(branch.sha)}` : branch.name}</span>
+                  {isCurrent && branch.name !== 'HEAD' && (
                     <span className="ws-tag ws-tag-ok">
                       <CheckIcon size={12} /> Current branch
                     </span>
@@ -613,6 +625,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           )}
       </div>
       {dialog === 'publish' && <PublishDialog repo={repo} onClose={() => setDialog(null)} />}
+      {commitDialogs}
     </div>
   )
 }

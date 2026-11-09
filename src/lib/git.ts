@@ -52,6 +52,10 @@ export function parseStatus(out: string): RepoState {
     const p = parts[i]
     if (p.startsWith('## ')) {
       const head = p.slice(3)
+      if (head.startsWith('HEAD (no branch)')) {
+        state.branch = 'HEAD'
+        continue
+      }
       const m = head.match(/^(?:No commits yet on )?([^.\s]+(?:\.[^.\s]+)*?)(?:\.\.\.(\S+))?(?: \[(.+)\])?$/)
       state.branch = m?.[1] ?? head
       state.upstream = m?.[2] ?? null
@@ -100,6 +104,8 @@ export function parseBranches(out: string, remote = 'origin'): BranchState[] {
   const remoteOnly = new Map<string, BranchState>()
   for (const line of out.split('\n')) {
     const [ref, upstream, track, sha, date, head, worktree] = line.split('\x1f')
+    // "(HEAD detached at abc123)": a commit is checked out rather than a branch.
+    if (ref?.startsWith('(') && head === '*') local.set('HEAD', { name: 'HEAD', current: true, location: 'local', upstream: null, ahead: 0, behind: 0, gone: false, sha, date, worktree: null })
     if (ref?.startsWith('refs/heads/')) {
       const name = ref.slice('refs/heads/'.length)
       local.set(name, {
@@ -180,7 +186,9 @@ export type HistoryRow = LogEntry & { mark?: '↑' | '↓' }
 const unmarked = (c: LogEntry): HistoryRow => c
 
 /** What the repository has stopped in the middle of. */
-export type RepoOperation = 'merge' | 'rebase'
+export type RepoOperation = 'merge' | 'rebase' | 'revert' | 'cherry-pick'
+
+const OPERATION_HEADS: Array<[string, RepoOperation]> = [['MERGE_HEAD', 'merge'], ['REBASE_HEAD', 'rebase'], ['REVERT_HEAD', 'revert'], ['CHERRY_PICK_HEAD', 'cherry-pick']]
 
 /** What git diffs against for a commit with no parent. */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
@@ -311,15 +319,25 @@ export function createGitClient(run: GitRunner) {
     merge: (ref: string, options: { squash?: boolean } = {}) => stopsOnConflicts(['merge', options.squash ? '--squash' : '--no-edit', ref]),
     rebase: (ref: string) => stopsOnConflicts(['rebase', ref]),
     continueRebase: () => stopsOnConflicts(['rebase', '--continue']),
-    abortMerge: () => git(['merge', '--abort']),
-    abortRebase: () => git(['rebase', '--abort']),
+    abortOperation: (operation: RepoOperation) => git([operation, '--abort']),
     /** Commits a merge whose conflicts are resolved, with the message git prepared. */
     finishMerge: () => git(['commit', '--no-edit']),
     async operation(): Promise<RepoOperation | null> {
-      if ((await run(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], false)).code === 0) return 'merge'
-      return (await run(['rev-parse', '-q', '--verify', 'REBASE_HEAD'], false)).code === 0 ? 'rebase' : null
+      for (const [ref, operation] of OPERATION_HEADS) if ((await run(['rev-parse', '-q', '--verify', ref], false)).code === 0) return operation
+      return null
     },
     createBranch: (branch: string) => git(['switch', '-c', branch]),
+    createBranchAt: (branch: string, sha: string) => git(['switch', '-c', branch, sha]),
+    /** Puts HEAD on a commit instead of a branch. */
+    checkoutCommit: (sha: string) => git(['switch', '--detach', sha]),
+    /** Rewrites the last commit, with whatever is staged. */
+    amendCommit: (summary: string, description = '') => git(['commit', '--amend', '-m', summary, ...(description.trim() ? ['-m', description] : [])]),
+    revertCommit: (sha: string) => stopsOnConflicts(['revert', '--no-edit', sha]),
+    cherryPick: (sha: string) => stopsOnConflicts(['cherry-pick', sha]),
+    /** Moves the branch back to a commit. What came after it stays in the folder as uncommitted changes. */
+    resetTo: (sha: string) => git(['reset', '-q', sha]),
+    createTag: (name: string, sha: string) => git(['tag', name, sha]),
+    tagsAt: async (sha: string) => (await git(['tag', '--points-at', sha])).split('\n').filter(Boolean),
     /** Saves every change, new files too, and leaves the working tree clean. */
     stash: () => git(['stash', 'push', '-u']),
     stashPop: () => git(['stash', 'pop']),

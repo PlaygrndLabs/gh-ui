@@ -224,6 +224,105 @@ describe('createGitClient against a real repository', () => {
     }
   })
 
+  describe('what a commit\'s menu does', () => {
+    let tree: string
+    let inTree: GitClient
+    const head = async () => (await raw(tree, 'rev-parse', 'HEAD')).trim()
+    const subject = async () => (await raw(tree, 'log', '-1', '--format=%s')).trim()
+
+    beforeAll(async () => {
+      tree = join(root, 'menu')
+      await raw(work, 'worktree', 'add', '-b', 'menu', tree)
+      inTree = createGitClient(async (args) => {
+        validateGitArgs(args)
+        try {
+          const { stdout, stderr } = await exec('git', args, { cwd: tree, env: { ...env, ...gitCommandEnv(args[0]) } })
+          return { code: 0, stdout, stderr }
+        } catch (e) {
+          const err = e as { code?: number; stdout?: string; stderr?: string }
+          return { code: err.code ?? 1, stdout: err.stdout ?? '', stderr: err.stderr ?? '' }
+        }
+      })
+    })
+    afterAll(async () => {
+      await raw(work, 'worktree', 'remove', '--force', tree)
+    })
+
+    it('amends the last commit with what is staged', async () => {
+      await commitFile(tree, 'amend.txt', 'before')
+      await writeFile(join(tree, 'extra.txt'), 'extra\n')
+      await raw(tree, 'add', 'extra.txt')
+      await inTree.amendCommit('after', 'body')
+      expect(await subject()).toBe('after')
+      expect((await raw(tree, 'show', '--name-only', '--format=', 'HEAD')).trim().split('\n').sort()).toEqual(['amend.txt', 'extra.txt'])
+    })
+
+    it('reverts a commit', async () => {
+      await commitFile(tree, 'gone.txt', 'gone')
+      const sha = await head()
+      expect(await inTree.revertCommit(sha)).toEqual({ conflicts: false })
+      expect(await subject()).toBe('Revert "gone"')
+    })
+
+    it('stops on a conflicting revert and can back out of it', async () => {
+      await commitFile(tree, 'c.txt', 'one')
+      const sha = await head()
+      await commitFile(tree, 'c.txt', 'two')
+      const before = await head()
+      expect(await inTree.revertCommit(sha)).toEqual({ conflicts: true })
+      expect(await inTree.operation()).toBe('revert')
+      await inTree.abortOperation('revert')
+      expect(await inTree.operation()).toBeNull()
+      expect(await head()).toBe(before)
+    })
+
+    it('stops on a conflicting cherry-pick and finishes it once resolved', async () => {
+      const base = await head()
+      await raw(tree, 'switch', '-c', 'menu-pick')
+      await commitFile(tree, 'p.txt', 'theirs')
+      const picked = await head()
+      await raw(tree, 'switch', 'menu')
+      await commitFile(tree, 'p.txt', 'ours')
+      expect(await inTree.cherryPick(picked)).toEqual({ conflicts: true })
+      expect(await inTree.operation()).toBe('cherry-pick')
+      await writeFile(join(tree, 'p.txt'), 'both\n')
+      await raw(tree, 'add', 'p.txt')
+      await inTree.finishMerge()
+      expect(await inTree.operation()).toBeNull()
+      expect(await subject()).toBe('theirs')
+      expect(base).not.toBe(await head())
+    })
+
+    it('resets to a commit and keeps what came after as changes', async () => {
+      await commitFile(tree, 'r.txt', 'kept')
+      await inTree.resetTo((await raw(tree, 'rev-parse', 'HEAD~1')).trim())
+      expect((await inTree.status()).entries.map((e) => e.path)).toContain('r.txt')
+      await raw(tree, 'add', 'r.txt')
+      await raw(tree, 'commit', '-m', 'r again')
+    })
+
+    it('creates a tag and a branch at a commit', async () => {
+      const sha = (await raw(tree, 'rev-parse', 'HEAD~1')).trim()
+      await inTree.createTag('menu-tag', sha)
+      expect(await inTree.tagsAt(sha)).toEqual(['menu-tag'])
+      expect(await inTree.tagsAt(await head())).toEqual([])
+      await inTree.createBranchAt('menu-from', sha)
+      expect(await head()).toBe(sha)
+      await raw(tree, 'switch', 'menu')
+      await raw(tree, 'tag', '-d', 'menu-tag')
+    })
+
+    it('checks out a commit and reports it as detached', async () => {
+      const sha = (await raw(tree, 'rev-parse', 'HEAD~1')).trim()
+      await inTree.checkoutCommit(sha)
+      expect((await inTree.status()).branch).toBe('HEAD')
+      const detached = (await inTree.branches()).find((b) => b.current)
+      expect(detached).toMatchObject({ name: 'HEAD', location: 'local', sha: sha.slice(0, detached!.sha.length) })
+      expect((await inTree.branchCommits(detached!)).history[0].sha).toBe(sha)
+      await raw(tree, 'switch', 'menu')
+    })
+  })
+
   it('renames and deletes a branch, even one with commits nothing else has', async () => {
     await raw(work, 'branch', 'old-name')
     await client.renameBranch('old-name', 'new-name')
@@ -247,7 +346,7 @@ describe('createGitClient against a real repository', () => {
     expect(await client.operation()).toBeNull()
     expect(await client.merge('side-a')).toEqual({ conflicts: true })
     expect(await client.operation()).toBe('merge')
-    await client.abortMerge()
+    await client.abortOperation('merge')
     expect(await client.operation()).toBeNull()
     await client.merge('side-a')
     await writeFile(join(work, 'clash.txt'), 'both\n')
@@ -266,7 +365,7 @@ describe('createGitClient against a real repository', () => {
     await commitFile(work, 'rebased.txt', 'b')
     expect(await client.rebase('base-a')).toEqual({ conflicts: true })
     expect(await client.operation()).toBe('rebase')
-    await client.abortRebase()
+    await client.abortOperation('rebase')
     expect(await client.operation()).toBeNull()
     await raw(work, 'switch', 'spike')
     await raw(work, 'branch', '-D', 'base-a', 'base-b')

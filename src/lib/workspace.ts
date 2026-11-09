@@ -92,10 +92,12 @@ export function repoWhere(repo: WorkspaceRepo): string {
 export type SyncKind = 'clone' | 'publish-repo' | 'publish-branch' | 'pull' | 'push' | 'fetch'
 
 /** The one network action the toolbar offers, the way GitHub Desktop picks it. */
-export function syncAction(location: RepoLocation, status: { upstream: string | null; ahead: number; behind: number } | undefined): { kind: SyncKind; count: number } | null {
+export function syncAction(location: RepoLocation, status: { branch?: string | null; upstream: string | null; ahead: number; behind: number } | undefined): { kind: SyncKind; count: number } | null {
   if (location === 'github') return { kind: 'clone', count: 0 }
   if (location === 'local') return { kind: 'publish-repo', count: 0 }
   if (!status) return null
+  // A checked-out commit isn't a branch, so there's nothing to publish.
+  if (status.branch === 'HEAD') return { kind: 'fetch', count: 0 }
   if (!status.upstream) return { kind: 'publish-branch', count: 0 }
   if (status.behind > 0) return { kind: 'pull', count: status.behind }
   if (status.ahead > 0) return { kind: 'push', count: status.ahead }

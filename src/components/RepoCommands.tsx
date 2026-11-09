@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, Banner, Button, Dialog, FormControl, TextInput, useConfirm } from '@primer/react'
 import { copyText, plural } from '../lib/format'
-import { isUnmerged, type BranchState } from '../lib/git'
+import { isUnmerged, type BranchState, type RepoOperation } from '../lib/git'
 import { useGitHub } from '../lib/github'
 import { webUrl } from '../lib/links'
 import { native, openExternal, type LocalRepo } from '../lib/platform'
@@ -18,7 +18,7 @@ import { encodePath } from '../lib/repo'
 type LocalRepoState = ReturnType<typeof useLocalRepo>
 type Integration = 'merge' | 'squash' | 'rebase'
 
-function NameDialog({ title, action, initial, taken, note, onSubmit, onClose }: { title: string; action: string; initial: string; taken: string[]; note?: ReactNode; onSubmit(name: string): void; onClose(): void }) {
+export function NameDialog({ title, action, initial, taken, note, onSubmit, onClose }: { title: string; action: string; initial: string; taken: string[]; note?: ReactNode; onSubmit(name: string): void; onClose(): void }) {
   const [value, setValue] = useState(initial)
   const name = value.trim().replace(/\s+/g, '-')
   const ok = !!name && name !== initial && !taken.includes(name)
@@ -152,14 +152,16 @@ export function useBranchActions(repo: WorkspaceRepo, local: LocalRepoState) {
   return { rename: setRenaming, copyName: (b: BranchState) => void copyText(b.name), worktree, openWorktree, remove, integrate, refFor, showBranchTab, dialogs }
 }
 
-/** Says a merge or rebase has stopped, and offers the ways out of it. */
+const OPERATION_WORD: Record<RepoOperation, string> = { merge: 'Merge', rebase: 'Rebase', revert: 'Revert', 'cherry-pick': 'Cherry-pick' }
+
+/** Says git has stopped partway through something, and offers the ways out of it. */
 function OperationBar({ local }: { local: LocalRepoState }) {
   const confirm = useConfirm()
   const operation = local.operation.data
   if (!operation) return null
   const conflicts = (local.status.data?.entries ?? []).filter(isUnmerged).length
-  const isMerge = operation === 'merge'
-  const word = isMerge ? 'Merge' : 'Rebase'
+  const isRebase = operation === 'rebase'
+  const word = OPERATION_WORD[operation]
   const abort = async () => {
     const ok = await confirm({
       title: `Abort this ${word.toLowerCase()}?`,
@@ -167,7 +169,7 @@ function OperationBar({ local }: { local: LocalRepoState }) {
       confirmButtonContent: `Abort ${word.toLowerCase()}`,
       confirmButtonType: 'danger',
     })
-    if (ok) local.op.mutate(() => (isMerge ? local.git!.abortMerge() : local.git!.abortRebase()))
+    if (ok) local.op.mutate(() => local.git!.abortOperation(operation))
   }
   return (
     <div className="ws-operation" role="status">
@@ -177,8 +179,8 @@ function OperationBar({ local }: { local: LocalRepoState }) {
       <Button size="small" onClick={() => void abort()}>
         Abort {word.toLowerCase()}
       </Button>
-      <Button size="small" variant="primary" disabled={conflicts > 0 || local.op.isPending} onClick={() => local.op.mutate(() => (isMerge ? local.git!.finishMerge() : local.git!.continueRebase()))}>
-        {isMerge ? 'Finish merge' : 'Continue rebase'}
+      <Button size="small" variant="primary" disabled={conflicts > 0 || local.op.isPending} onClick={() => local.op.mutate(() => (isRebase ? local.git!.continueRebase() : local.git!.finishMerge()))}>
+        {isRebase ? 'Continue rebase' : `Finish ${word.toLowerCase()}`}
       </Button>
     </div>
   )
