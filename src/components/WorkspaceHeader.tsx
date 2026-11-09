@@ -23,6 +23,9 @@ import { RepoCommands, useBranchActions, useClearRepoMenu } from './RepoCommands
 import { RepoSettingsDialog } from './RepoSettingsDialog'
 import { displayRemote } from '../lib/links'
 
+// A long list of Primer's menu items is slow to open and to filter, and nobody scrolls through thousands of branches.
+const MAX_BRANCHES_SHOWN = 100
+
 const SYNC_LABEL: Record<SyncKind, string> = {
   clone: 'Clone repository',
   'publish-repo': 'Publish repository',
@@ -59,7 +62,7 @@ function useCurrentRepo(): WorkspaceRepo | null {
 
   if (known) return known
   if (!key || isFolder) return null
-  return { key: `${account.host}/${key}`.toLowerCase(), name: parts[1], location: 'github', local: null, github: { host: account.host, owner: parts[0], repo: parts[1] }, remote: null }
+  return { key: `${account.host}/${key}`.toLowerCase(), name: parts[1], location: 'github', local: null, github: { host: account.host, owner: parts[0], repo: parts[1] }, remote: null, pending: isLoading }
 }
 
 function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
@@ -81,7 +84,8 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
     if (shown && shown !== shownBranch) showBranch(shown)
   }, [shown, shownBranch, showBranch])
   const name = filter.trim().replace(/\s+/g, '-')
-  const branches = all.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()))
+  const matches = useMemo(() => all.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase())), [all, filter])
+  const branches = matches.slice(0, MAX_BRANCHES_SHOWN)
   const exists = local.branches.data?.some((b) => b.name === name)
 
   const branchOptions = async (b: BranchState) => {
@@ -175,6 +179,7 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
                 </>
               )}
             </ActionList>
+            {matches.length > branches.length && <div className="ws-list-foot">Showing {branches.length} of {matches.length.toLocaleString()}. Type to find the others.</div>}
           </div>
         </ActionMenu.Overlay>
       </ActionMenu>

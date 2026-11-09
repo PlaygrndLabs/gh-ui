@@ -929,15 +929,18 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 /* ---------- ui pass: pr-tabs ---------- */
 /* Files changed: sticky toolbar, file tree column with the filter box on top (github.com layout). */
 .files-toolbar { position: sticky; top: var(--gd-prtabs-h); z-index: 9; background: var(--bgColor-default); padding: 8px 0; min-height: var(--gd-files-toolbar-h); }
-.files-layout { grid-template-columns: 296px minmax(0, 1fr); }
+.files-layout { grid-template-columns: min(var(--files-tree-width), 50%) minmax(0, 1fr); position: relative; }
 .files-layout.no-tree { grid-template-columns: minmax(0, 1fr); }
 .files-layout.no-tree .files-tree { display: none; }
+/* Spans the whole list, so it's in reach wherever the diffs are scrolled to. Centred in the grid's 16px gap. */
+.files-layout > .files-tree-resizer { position: absolute; top: 0; bottom: 0; left: calc(min(var(--files-tree-width), 50%) + 8px); }
 .files-tree { top: calc(var(--gd-prtabs-h) + var(--gd-files-toolbar-h) + 8px); max-height: calc(100vh - var(--gd-header-h) - var(--gd-prtabs-h) - var(--gd-files-toolbar-h) - 24px); }
 .files-layout .file-diff-header { top: calc(var(--gd-prtabs-h) + var(--gd-files-toolbar-h)); }
 .files-layout .file-diff { scroll-margin-top: calc(var(--gd-prtabs-h) + var(--gd-files-toolbar-h)); }
 @container main (max-width: 1012px) {
   .files-layout { grid-template-columns: minmax(0, 1fr); }
   .files-tree { max-height: 280px; }
+  .files-tree-resizer { display: none; }
   .files-toolbar .files-tree-toggle { display: none; }
   .files-layout.no-tree .files-tree { display: block; }
   /* The toolbar can wrap onto two lines here, so it scrolls away and file headers stick right under the tabs. */

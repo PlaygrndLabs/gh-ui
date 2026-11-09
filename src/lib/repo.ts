@@ -2,6 +2,8 @@ import { useMemo } from 'react'
 import { useOutletContext, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useGitHub, type Repo } from './github'
+import { native } from './platform'
+import { readPref, writePref } from './storage'
 
 export interface RepoContext {
   owner: string
@@ -20,13 +22,59 @@ export function useRepoParams() {
   return { owner, repo }
 }
 
+type RepoSnapshots = Record<string, { at: number; data: Repo }>
+
+const MAX_REPO_SNAPSHOTS = 30
+const snapshotsPref = (accountId: string) => `repoSnapshots:${accountId}`
+const loadedSnapshots = new Map<string, RepoSnapshots>()
+const snapshotId = (owner: string, repo: string) => `${owner}/${repo}`.toLowerCase()
+
+function snapshotsOf(accountId: string): RepoSnapshots {
+  let all = loadedSnapshots.get(accountId)
+  if (!all) {
+    all = readPref<RepoSnapshots>(snapshotsPref(accountId), {})
+    loadedSnapshots.set(accountId, all)
+  }
+  return all
+}
+
+function saveRepoSnapshot(accountId: string, owner: string, repo: string, data: Repo) {
+  if (!native) return
+  const all = snapshotsOf(accountId)
+  all[snapshotId(owner, repo)] = { at: Date.now(), data }
+  const ids = Object.keys(all)
+  if (ids.length > MAX_REPO_SNAPSHOTS) for (const id of ids.sort((a, b) => all[a].at - all[b].at).slice(0, ids.length - MAX_REPO_SNAPSHOTS)) delete all[id]
+  writePref(snapshotsPref(accountId), all)
+}
+
+export function forgetRepoSnapshots(accountId: string) {
+  loadedSnapshots.delete(accountId)
+  try {
+    localStorage.removeItem(`gh-ui:${snapshotsPref(accountId)}`)
+  } catch {
+    // storage blocked; nothing was saved then either
+  }
+}
+
+/**
+ * Every page of a repository waits for this, so a repository seen before starts from what it last looked like and
+ * catches up behind the page. The desktop app only: the web build has no reason to leave this in a shared browser.
+ */
 export function useRepoQuery(owner: string, repo: string, enabled = true) {
   const { octokit, key } = useGitHub()
+  const on = enabled && !!owner && !!repo
+  const snapshot = () => (native && on ? snapshotsOf(key)[snapshotId(owner, repo)] : undefined)
   return useQuery({
     queryKey: [key, 'repo', owner, repo],
-    queryFn: async () => (await octokit.rest.repos.get({ owner, repo })).data,
-    enabled: enabled && !!owner && !!repo,
+    queryFn: async () => {
+      const { data } = await octokit.rest.repos.get({ owner, repo })
+      saveRepoSnapshot(key, owner, repo, data)
+      return data
+    },
+    enabled: on,
     staleTime: 60_000,
+    initialData: () => snapshot()?.data,
+    initialDataUpdatedAt: () => snapshot()?.at,
   })
 }
 
@@ -113,14 +161,30 @@ export function encodePath(path: string) {
     .join('/')
 }
 
-/** Resolves ref + path from the route splat, using the branch/tag list for refs containing slashes. */
+/**
+ * Resolves ref + path from the route splat. A ref can contain slashes, so where it ends takes knowing which refs exist,
+ * but only those starting with the splat's first segment. Git won't put a branch under another branch's name, so when
+ * that segment is the default branch (nearly every link) or a commit, there's nothing to ask.
+ */
 export function useRefPath() {
   const { data } = useRepo()
+  const { octokit, key } = useGitHub()
   const params = useParams()
   const splat = params['*'] ?? ''
-  const branches = useBranches(data.owner.login, data.name)
-  const tags = useTags(data.owner.login, data.name, splat.includes('/'))
-  const refs = useMemo(() => [...(branches.data ?? []).map((b) => b.name), ...(tags.data ?? []).map((t) => t.name)], [branches.data, tags.data])
-  const needsRefs = splat.includes('/') && !branches.data
-  return { ...splitRefPath(splat, refs, data.default_branch), resolving: needsRefs && branches.isLoading }
+  const first = splat.replace(/^\/+/, '').split('/')[0]
+  const owner = data.owner.login
+  const repo = data.name
+  const known = !splat.includes('/') || first === data.default_branch || /^[0-9a-f]{40}$/i.test(first)
+  const candidates = useQuery({
+    queryKey: [key, 'refs-under', owner, repo, first],
+    enabled: !known,
+    staleTime: 60_000,
+    queryFn: async () => {
+      const under = (kind: 'heads' | 'tags') => octokit.paginate(octokit.rest.git.listMatchingRefs, { owner, repo, ref: `${kind}/${first}`, per_page: 100 })
+      const [heads, tags] = await Promise.all([under('heads'), under('tags')])
+      return [...heads, ...tags].map((r) => r.ref.replace(/^refs\/(heads|tags)\//, ''))
+    },
+  })
+  const refs = useMemo(() => (known ? [first] : (candidates.data ?? [])), [known, first, candidates.data])
+  return { ...splitRefPath(splat, refs, data.default_branch), resolving: !known && candidates.isLoading }
 }

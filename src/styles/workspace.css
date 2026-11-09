@@ -247,12 +247,14 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 /* No top padding: a sticky bar stops below a scroller's padding, and code would show through above it. */
 .ws-pr-files { padding: 0 20px 8px 12px; --gd-prtabs-h: 0px; --gd-header-h: 230px; }
 /* A pane is much narrower than the page these were laid out for. */
-.ws-pr-files .files-layout { grid-template-columns: minmax(150px, 200px) minmax(0, 1fr); }
+.ws-pr-files .files-layout { grid-template-columns: min(var(--files-tree-width), 50%) minmax(0, 1fr); }
 .ws-pr-files .files-layout.no-tree { grid-template-columns: minmax(0, 1fr); }
+.ws-pr-files .files-tree-resizer { display: block; }
 .ws-pr-files .file-diff-header { flex-wrap: wrap; }
 .ws-pr-files .file-diff-name { flex: 1 1 140px; min-width: 120px; overflow-wrap: anywhere; word-break: normal; writing-mode: horizontal-tb; }
 @container ws-pr-code (max-width: 620px) {
   .ws-pr-files .files-layout { grid-template-columns: minmax(0, 1fr); }
+  .ws-pr-files .files-tree-resizer { display: none; }
   .ws-pr-files .files-tree { position: static; max-height: 200px; overflow: auto; margin-bottom: 8px; }
 }
 .ws-commit-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }

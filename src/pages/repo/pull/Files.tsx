@@ -35,6 +35,7 @@ import {
 import { useRepo, encodePath } from '../../../lib/repo'
 import { AgentOnly, useAgent } from '../../../lib/agent/AgentProvider'
 import { readPref, useSharedPref, writePref } from '../../../lib/storage'
+import { FileTreeResizer } from './FileTreeResizer'
 import { plural } from '../../../lib/format'
 import { contentElementById, cssId } from '../../../lib/scroll'
 import { currentIndex } from '../../../lib/scrollspy'
@@ -81,7 +82,7 @@ const threadFields = (c: { path: string; side: DiffSide; line: number; startLine
   body: c.body,
 })
 
-export function FilesChanged({ pr }: { pr: PullRequest }) {
+export function FilesChanged({ pr, defaultTreeWidth = 296 }: { pr: PullRequest; defaultTreeWidth?: number }) {
   const { owner, repo, fullName } = useRepo()
   const { octokit, account } = useGitHub()
   const agent = useAgent()
@@ -401,6 +402,13 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
   if (files.isLoading) return <Loading label="Loading files" />
   if (files.error) return <ErrorBox error={files.error} />
 
+  const setTreeShown = (show: boolean) => {
+    // The filter box lives in the tree's column, so don't leave a hidden filter applied.
+    if (!show) setFilter('')
+    setShowTree(show)
+    writePref('diffFileTree', show)
+  }
+
   return (
     <SuggestionProvider pr={pr} canApply={!!reviewState.data?.viewerCanApplySuggestion} currentLine={currentLine} onCommitted={invalidate}>
       {/* A collapsed file takes its comment box with it, but not the text in it (src/lib/TabsProvider.tsx). */}
@@ -412,12 +420,7 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
           variant="invisible"
           icon={showTree ? SidebarExpandIcon : SidebarCollapseIcon}
           aria-label={showTree ? 'Hide file tree' : 'Show file tree'}
-          onClick={() => {
-            // The filter box lives in the tree's column, so don't leave a hidden filter applied.
-            if (showTree) setFilter('')
-            setShowTree(!showTree)
-            writePref('diffFileTree', !showTree)
-          }}
+          onClick={() => setTreeShown(!showTree)}
         />
         <ActionMenu>
           <ActionMenu.Anchor>
@@ -474,14 +477,16 @@ export function FilesChanged({ pr }: { pr: PullRequest }) {
             viewed={viewed}
           />
         </div>
+        {showTree && <FileTreeResizer defaultWidth={defaultTreeWidth} onHide={() => setTreeShown(false)} />}
         <div style={{ minWidth: 0 }}>
-          {shown.map((f) => {
+          {shown.map((f, index) => {
             const isViewed = viewed[f.filename] === f.sha
             const draftHere = draft?.path === f.filename ? draft : null
             return (
               <FileDiffBox
                 key={f.filename}
                 id={`diff-${cssId(f.filename)}`}
+                eager={index < 3}
                 file={{ path: f.filename, previousPath: f.previous_filename, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch, sha: f.sha }}
                 split={split}
                 collapsed={collapsed[f.filename] ?? isViewed}

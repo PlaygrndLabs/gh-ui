@@ -6,7 +6,7 @@ import { octokitFor } from '../github'
 import { readPref, writePref } from '../storage'
 import { useTabTitle } from '../TabsProvider'
 import { BASE_SYSTEM_PROMPT } from './prompt'
-import { createClient, describeAgentError, runAgent, type AgentEvent } from './runner'
+import type { AgentEvent } from './runner'
 import { ANTHROPIC_KEY_EVENT, getAnthropicKey, loadAgentSettings, proxyBaseUrl, saveAgentSettings, type AgentSettings } from './settings'
 import { useIsFocusedPane } from '../TabsProvider'
 
@@ -38,9 +38,6 @@ interface AgentApi {
   toggle(): void
   /** Which chat shows: a repository's key, or null for the one outside any repository. */
   setChat(id: string | null): void
-  items: ChatItem[]
-  running: boolean
-  pageContext: PageContext | null
   setPageContext(ctx: PageContext | null): void
   /** Opens the panel and sends a message. */
   ask(text: string): void
@@ -49,10 +46,23 @@ interface AgentApi {
   respond(toolId: string, approved: boolean): void
   settings: AgentSettings
   updateSettings(patch: Partial<AgentSettings>): void
-  usage: { input: number; output: number; cacheRead: number; cacheWrite: number }
+}
+
+type TokenUsage = { input: number; output: number; cacheRead: number; cacheWrite: number }
+
+/** The conversation on show. It changes many times a second during an answer, so only the panel listens to it. */
+interface AgentChat {
+  items: ChatItem[]
+  running: boolean
+  usage: TokenUsage
+  pageContext: PageContext | null
 }
 
 const AgentContext = createContext<AgentApi | null>(null)
+const AgentChatContext = createContext<AgentChat | null>(null)
+
+// The SDK and the tools are most of a megabyte of script nobody without an API key ever runs.
+const loadRunner = () => import('./runner')
 
 let seq = 0
 const nextId = () => `i${++seq}`
@@ -69,7 +79,7 @@ const GENERAL_CHAT = 'general'
 interface ChatView {
   items: ChatItem[]
   running: boolean
-  usage: AgentApi['usage']
+  usage: TokenUsage
 }
 
 const EMPTY_CHAT: ChatView = { items: [], running: false, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }
@@ -240,6 +250,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       const writeCalls = new Set<string>()
       let wrote = false
       try {
+        const { createClient, runAgent } = await loadRunner()
         const client = createClient(s, s.mode === 'direct' ? await getAnthropicKey() : null, proxyBaseUrl(s), active)
         const system = s.customInstructions.trim()
           ? `${BASE_SYSTEM_PROMPT}\n\nThe user's standing instructions:\n${s.customInstructions.trim()}`
@@ -267,6 +278,7 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         if (!controller.signal.aborted) {
           flush(id)
+          const { describeAgentError } = await loadRunner()
           setItems(id, (prev) => [...prev, { id: nextId(), kind: 'notice', text: describeAgentError(err), tone: 'danger' }])
         }
       } finally {
@@ -346,9 +358,6 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       setOpen,
       toggle: () => available && setOpen(!open),
       setChat: (id) => setChatId(id ?? GENERAL_CHAT),
-      items: chat.items,
-      running: chat.running,
-      pageContext,
       setPageContext,
       ask,
       stop,
@@ -356,16 +365,26 @@ export function AgentProvider({ children }: { children: ReactNode }) {
       respond,
       settings,
       updateSettings,
-      usage: chat.usage,
     }),
-    [available, open, setOpen, chat, pageContext, ask, stop, reset, respond, settings, updateSettings],
+    [available, open, setOpen, ask, stop, reset, respond, settings, updateSettings],
   )
-  return <AgentContext.Provider value={value}>{children}</AgentContext.Provider>
+  const shown = useMemo<AgentChat>(() => ({ items: chat.items, running: chat.running, usage: chat.usage, pageContext }), [chat, pageContext])
+  return (
+    <AgentContext.Provider value={value}>
+      <AgentChatContext.Provider value={shown}>{children}</AgentChatContext.Provider>
+    </AgentContext.Provider>
+  )
 }
 
 export function useAgent() {
   const ctx = useContext(AgentContext)
   if (!ctx) throw new Error('useAgent must be used inside <AgentProvider>')
+  return ctx
+}
+
+export function useAgentChat() {
+  const ctx = useContext(AgentChatContext)
+  if (!ctx) throw new Error('useAgentChat must be used inside <AgentProvider>')
   return ctx
 }
 

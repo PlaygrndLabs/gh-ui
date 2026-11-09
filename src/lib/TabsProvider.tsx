@@ -44,9 +44,8 @@ import {
 
 export type TabRouter = ReturnType<typeof createMemoryRouter>
 
-interface TabsApi {
-  state: TabsState
-  active: Tab
+/** What can be done to the tabs. Never changes, so asking for this doesn't redraw anything when a tab does. */
+interface TabActions {
   select(id: string): void
   /** The tab on screen right now, for handlers that can run between renders. */
   activeTabId(): string
@@ -79,10 +78,25 @@ interface TabsApi {
   unpinQueries(id: string): void
 }
 
+interface TabsApi extends TabActions {
+  state: TabsState
+  active: Tab
+}
+
+/** The little a page needs about its own tab, so that a change to any other tab doesn't redraw it. */
+export interface CurrentTabView {
+  focused: boolean
+  branch: string | null
+  pickedBranch: string | null
+}
+
 const TabsContext = createContext<TabsApi | null>(null)
+const TabActionsContext = createContext<TabActions | null>(null)
 const CurrentTabContext = createContext<string | null>(null)
+const CurrentTabViewContext = createContext<CurrentTabView | null>(null)
 
 export const CurrentTabProvider = CurrentTabContext.Provider
+export const CurrentTabViewProvider = CurrentTabViewContext.Provider
 export const tabPanelId = (id: string) => `tab-panel-${id}`
 export const tabButtonId = (id: string) => `tab-${id}`
 const prefKey = (accountId: string) => `tabs:${accountId}`
@@ -384,11 +398,16 @@ export function TabsProvider({
   }, [pendingPath, onPendingPathUsed, open])
 
   const active = state.tabs.find((t) => t.id === state.activeId)!
-  const value = useMemo<TabsApi>(
-    () => ({ state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplit: toggleSplitView, focusOtherPane: focusOther, setSplitRatio: setRatio, close, pin, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, setBranch, pinQueries, unpinQueries }),
-    [state, active, activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplitView, focusOther, setRatio, close, pin, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, setBranch, pinQueries, unpinQueries],
+  const actions = useMemo<TabActions>(
+    () => ({ activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplit: toggleSplitView, focusOtherPane: focusOther, setSplitRatio: setRatio, close, pin, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, setBranch, pinQueries, unpinQueries }),
+    [activeTabId, select, selectNumber, cycle, newTab, open, openToSide, split, toggleSplitView, focusOther, setRatio, close, pin, hasUnsentText, reopen, move, activeRouter, routerFor, setTitle, setBranch, pinQueries, unpinQueries],
   )
-  return <TabsContext.Provider value={value}>{children}</TabsContext.Provider>
+  const value = useMemo<TabsApi>(() => ({ ...actions, state, active }), [actions, state, active])
+  return (
+    <TabActionsContext.Provider value={actions}>
+      <TabsContext.Provider value={value}>{children}</TabsContext.Provider>
+    </TabActionsContext.Provider>
+  )
 }
 
 export function useTabs() {
@@ -397,19 +416,23 @@ export function useTabs() {
   return ctx
 }
 
+export function useTabActions() {
+  const ctx = useContext(TabActionsContext)
+  if (!ctx) throw new Error('useTabActions must be used inside <TabsProvider>')
+  return ctx
+}
+
 export const useCurrentTabId = () => useContext(CurrentTabContext)
 
 /** Whether the page asking has focus: in split view two tabs are on screen, and only one gets the keyboard and the agent. */
 export function useIsFocusedPane() {
-  const tabs = useContext(TabsContext)
-  const id = useContext(CurrentTabContext)
-  return !tabs || !id || tabs.state.activeId === id
+  return useContext(CurrentTabViewContext)?.focused ?? true
 }
 
 /** Each account has its own tabs, so switching unmounts this one's: ask first if that would throw away unsent text. */
 export function useSwitchAccount() {
   const { switchTo } = useAuth()
-  const tabs = useContext(TabsContext)
+  const tabs = useContext(TabActionsContext)
   const confirm = useConfirm()
   return async (id: string) => {
     if (tabs?.hasUnsentText()) {
@@ -427,7 +450,7 @@ export function useSwitchAccount() {
 
 /** Holds a tab's queries for as long as it's hidden. Layout effects clean up before the page's query observers do. */
 export function useTabQueryPins(id: string) {
-  const { pinQueries, unpinQueries } = useTabs()
+  const { pinQueries, unpinQueries } = useTabActions()
   useLayoutEffect(() => {
     unpinQueries(id)
     return () => pinQueries(id)
@@ -436,16 +459,16 @@ export function useTabQueryPins(id: string) {
 
 /** The branch picked in the tab this runs in, and the name its title shows. Without tabs, the pick lasts as long as the page. */
 export function useTabBranch() {
-  const tabs = useContext(TabsContext)
+  const tabs = useContext(TabActionsContext)
   const id = useContext(CurrentTabContext)
+  const view = useContext(CurrentTabViewContext)
   const [ownPick, setOwnPick] = useState<string | null>(null)
   const setBranch = tabs?.setBranch
   const inTab = !!setBranch && !!id
   const setPicked = useCallback((name: string | null) => (inTab ? setBranch(id, { pickedBranch: name }) : setOwnPick(name)), [inTab, setBranch, id])
   const showBranch = useCallback((name: string) => void (inTab && setBranch(id, { branch: name })), [inTab, setBranch, id])
-  const tab = inTab ? tabs.state.tabs.find((t) => t.id === id) : undefined
-  const picked = inTab ? (tab?.pickedBranch ?? null) : ownPick
-  return { picked, setPicked, showBranch, shownBranch: tab?.branch ?? null }
+  const picked = inTab ? (view?.pickedBranch ?? null) : ownPick
+  return { picked, setPicked, showBranch, shownBranch: inTab ? (view?.branch ?? null) : null }
 }
 
 /** Whether this tab has the window's focus: the one shown or, in split view, the pane last used. Always true without tabs. */
@@ -457,7 +480,7 @@ export function useIsActiveTab() {
 
 /** Names the tab a page is in. Does nothing in the web build, which has no tabs. */
 export function useTabTitle(title: string | undefined) {
-  const tabs = useContext(TabsContext)
+  const tabs = useContext(TabActionsContext)
   const id = useContext(CurrentTabContext)
   const { pathname } = useLocation()
   const setTitle = tabs?.setTitle
