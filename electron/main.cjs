@@ -128,7 +128,7 @@ function run(cmd, args, opts = {}) {
   })
 }
 
-const { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, gitCommandEnv, GIT_BASE_ENV } = require('./git-policy.cjs')
+const { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, gitCommandEnv, reorderCommits, GIT_BASE_ENV } = require('./git-policy.cjs')
 
 // ---------------------------------------------------------------------------
 // Local repository registry
@@ -361,6 +361,12 @@ function registerIpc() {
     validateGitArgs(args)
     const network = ['push', 'pull', 'fetch'].includes(args[0])
     return run('git', args, { cwd: repo.path, env: { ...gitCommandEnv(args[0]), ...(network ? gitAuthEnv(auth) : {}) } })
+  })
+
+  // Its own channel: an interactive rebase needs an editor command, so the renderer sends only the order it wants.
+  handle('repos:reorderCommits', async (_e, repoId, order) => {
+    const repo = await repoById(repoId)
+    return reorderCommits((args, env) => run('git', args, { cwd: repo.path, env }), order)
   })
 
   handle('repo:reveal', async (_e, repoId) => shell.showItemInFolder((await repoById(repoId)).path))

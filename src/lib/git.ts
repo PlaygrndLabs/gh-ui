@@ -24,6 +24,7 @@ export interface LogEntry {
   author: string
   date: string
   subject: string
+  parents: string[]
 }
 
 /** Where a branch exists: both means a local branch and origin's branch of the same name. */
@@ -83,15 +84,15 @@ export const isStaged = (e: StatusEntry) => !isUnmerged(e) && e.index !== ' ' &&
 /** Paths to restore or stage together: a rename's old path goes with the new one; a copy's source does not. */
 export const changePaths = (e: StatusEntry) => ((e.index === 'R' || e.worktree === 'R') && e.origPath ? [e.origPath, e.path] : [e.path])
 
-const LOG_FORMAT = '--pretty=format:%H%x1f%an%x1f%aI%x1f%s'
+const LOG_FORMAT = '--pretty=format:%H%x1f%an%x1f%aI%x1f%s%x1f%P'
 
 export function parseCommitLog(out: string): LogEntry[] {
   return out
     .split('\n')
     .filter(Boolean)
     .map((l) => {
-      const [sha, author, date, subject] = l.split('\x1f')
-      return { sha, author, date, subject }
+      const [sha, author, date, subject, parents] = l.split('\x1f')
+      return { sha, author, date, subject, parents: parents ? parents.split(' ') : [] }
     })
 }
 
@@ -176,6 +177,9 @@ export const primaryRemote = (remotes: GitRemote[]): GitRemote | null => remotes
 /** Runs git in one repository; withAuth marks the commands that talk to the remote. */
 export type GitRunner = (args: string[], withAuth: boolean) => Promise<GitResult>
 
+/** Puts the newest commits in a new order, newest first. Electron checks the order and runs the rebase. */
+export type CommitReorderer = (order: string[]) => Promise<GitResult>
+
 export type IdentityKey = 'user.name' | 'user.email'
 
 export type GitClient = ReturnType<typeof createGitClient>
@@ -184,6 +188,19 @@ export type GitClient = ReturnType<typeof createGitClient>
 export type HistoryRow = LogEntry & { mark?: '↑' | '↓' }
 
 const unmarked = (c: LogEntry): HistoryRow => c
+
+/** What a drag in History can rearrange: the newest commits to push, as far back as history is a straight line. */
+export function reorderableCommits(rows: HistoryRow[]) {
+  const end = rows.findIndex((r) => r.mark !== '↑' || r.parents.length > 1)
+  return (end < 0 ? rows : rows.slice(0, end)).map((r) => r.sha)
+}
+
+/** `order` with the commit at `from` moved into the gap before index `gap` (`order.length` is the gap after the last). */
+export function moveCommit(order: string[], from: number, gap: number) {
+  const next = order.filter((_, i) => i !== from)
+  next.splice(gap > from ? gap - 1 : gap, 0, order[from])
+  return next
+}
 
 /** What the repository has stopped in the middle of. */
 export type RepoOperation = 'merge' | 'rebase' | 'revert' | 'cherry-pick'
@@ -197,7 +214,7 @@ const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 const INDEX_LOCKED = /index\.lock|another git process/i
 const LOCK_RETRY_MS = [100, 250, 500, 1000]
 
-export function createGitClient(run: GitRunner) {
+export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
   const git = async (args: string[], withAuth = false) => {
     let res = await run(args, withAuth)
     for (const wait of LOCK_RETRY_MS) {
@@ -224,12 +241,12 @@ export function createGitClient(run: GitRunner) {
     return res.code === 0 && name && name !== 'HEAD' ? name : null
   }
   /** Conflicts stop git with an error, but they're a state to finish from, not a failure. */
-  const stopsOnConflicts = async (args: string[]) => {
-    const res = await run(args, false)
+  const conflictsIn = async (res: GitResult, command: string) => {
     if (res.code === 0) return { conflicts: false }
     if ((await status()).entries.some(isUnmerged)) return { conflicts: true }
-    throw new Error((res.stderr || res.stdout || `git ${args[0]} failed`).trim())
+    throw new Error((res.stderr || res.stdout || `git ${command} failed`).trim())
   }
+  const stopsOnConflicts = async (args: string[]) => conflictsIn(await run(args, false), args[0])
   return {
     status,
     /** Empty when there's no origin. */
@@ -319,6 +336,7 @@ export function createGitClient(run: GitRunner) {
     merge: (ref: string, options: { squash?: boolean } = {}) => stopsOnConflicts(['merge', options.squash ? '--squash' : '--no-edit', ref]),
     rebase: (ref: string) => stopsOnConflicts(['rebase', ref]),
     continueRebase: () => stopsOnConflicts(['rebase', '--continue']),
+    reorderCommits: async (order: string[]) => conflictsIn(await reorder!(order), 'rebase'),
     abortOperation: (operation: RepoOperation) => git([operation, '--abort']),
     /** Commits a merge whose conflicts are resolved, with the message git prepared. */
     finishMerge: () => git(['commit', '--no-edit']),
@@ -359,5 +377,5 @@ export function createGitClient(run: GitRunner) {
 
 /** The client for a repository the desktop app has registered. */
 export function localGit(repoId: string, auth?: GitAuth): GitClient {
-  return createGitClient((args, withAuth) => native!.git(repoId, args, withAuth ? auth : undefined))
+  return createGitClient((args, withAuth) => native!.git(repoId, args, withAuth ? auth : undefined), (order) => native!.repos.reorderCommits(repoId, order))
 }

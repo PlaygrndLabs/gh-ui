@@ -63,6 +63,47 @@ const mergeHelpers = `
   }
 `
 
+const reorderHelpers = `
+  const refresh = () => [...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+  const historyTab = () => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes('History'))
+  const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+  const rowOf = (text) => rows().find((c) => c.textContent.includes(text))
+  const menuOn = async (row, pick = null) => {
+    window.__e2eMenuItems = null
+    window.__e2eMenuPick = pick
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+    await until(() => window.__e2eMenuItems, 5000)
+    const items = window.__e2eMenuItems
+    await sleep(150)
+    window.__e2eMenuPick = null
+    return items
+  }
+  const offered = (items) => items.find((i) => i.label === 'Reorder Commit')?.enabled
+  const log = async (n) => (await g.git(repoId, ['log', '-n', String(n), '--pretty=format:%s'])).stdout.split('\\n')
+  const sha = async (ref) => (await g.git(repoId, ['rev-parse', ref])).stdout.trim()
+  const pointer = (type, clientY) => document.body.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, clientY }))
+  /** Drags a row to just inside the far edge of another. Says whether the line showed where it would land. */
+  const drag = async (row, target, where) => {
+    row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientY: row.getBoundingClientRect().top + 10 }))
+    const box = target.getBoundingClientRect()
+    const y = where === 'below' ? box.bottom - 4 : box.top + 4
+    pointer('pointermove', y)
+    await sleep(200)
+    const line = !!main().querySelector('.is-drop-' + where)
+    pointer('pointerup', y)
+    return line
+  }
+  const openBranch = async (name, row) => {
+    await g.git(repoId, ['switch', name])
+    clickLink('/local/' + repoId)
+    await until(() => visible('.ws-seg-branch .ws-seg-value')[0]?.textContent === name, 15000)
+    refresh()
+    const tab = await until(historyTab, 8000)
+    if (tab) tab.click()
+    return until(() => rowOf(row), 10000)
+  }
+`
+
 exports.steps = [
   {
     name: 'local repo: status, stage, commit, history, policy',
@@ -1594,6 +1635,82 @@ exports.steps = [
       r.fail = !(r.gone && r.on === 'main')
       return r
     `,
+  },
+  {
+    name: 'reorder: the menu offers it only for unpushed commits',
+    js: `${helpers}${mergeHelpers}${reorderHelpers}
+      const r = {}
+      if (!await openBranch('reorder-demo', 'Reorder three')) throw new Error('No commits: ' + main()?.innerText.slice(0, 300))
+      const items = await menuOn(rowOf('Reorder one'))
+      r.labels = items.map((i) => i.label).filter(Boolean)
+      r.unpushed = offered(items)
+      r.pushed = offered(await menuOn(rowOf('Reorder base')))
+      const at = (label) => r.labels.indexOf(label)
+      r.fail = !(r.unpushed === true && r.pushed === false && at('Checkout Commit') + 1 === at('Reorder Commit') && at('Reorder Commit') + 1 === at('Revert Changes in Commit'))
+      return r
+    `,
+  },
+  {
+    name: 'reorder: picking it shows which commit moves and which can’t',
+    js: `${helpers}${mergeHelpers}${reorderHelpers}
+      const r = {}
+      await menuOn(rowOf('Reorder three'), 'Reorder Commit')
+      r.entered = !!await until(() => main().querySelector('.ws-commit-row.is-moving'), 5000)
+      r.hint = main().querySelector('.ws-reorder-hint')?.textContent
+      r.fixed = main().querySelectorAll('.ws-commit-row.is-fixed').length
+      r.fail = !(r.entered && r.hint && r.fixed > 0)
+      return r
+    `,
+    screenshot: 'reorder-mode',
+  },
+  {
+    name: 'reorder: a drag rewrites the order, and pushed commits stay put',
+    js: `${helpers}${mergeHelpers}${reorderHelpers}
+      const r = {}
+      r.base = await sha('HEAD~3')
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      r.cancelled = !!await until(() => !main().querySelector('.ws-commit-row.is-moving'), 3000)
+      r.unchanged = (await log(3)).join()
+
+      await menuOn(rowOf('Reorder three'), 'Reorder Commit')
+      await until(() => main().querySelector('.ws-commit-row.is-moving'), 5000)
+      r.line = await drag(rowOf('Reorder three'), rowOf('Reorder one'), 'below')
+      await untilAsync(async () => (await log(1))[0] === 'Reorder two', 10000)
+      r.after = (await log(4)).join()
+      r.baseAfter = await sha('HEAD~3')
+      r.modeEnded = !main().querySelector('.ws-commit-row.is-moving')
+      r.diff = (await g.git(repoId, ['diff', 'HEAD~3', 'HEAD~2'])).stdout
+      r.fail = !(r.cancelled && r.unchanged === 'Reorder three,Reorder two,Reorder one' && r.line && r.after === 'Reorder two,Reorder one,Reorder three,Reorder base' && r.baseAfter === r.base && r.modeEnded && r.diff.includes('r3.txt') && !r.diff.includes('r1.txt'))
+      return r
+    `,
+    screenshot: 'reorder-done',
+  },
+  {
+    name: 'reorder: a conflict stops in the operation bar and aborts cleanly',
+    js: `${helpers}${mergeHelpers}${reorderHelpers}
+      const r = {}
+      if (!await openBranch('reorder-clash', 'Clash two')) throw new Error('No commits: ' + main()?.innerText.slice(0, 300))
+      r.head = await sha('HEAD')
+      await menuOn(rowOf('Clash two'), 'Reorder Commit')
+      await until(() => main().querySelector('.ws-commit-row.is-moving'), 5000)
+      await drag(rowOf('Clash two'), rowOf('Clash one'), 'below')
+      const bar = await until(() => visible('.ws-operation')[0], 10000)
+      r.bar = bar?.textContent
+      r.rebasing = (await g.git(repoId, ['rev-parse', '-q', '--verify', 'REBASE_HEAD'])).code === 0
+      historyTab().click()
+      await until(() => rows().length, 5000)
+      r.whileBusy = offered(await menuOn(rows()[0]))
+      byText('.ws-operation button', 'Abort rebase').click()
+      ;(await until(() => byText('[role=alertdialog] button', 'Abort rebase'), 5000)).click()
+      await until(() => !visible('.ws-operation').length, 10000)
+      r.gone = !visible('.ws-operation').length
+      r.restored = (await sha('HEAD')) === r.head
+      r.branch = (await g.git(repoId, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()
+      await g.git(repoId, ['switch', 'main'])
+      r.fail = !(r.bar?.includes('Rebase in progress') && r.bar?.includes('with conflicts') && r.rebasing && r.whileBusy === false && r.gone && r.restored && r.branch === 'reorder-clash')
+      return r
+    `,
+    screenshot: 'reorder-conflict',
   },
   {
     name: 'cleanup: forget repos and account in the test profile',

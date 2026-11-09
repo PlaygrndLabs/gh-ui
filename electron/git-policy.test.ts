@@ -3,7 +3,8 @@ import { createRequire } from 'node:module'
 import { checkoutPlan } from '../src/lib/checkout'
 
 const require = createRequire(import.meta.url)
-const { validateGitArgs, worktreeFolder, gitAuthEnv } = require('./git-policy.cjs') as {
+const { validateGitArgs, worktreeFolder, gitAuthEnv, reorderCommits } = require('./git-policy.cjs') as {
+  reorderCommits(git: (args: string[], env: Record<string, string>) => Promise<{ code: number; stdout: string; stderr: string }>, order: unknown): Promise<{ code: number }>
   validateGitArgs(args: string[]): void
   worktreeFolder(repoName: string, branch: string): string
   gitAuthEnv(auth?: { token: string; host: string }): Record<string, string>
@@ -167,4 +168,85 @@ describe('checking out a pull request', () => {
   ])('stays within what the policy allows (%#)', (target, current) => {
     for (const step of checkoutPlan(target, current).steps) expect(() => validateGitArgs(step)).not.toThrow()
   })
+})
+
+describe('reordering commits', () => {
+  const [a, b, c, base] = ['a', 'b', 'c', 'd'].map((x) => x.repeat(40))
+  /** A branch whose newest commits are a, b and c, in that order, on top of base. */
+  function fakeGit(log = `${a} ${b}\n${b} ${c}\n${c} ${base}`, rebase = { code: 0, stdout: '', stderr: '' }) {
+    const calls: Array<{ args: string[]; env: Record<string, string> }> = []
+    const git = async (args: string[], env: Record<string, string>) => {
+      calls.push({ args, env })
+      if (args[0] === 'rev-parse' && args[1] === '--absolute-git-dir') return { code: 0, stdout: '/nowhere/.git\n', stderr: '' }
+      if (args[0] === 'rev-parse') return { code: 0, stdout: `${base}\n`, stderr: '' }
+      if (args[0] === 'log') return { code: 0, stdout: log, stderr: '' }
+      if (args.includes('-i')) return rebase
+      return { code: 0, stdout: '', stderr: '' }
+    }
+    return { git, calls, rebase: () => calls.find((call) => call.args.includes('-i')) }
+  }
+
+  it('asks only for the order: the todo holds picks of the checked commits, oldest first', async () => {
+    const { git, rebase } = fakeGit()
+    await reorderCommits(git, [b, a, c])
+    expect(rebase()!.env.GH_UI_REBASE_TODO).toBe(`pick ${a}\npick ${b}`)
+    expect(rebase()!.args).toEqual(['-c', 'rebase.updateRefs=false', 'rebase', '-i', '--empty=keep', c])
+    expect(rebase()!.env.GIT_EDITOR).toBe('true')
+  })
+
+  it('always uses the same editor command', async () => {
+    const { git, rebase } = fakeGit()
+    await reorderCommits(git, [c, b, a])
+    expect(rebase()!.env.GIT_SEQUENCE_EDITOR).toBe(`printf '%s\\n' "$GH_UI_REBASE_TODO" >`)
+  })
+
+  it.each([
+    ['not a list', 'abc'],
+    ['one commit', [a]],
+    ['a short id', [a, 'abc123']],
+    ['a ref name', [a, 'main']],
+    ['a line of its own', [a, `${b}\nexec touch /tmp/x`]],
+    ['an upper-case id', [a, b.toUpperCase()]],
+    ['a repeat', [a, a]],
+    ['something else', [a, 1]],
+  ])('refuses %s before running git', async (_what, order) => {
+    const { git, calls } = fakeGit()
+    await expect(reorderCommits(git, order)).rejects.toThrow('Invalid commit order')
+    expect(calls).toEqual([])
+  })
+
+  it.each([
+    ['fewer commits than asked for', `${a} ${b}`],
+    ['a commit not among them', `${a} ${b}\n${b} ${c}\n${base} x`],
+    ['a merge', `${a} ${b} ${c}\n${b} ${c}\n${c} ${base}`],
+  ])('refuses %s without rebasing', async (_what, log) => {
+    const { git, rebase } = fakeGit(log)
+    await expect(reorderCommits(git, [c, b, a])).rejects.toThrow(/changed/)
+    expect(rebase()).toBeUndefined()
+  })
+
+  it('looks only at commits not on the upstream', async () => {
+    const { git, calls } = fakeGit()
+    await reorderCommits(git, [b, a, c])
+    expect(calls.find((call) => call.args[0] === 'log')!.args).toEqual(['log', '-n', '3', '--pretty=format:%H %P', 'HEAD', '--not', base, '--'])
+  })
+
+  it('keeps a rebase that stopped on a conflict, and undoes one that stopped for anything else', async () => {
+    const failed = { code: 1, stdout: '', stderr: 'nope' }
+    const conflicted = fakeGit(undefined, failed)
+    const git = async (args: string[], env: Record<string, string>) => (args[0] === 'ls-files' ? { code: 0, stdout: '100644 x 1\tf\n', stderr: '' } : conflicted.git(args, env))
+    await reorderCommits(git, [c, b, a])
+    expect(conflicted.calls.some((call) => call.args.includes('--abort'))).toBe(false)
+
+    const other = fakeGit(undefined, failed)
+    await reorderCommits(other.git, [c, b, a])
+    expect(other.calls.some((call) => call.args.join(' ') === 'rebase --abort')).toBe(true)
+  })
+
+  it.each([
+    [['rebase', '-i', 'HEAD~2']],
+    [['rebase', '--interactive', 'HEAD~2']],
+    [['rebase', '--exec', 'touch /tmp/x', 'HEAD~2']],
+    [['rebase', '--root']],
+  ])('keeps %j off the allow-list', (args) => expect(() => validateGitArgs(args)).toThrow())
 })

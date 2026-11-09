@@ -1,15 +1,16 @@
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { changePaths, createGitClient, isStaged, isUnmerged, parseBranches, parseCommitLog, parseStatus, parseWorktrees, type GitClient } from './git'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { changePaths, createGitClient, isStaged, isUnmerged, moveCommit, parseBranches, parseCommitLog, parseStatus, parseWorktrees, reorderableCommits, type GitClient, type HistoryRow } from './git'
 
 const exec = promisify(execFile)
 const require = createRequire(import.meta.url)
-const { validateGitArgs, gitCommandEnv } = require('../../electron/git-policy.cjs') as { validateGitArgs(args: string[]): void; gitCommandEnv(sub: string): Record<string, string> }
+type RunGit = (args: string[], env: Record<string, string>) => Promise<{ code: number; stdout: string; stderr: string }>
+const { validateGitArgs, gitCommandEnv, reorderCommits } = require('../../electron/git-policy.cjs') as { validateGitArgs(args: string[]): void; gitCommandEnv(sub: string): Record<string, string>; reorderCommits(git: RunGit, order: string[]): ReturnType<RunGit> }
 
 describe('parseStatus', () => {
   it('reads the branch, its upstream and the counts', () => {
@@ -60,8 +61,23 @@ describe('when another program holds the index', () => {
 
 describe('parseCommitLog', () => {
   it('splits the fields, keeping separators out of the subject', () => {
-    expect(parseCommitLog('abc\x1fLena\x1f2026-01-01T00:00:00Z\x1ffix: a | b\n')).toEqual([{ sha: 'abc', author: 'Lena', date: '2026-01-01T00:00:00Z', subject: 'fix: a | b' }])
+    expect(parseCommitLog('abc\x1fLena\x1f2026-01-01T00:00:00Z\x1ffix: a | b\x1fp1 p2\n')).toEqual([{ sha: 'abc', author: 'Lena', date: '2026-01-01T00:00:00Z', subject: 'fix: a | b', parents: ['p1', 'p2'] }])
   })
+})
+
+describe('moveCommit', () => {
+  const order = ['a', 'b', 'c', 'd']
+  it('moves a commit up', () => expect(moveCommit(order, 2, 0)).toEqual(['c', 'a', 'b', 'd']))
+  it('moves a commit down', () => expect(moveCommit(order, 0, 2)).toEqual(['b', 'a', 'c', 'd']))
+  it('moves a commit to the end', () => expect(moveCommit(order, 1, 4)).toEqual(['a', 'c', 'd', 'b']))
+})
+
+describe('reorderableCommits', () => {
+  const row = (sha: string, mark?: '↑' | '↓', parents = ['p']): HistoryRow => ({ sha, author: '', date: '', subject: '', parents, mark })
+  it('stops at the first commit already pushed', () => expect(reorderableCommits([row('a', '↑'), row('b', '↑'), row('c'), row('d', '↑')])).toEqual(['a', 'b']))
+  it('stops at what is still to pull', () => expect(reorderableCommits([row('a', '↑'), row('b', '↓')])).toEqual(['a']))
+  it('stops at a merge', () => expect(reorderableCommits([row('a', '↑'), row('m', '↑', ['x', 'y']), row('c', '↑')])).toEqual(['a']))
+  it('includes a first commit, which has no parent', () => expect(reorderableCommits([row('a', '↑'), row('b', '↑', [])])).toEqual(['a', 'b']))
 })
 
 describe('parseBranches', () => {
@@ -222,6 +238,185 @@ describe('createGitClient against a real repository', () => {
       await raw(work, 'worktree', 'remove', '--force', tree)
       await raw(work, 'branch', '-D', 'range', 'range-side').catch(() => '')
     }
+  })
+
+  describe('reordering commits', () => {
+    let tree: string
+    let n = 0
+    let inTree: GitClient
+    const run = (cwd: () => string): RunGit => async (args, extra) => {
+      try {
+        const { stdout, stderr } = await exec('git', args, { cwd: cwd(), env: { ...env, ...extra } })
+        return { code: 0, stdout, stderr }
+      } catch (e) {
+        const err = e as { code?: number; stdout?: string; stderr?: string }
+        return { code: err.code ?? 1, stdout: err.stdout ?? '', stderr: err.stderr ?? '' }
+      }
+    }
+    const subjects = async () => (await raw(tree, 'log', '--format=%s', 'origin/main..HEAD')).trim().split('\n')
+    const shaOf = async (ref: string) => (await raw(tree, 'rev-parse', ref)).trim()
+    /** Commits from newest to oldest, by ref. */
+    const shas = async (...refs: string[]) => Promise.all(refs.map(shaOf))
+    const rebasing = () => raw(tree, 'rev-parse', '--git-path', 'rebase-merge').then((dir) => stat(join(tree, dir.trim())).then(() => true, () => false))
+
+    // Each test gets a branch tracking origin/main, so the commits it makes are the unpushed ones.
+    beforeEach(async () => {
+      tree = join(root, `reorder-${++n}`)
+      await raw(work, 'worktree', 'add', '--track', '-b', `reorder-${n}`, tree, 'origin/main')
+      inTree = createGitClient(async (args) => {
+        validateGitArgs(args)
+        return run(() => tree)(args, gitCommandEnv(args[0]))
+      }, (order) => reorderCommits(run(() => tree), order))
+    })
+    afterEach(async () => {
+      await raw(work, 'worktree', 'remove', '--force', tree)
+    })
+
+    it('rewrites the order and keeps every commit’s content', async () => {
+      await commitFile(tree, 'one.txt', 'one')
+      await commitFile(tree, 'two.txt', 'two')
+      await commitFile(tree, 'three.txt', 'three')
+      const [three, two, one, base] = await shas('HEAD', 'HEAD~1', 'HEAD~2', 'HEAD~3')
+      expect(await inTree.reorderCommits([two, three, one])).toEqual({ conflicts: false })
+      expect(await subjects()).toEqual(['two', 'three', 'one'])
+      // The commit below the lowest one moved doesn't need rewriting, and nothing pushed changes.
+      expect(await shaOf('HEAD~2')).toBe(one)
+      expect(await shaOf('HEAD~3')).toBe(base)
+      expect((await raw(tree, 'show', '--name-only', '--format=', 'HEAD')).trim()).toBe('two.txt')
+      expect((await raw(tree, 'status', '--porcelain')).trim()).toBe('')
+      expect(await inTree.operation()).toBeNull()
+    })
+
+    it('marks exactly the unpushed commits as movable', async () => {
+      await commitFile(tree, 'one.txt', 'one')
+      await commitFile(tree, 'two.txt', 'two')
+      const branch = (await inTree.branches()).find((b) => b.name === `reorder-${n}`)!
+      const { history } = await inTree.branchCommits(branch)
+      expect(reorderableCommits(history)).toEqual(await shas('HEAD', 'HEAD~1'))
+    })
+
+    it('does nothing when the order is the same', async () => {
+      await commitFile(tree, 'one.txt', 'one')
+      await commitFile(tree, 'two.txt', 'two')
+      const [two, one] = await shas('HEAD', 'HEAD~1')
+      await inTree.reorderCommits([two, one])
+      expect(await shas('HEAD', 'HEAD~1')).toEqual([two, one])
+    })
+
+    it('refuses a commit that is already pushed', async () => {
+      await commitFile(tree, 'one.txt', 'one')
+      const [one, pushed] = await shas('HEAD', 'HEAD~1')
+      await expect(inTree.reorderCommits([pushed, one])).rejects.toThrow(/changed/)
+      expect(await shaOf('HEAD')).toBe(one)
+    })
+
+    it('refuses commits that are not the newest ones', async () => {
+      await commitFile(tree, 'one.txt', 'one')
+      await commitFile(tree, 'two.txt', 'two')
+      await commitFile(tree, 'three.txt', 'three')
+      const [three, two, one] = await shas('HEAD', 'HEAD~1', 'HEAD~2')
+      await expect(inTree.reorderCommits([one, two])).rejects.toThrow(/changed/)
+      expect(await shaOf('HEAD')).toBe(three)
+    })
+
+    it('refuses to flatten a merge', async () => {
+      const side = `side-${n}`
+      await raw(tree, 'switch', '-c', side)
+      await commitFile(tree, 'side.txt', 'side')
+      await raw(tree, 'switch', `reorder-${n}`)
+      await commitFile(tree, 'main-side.txt', 'ours')
+      await raw(tree, 'merge', '--no-edit', side)
+      await commitFile(tree, 'top.txt', 'top')
+      const [top, merge] = await shas('HEAD', 'HEAD~1')
+      await expect(inTree.reorderCommits([merge, top])).rejects.toThrow(/changed/)
+      expect(await shaOf('HEAD')).toBe(top)
+      await raw(work, 'branch', '-D', side)
+    })
+
+    it('stops at a conflict in the rebase state, and continues once it is resolved', async () => {
+      await commitFile(tree, 'same.txt', 'one')
+      await commitFile(tree, 'same.txt', 'two')
+      await commitFile(tree, 'other.txt', 'other')
+      const [other, two, one] = await shas('HEAD', 'HEAD~1', 'HEAD~2')
+      expect(await inTree.reorderCommits([other, one, two])).toEqual({ conflicts: true })
+      expect(await inTree.operation()).toBe('rebase')
+      expect((await inTree.status()).entries.some(isUnmerged)).toBe(true)
+
+      await writeFile(join(tree, 'same.txt'), 'two\n')
+      await raw(tree, 'add', 'same.txt')
+      expect(await inTree.continueRebase()).toEqual({ conflicts: true })
+      await writeFile(join(tree, 'same.txt'), 'one\n')
+      await raw(tree, 'add', 'same.txt')
+      expect(await inTree.continueRebase()).toEqual({ conflicts: false })
+      expect(await inTree.operation()).toBeNull()
+      expect(await subjects()).toEqual(['other', 'one', 'two'])
+    })
+
+    it('goes back to how it was when a conflict is aborted', async () => {
+      await commitFile(tree, 'same.txt', 'one')
+      await commitFile(tree, 'same.txt', 'two')
+      const [two, one] = await shas('HEAD', 'HEAD~1')
+      expect(await inTree.reorderCommits([one, two])).toEqual({ conflicts: true })
+      await inTree.abortOperation('rebase')
+      expect(await inTree.operation()).toBeNull()
+      expect(await shas('HEAD', 'HEAD~1')).toEqual([two, one])
+    })
+
+    it('leaves no rebase behind when git stops for anything but a conflict', async () => {
+      await commitFile(tree, 'one.txt', 'one')
+      await commitFile(tree, 'two.txt', 'two')
+      const [two, one] = await shas('HEAD', 'HEAD~1')
+      await rm(join(tree, 'two.txt'))
+      await raw(tree, 'rm', '-q', '--cached', 'two.txt')
+      await raw(tree, 'commit', '-q', '-m', 'three')
+      await writeFile(join(tree, 'two.txt'), 'in the way\n')
+      const three = await shaOf('HEAD')
+      await expect(inTree.reorderCommits([two, three, one])).rejects.toThrow(/overwritten|untracked/i)
+      expect(await rebasing()).toBe(false)
+      expect(await shaOf('HEAD')).toBe(three)
+    })
+
+    it('lets git refuse uncommitted changes without touching the branch', async () => {
+      await commitFile(tree, 'one.txt', 'one')
+      await commitFile(tree, 'two.txt', 'two')
+      const [two, one] = await shas('HEAD', 'HEAD~1')
+      await writeFile(join(tree, 'one.txt'), 'edited\n')
+      await expect(inTree.reorderCommits([one, two])).rejects.toThrow(/unstaged|uncommitted/i)
+      expect(await rebasing()).toBe(false)
+      expect(await shaOf('HEAD')).toBe(two)
+      expect((await raw(tree, 'status', '--porcelain')).trim()).toBe('M one.txt')
+    })
+
+    it('won’t touch a rebase that is already under way', async () => {
+      await commitFile(tree, 'same.txt', 'one')
+      await commitFile(tree, 'same.txt', 'two')
+      const [two, one] = await shas('HEAD', 'HEAD~1')
+      await inTree.reorderCommits([one, two])
+      await expect(inTree.reorderCommits([one, two])).rejects.toThrow(/in progress/)
+      expect(await inTree.operation()).toBe('rebase')
+      await inTree.abortOperation('rebase')
+    })
+
+    it('keeps a commit that becomes empty', async () => {
+      await commitFile(tree, 'one.txt', 'one')
+      await raw(tree, 'commit', '--allow-empty', '-q', '-m', 'nothing')
+      await commitFile(tree, 'two.txt', 'two')
+      const [two, nothing, one] = await shas('HEAD', 'HEAD~1', 'HEAD~2')
+      expect(await inTree.reorderCommits([nothing, two, one])).toEqual({ conflicts: false })
+      expect(await subjects()).toEqual(['nothing', 'two', 'one'])
+    })
+
+    it('reorders down to the very first commit, with no remote', async () => {
+      const fresh = join(root, 'reorder-root')
+      await mkdir(fresh)
+      await raw(fresh, 'init', '-q', '-b', 'main')
+      await commitFile(fresh, 'one.txt', 'one')
+      await commitFile(fresh, 'two.txt', 'two')
+      const [two, one] = (await raw(fresh, 'log', '--format=%H')).trim().split('\n')
+      const res = await reorderCommits(run(() => fresh), [one, two])
+      expect(res.code).toBe(0)
+      expect((await raw(fresh, 'log', '--format=%s')).trim().split('\n')).toEqual(['one', 'two'])
+    })
   })
 
   describe('what a commit\'s menu does', () => {

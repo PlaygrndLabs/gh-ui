@@ -5,7 +5,7 @@ import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea
 import { ArrowDownIcon, ArrowUpIcon, CheckIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import type { FileDiff } from '../../lib/diff'
-import { changePaths, isStaged, isUnmerged, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
+import { changePaths, isStaged, isUnmerged, reorderableCommits, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
 import { errorMessage, useGitHub } from '../../lib/github'
 import { webUrl } from '../../lib/links'
 import { native, openExternal } from '../../lib/platform'
@@ -20,6 +20,7 @@ import { SplitPane } from '../../components/SplitPane'
 import { PublishDialog } from '../../components/WorkspaceHeader'
 import { useTabBranch } from '../../lib/TabsProvider'
 import { useCommitMenu } from './CommitMenu'
+import { useCommitReorder, type GrabRow } from './CommitReorder'
 
 type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | { kind: 'range'; anchor: string; focus: string } | null
 
@@ -173,9 +174,15 @@ function Section({ title, action, flush, fill, children }: { title: string; acti
   )
 }
 
-const CommitRow = memo(function CommitRow({ commit, selected, mark, onSelect, onMenu }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; onSelect(sha: string, extend: boolean): void; onMenu(sha: string): void }) {
+/** No commit menu while one is being reordered. */
+const ignoreMenu = () => {}
+
+/** A row while a commit is being reordered: the one picked up, one it can land among, or one that has to stay put. */
+type ReorderRole = 'moving' | 'movable' | 'fixed'
+
+const CommitRow = memo(function CommitRow({ commit, selected, mark, role, dropLine, onSelect, onMenu, onGrab }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; role?: ReorderRole; dropLine?: 'above' | 'below'; onSelect(sha: string, extend: boolean): void; onMenu(sha: string): void; onGrab: GrabRow }) {
   return (
-    <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''}`} aria-pressed={selected} onClick={(e) => onSelect(commit.sha, e.shiftKey || e.metaKey || e.ctrlKey)}
+    <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''} ${role ? `is-${role}` : ''} ${dropLine ? `is-drop-${dropLine}` : ''}`} aria-pressed={selected} data-reorder={role && role !== 'fixed' ? '' : undefined} onPointerDown={role === 'moving' ? onGrab : undefined} onClick={(e) => onSelect(commit.sha, e.shiftKey || e.metaKey || e.ctrlKey)}
       onContextMenu={(e) => {
         if (!native) return
         e.preventDefault()
@@ -246,7 +253,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     queryFn: async () => {
       if (local.git) return local.git.branchCommits(branch!)
       const { data } = await octokit.rest.repos.listCommits({ owner: github!.owner, repo: github!.repo, sha: branch!.name, per_page: 100 })
-      const remote = data.map((c): LogEntry => ({ sha: c.sha, author: c.commit.author?.name ?? c.author?.login ?? '', date: c.commit.author?.date ?? '', subject: c.commit.message }))
+      const remote = data.map((c): LogEntry => ({ sha: c.sha, author: c.commit.author?.name ?? c.author?.login ?? '', date: c.commit.author?.date ?? '', subject: c.commit.message, parents: c.parents.map((p) => p.sha) }))
       return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote, notOnRemote: [] as string[], history: remote as HistoryRow[] }
     },
   })
@@ -351,7 +358,13 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       if (branch) setChosenTab({ branch: branch.name, tab: 'changes' })
     })
 
-  const { openMenu: openCommitMenu, dialogs: commitDialogs } = useCommitMenu({ local, github, isCurrent, rows: shown, notOnRemote: data?.notOnRemote ?? [], undo })
+  // A detached HEAD has no branch to rewrite. Empty off the History tab, which ends a reorder on the way out.
+  const movable = useMemo(() => (isCurrent && branch?.name !== 'HEAD' && tab === 'history' && !local.operation.data ? reorderableCommits(shown) : []), [isCurrent, branch?.name, tab, local.operation.data, shown])
+  const reorder = useCommitReorder(movable, (order) => {
+    setSelection(null)
+    local.op.mutate(() => local.git!.reorderCommits(order))
+  })
+  const { openMenu: openCommitMenu, dialogs: commitDialogs } = useCommitMenu({ local, github, isCurrent, rows: shown, notOnRemote: data?.notOnRemote ?? [], undo, movable, reorder: reorder.start })
 
   const notPulled = data?.incoming.length ?? 0
   const tabs: Array<{ id: BranchTab; label: string; count?: number; show: boolean }> = [
@@ -420,7 +433,14 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
             title="History"
             flush
             action={
-              unpushed.length > 0 || (isCurrent && !!data?.local.length) ? (
+              reorder.moving ? (
+                <>
+                  <span className="ws-reorder-hint">Drag this commit to its new place</span>
+                  <Button size="small" className="ws-history-end" onClick={reorder.cancel}>
+                    Cancel
+                  </Button>
+                </>
+              ) : unpushed.length > 0 || (isCurrent && !!data?.local.length) ? (
                 <>
                   {unpushed.length > 0 && (
                     <button
@@ -448,8 +468,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           >
             {shown
               .filter((c) => !onlyNotPushed || c.mark === '↑')
-              .map((c) => (
-                <CommitRow key={c.sha} commit={c} mark={c.mark === '↑' && !canPush ? undefined : c.mark} selected={inRange ? rangeShas.has(c.sha) : commit?.sha === c.sha} onSelect={selectCommit} onMenu={openCommitMenu} />
+              .map((c, i) => (
+                <CommitRow key={c.sha} commit={c} mark={c.mark === '↑' && !canPush ? undefined : c.mark} selected={inRange ? rangeShas.has(c.sha) : commit?.sha === c.sha} role={!reorder.moving ? undefined : c.sha === reorder.moving ? 'moving' : i < movable.length ? 'movable' : 'fixed'} dropLine={i >= movable.length ? undefined : reorder.dropGap === i ? 'above' : reorder.dropGap === i + 1 && i === movable.length - 1 ? 'below' : undefined} onSelect={selectCommit} onMenu={reorder.moving ? ignoreMenu : openCommitMenu} onGrab={reorder.grab} />
               ))}
             {data && !shown.length && <p className="ws-note">No commits on this branch yet.</p>}
             {canPush && branch.location === 'local' && <p className="ws-note">This branch isn’t on {host} yet.</p>}

@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('ghUi', {
     clone: (url, parentDir, name, auth) => ipcRenderer.invoke('repos:clone', url, parentDir, name, auth),
     addWorktree: (repoId, parentDir, branch) => ipcRenderer.invoke('repos:addWorktree', repoId, parentDir, branch),
     removeWorktree: (repoId, path) => ipcRenderer.invoke('repos:removeWorktree', repoId, path),
+    reorderCommits: (repoId, order) => ipcRenderer.invoke('repos:reorderCommits', repoId, order),
   },
   git: (repoId, args, auth) => ipcRenderer.invoke('git', repoId, args, auth),
   revealInFinder: (repoId) => ipcRenderer.invoke('repo:reveal', repoId),

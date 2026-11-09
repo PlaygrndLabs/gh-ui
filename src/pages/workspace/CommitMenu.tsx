@@ -42,7 +42,7 @@ function AmendDialog({ message, onSubmit, onClose }: { message: string; onSubmit
 }
 
 /** A commit's right-click menu in History, and the dialogs its items open. */
-export function useCommitMenu({ local, github, isCurrent, rows, notOnRemote, undo }: { local: LocalRepoState; github: { owner: string; repo: string } | null; isCurrent: boolean; rows: HistoryRow[]; notOnRemote: string[]; undo(subject: string): void }) {
+export function useCommitMenu({ local, github, isCurrent, rows, notOnRemote, undo, movable, reorder }: { local: LocalRepoState; github: { owner: string; repo: string } | null; isCurrent: boolean; rows: HistoryRow[]; notOnRemote: string[]; undo(subject: string): void; movable: string[]; reorder(sha: string): void }) {
   const { account } = useGitHub()
   const confirm = useConfirm()
   const [dialog, setDialog] = useState<OpenDialog>(null)
@@ -56,6 +56,8 @@ export function useCommitMenu({ local, github, isCurrent, rows, notOnRemote, und
     const isHead = sha === rows.find((r) => r.mark !== '↓')?.sha
     const canChange = isCurrent && !!git && !local.operation.data
     const unpushed = commit.mark === '↑'
+    // A rebase refuses uncommitted changes to tracked files, so say so before the drag rather than after it.
+    const canReorder = canChange && movable.length > 1 && movable.includes(sha) && !local.status.data?.entries.some((e) => e.index !== '?')
     const tags = git ? await git.tagsAt(sha).catch(() => [] as string[]) : []
     const url = github && !notOnRemote.includes(sha) ? webUrl(account.host, `/${github.owner}/${github.repo}/commit/${sha}`) : null
     const separator: ContextMenuItem = { type: 'separator' }
@@ -70,6 +72,7 @@ export function useCommitMenu({ local, github, isCurrent, rows, notOnRemote, und
               : []),
             { id: 'reset', label: 'Reset to Commit…', enabled: canChange && unpushed && !isHead },
             { id: 'checkout', label: 'Checkout Commit', enabled: canChange && !isHead },
+            { id: 'reorder', label: 'Reorder Commit', enabled: canReorder },
             { id: 'revert', label: 'Revert Changes in Commit', enabled: canChange && commit.mark !== '↓' },
             separator,
             { id: 'branch', label: 'Create Branch from Commit…', enabled: canChange },
@@ -89,6 +92,7 @@ export function useCommitMenu({ local, github, isCurrent, rows, notOnRemote, und
       if (ok) local.op.mutate(() => git!.resetTo(sha))
     }
     if (action === 'checkout') local.op.mutate(() => git!.checkoutCommit(sha))
+    if (action === 'reorder') reorder(sha)
     if (action === 'revert') local.op.mutate(() => git!.revertCommit(sha))
     if (action === 'branch' || action === 'tag' || action === 'cherry-pick') setDialog({ kind: action, commit })
     if (action === 'copy-sha') void copyText(sha)

@@ -33,6 +33,11 @@ git -C "$M" branch feature
 commit_file main.txt main "Add main"
 git -C "$M" switch -q conflict; commit_file shared.txt theirs "Theirs"
 git -C "$M" switch -q rebase-base; commit_file other.txt other "Add other"
+# For Reorder Commit: origin has reorder-demo up to "Reorder base", and the commits after it are still to push.
+git -C "$M" switch -q -c reorder-demo conflict~1; commit_file reorder-base.txt base "Reorder base"
+git -C "$M" update-ref refs/remotes/origin/reorder-demo HEAD
+commit_file r1.txt one "Reorder one"; commit_file r2.txt two "Reorder two"; commit_file r3.txt three "Reorder three"
+git -C "$M" switch -q -c reorder-clash reorder-demo~3; commit_file same.txt one "Clash one"; commit_file same.txt two "Clash two"
 git -C "$M" switch -q feature; commit_file shared.txt ours "Ours"
 
 GH_UI_USER_DATA="$WORK/profile" \
