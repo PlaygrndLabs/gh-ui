@@ -343,6 +343,19 @@ function registerIpc() {
     return addRepo(dest)
   })
 
+  // Only a path git already lists as linked to this repository, so the renderer can't aim this at any other folder.
+  // No --force: git keeps a worktree with uncommitted changes, and one that's locked.
+  handle('repos:removeWorktree', async (_e, repoId, target) => {
+    const repo = await repoById(repoId)
+    const list = await run('git', ['worktree', 'list', '--porcelain'], { cwd: repo.path, env: GIT_BASE_ENV })
+    if (list.code !== 0) throw new Error(list.stderr.trim() || 'git worktree list failed')
+    const linked = list.stdout.split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice('worktree '.length)).slice(1)
+    if (target === repo.path || !linked.includes(target)) throw new Error('That worktree can’t be removed from here')
+    const res = await run('git', ['worktree', 'remove', '--', target], { cwd: repo.path, env: GIT_BASE_ENV })
+    if (res.code !== 0) throw new Error(res.stderr.trim() || 'git worktree remove failed')
+    await changeRepos((repos) => repos.filter((r) => r.path !== target))
+  })
+
   handle('git', async (_e, repoId, args, auth) => {
     const repo = await repoById(repoId)
     validateGitArgs(args)

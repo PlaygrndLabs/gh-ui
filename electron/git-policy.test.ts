@@ -26,6 +26,7 @@ describe('validateGitArgs', () => {
     [['push', '-u', 'origin', 'HEAD']],
     [['remote', 'get-url', 'origin']],
     [['ls-tree', '-r', '--name-only', 'HEAD']],
+    [['worktree', 'list', '--porcelain']],
     // Every other command the app sends.
     [['status', '--porcelain=v1', '-z', '--untracked-files=all']],
     [['diff', 'HEAD', '--', 'a.ts']],
@@ -98,6 +99,9 @@ describe('validateGitArgs', () => {
     [['merge', '--strategy=evil', 'main']],
     [['branch', '-D', '--', 'a', 'b']],
     [['worktree', 'add', '--', '/tmp/x', 'main']],
+    [['worktree', 'remove', '--', '/tmp/x']],
+    [['worktree', 'list']],
+    [['worktree', 'list', '--porcelain', '/tmp/x']],
     [['remote', 'add', 'x', 'y']],
     [['diff', '--no-index', '--', '/etc/passwd', 'x']],
     [['diff', '--no-index', '--', '/dev/null', '../../etc/passwd']],

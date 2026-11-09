@@ -74,7 +74,7 @@ export function useLocalRepo(repo: LocalRepo | null) {
   })
 
   const refresh = () => {
-    for (const key of ['local-operation', 'local-status', 'local-branch-states', 'local-branches', 'local-diff', 'local-log', 'local-show', 'local-stash']) void qc.invalidateQueries({ queryKey: [key, id] })
+    for (const key of ['local-operation', 'local-status', 'local-branch-states', 'local-worktrees', 'local-branches', 'local-diff', 'local-log', 'local-show', 'local-stash']) void qc.invalidateQueries({ queryKey: [key, id] })
   }
   const settled = {
     onSuccess: () => {

@@ -963,6 +963,76 @@ exports.steps = [
     screenshot: 'branch-panel',
   },
   {
+    name: 'worktrees: a branch held by a missing one reports it without covering the page',
+    js: `${helpers}
+      const r = {}
+      const visible = (sel) => [...document.querySelectorAll(sel)].find((s) => s.getClientRects().length)
+      const row = (n) => [...document.querySelectorAll('.ws-toolbar-panel-body [role=menuitemradio], .ws-toolbar-panel-body li')].find((x) => x.textContent.includes(n))
+      visible('.ws-header .ws-seg-branch').click()
+      await until(() => row('stranded'), 20000)
+      r.described = row('stranded').textContent.includes('In another worktree')
+      row('stranded').click()
+      const banner = await until(() => visible('.ws-error'), 8000)
+      r.message = banner.textContent
+      r.bannerAboveTabs = banner.getBoundingClientRect().bottom <= visible('.ws-tabs').getBoundingClientRect().top
+      r.fail = !(r.described && r.bannerAboveTabs && r.message.includes('Current worktree menu'))
+      return r
+    `,
+    screenshot: 'worktree-banner',
+  },
+  {
+    name: 'worktrees: the picker groups them and marks the missing one',
+    js: `${helpers}
+      const r = {}
+      const visible = (sel) => [...document.querySelectorAll(sel)].find((s) => s.getClientRects().length)
+      visible('.ws-error button[aria-label="Dismiss"]')?.click()
+      visible('.ws-header .ws-seg-worktree').click()
+      const panel = await until(() => { const p = visible('.ws-toolbar-panel-body'); return p?.innerText.includes('stranded') && p }, 8000)
+      await sleep(200)
+      r.panel = panel.innerText
+      r.fail = !(r.panel.includes('Main worktree') && r.panel.includes('Linked worktrees') && r.panel.includes('(missing)') && r.panel.includes('New worktree'))
+      return r
+    `,
+    screenshot: 'worktree-panel',
+  },
+  {
+    name: 'worktrees: removing a missing one frees its branch, and the picker moves between checkouts',
+    js: `${helpers}
+      const r = {}
+      const need = (v, what) => { if (!v) throw new Error('No ' + what + ': ' + document.body.innerText.slice(0, 300)); return v }
+      const visible = (sel) => [...document.querySelectorAll(sel)].find((s) => s.getClientRects().length)
+      const row = (n) => [...document.querySelectorAll('.ws-toolbar-panel-body [role=menuitemradio]')].find((x) => x.textContent.includes(n))
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const listed = async () => (await g.git(repo.id, ['worktree', 'list', '--porcelain'])).stdout
+      if (!row('stranded')) visible('.ws-header .ws-seg-worktree').click()
+      need(await until(() => row('stranded'), 8000), 'stranded row').click()
+      need(await until(() => byText('[role=alertdialog] button, [role=dialog] button', 'Remove'), 5000), 'Remove button').click()
+      await sleep(1500)
+      r.freed = !(await listed()).includes('stranded') && (await g.git(repo.id, ['switch', 'stranded'])).code === 0
+      await g.git(repo.id, ['switch', 'main'])
+      await g.git(repo.id, ['branch', 'wt-pick'])
+      const wt = await g.repos.addWorktree(repo.id, ${j(PARENT)}, 'wt-pick')
+      await sleep(500)
+      visible('.ws-header .ws-seg-worktree').click()
+      need(await until(() => row(wt.name), 8000), 'linked row').click()
+      await until(() => visible('.ws-seg-worktree .ws-seg-value')?.textContent === wt.name, 8000)
+      visible('.ws-header .ws-seg-worktree').click()
+      need(await until(() => row('e2e-local'), 8000), 'main row').click()
+      await until(() => visible('.ws-seg-worktree .ws-seg-value')?.textContent === 'e2e-local', 8000)
+      // Each folder keeps its own tab, so the checkout just visited is still open beside this one.
+      const wtTab = tabs().find((t) => tabName(t) === wt.name)
+      r.ownTab = !!wtTab
+      need([...document.querySelectorAll('.tab-close')].find((b) => b.getAttribute('aria-label').startsWith('Close ' + wt.name)), 'tab close button').click()
+      await until(() => !tabs().some((t) => tabName(t) === wt.name), 5000)
+      r.mainRefused = await g.repos.removeWorktree(repo.id, repo.path).then(() => false, () => true)
+      r.otherRefused = await g.repos.removeWorktree(repo.id, '/tmp').then(() => false, () => true)
+      await g.repos.removeWorktree(repo.id, wt.path)
+      r.removed = !(await listed()).includes(wt.path) && !(await g.repos.list()).some((x) => x.path === wt.path)
+      r.fail = !(r.freed && r.ownTab && r.mainRefused && r.otherRefused && r.removed)
+      return r
+    `,
+  },
+  {
     name: 'panes: drag a divider with the real pointer',
     inputJs: `${helpers}
       const handle = [...document.querySelectorAll('.ws-divider-handle')].find((h) => h.getClientRects().length)

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionList, ActionMenu, Banner, Checkbox, Dialog, FormControl, IconButton, TextInput } from '@primer/react'
+import { ActionList, ActionMenu, Checkbox, Dialog, FormControl, IconButton, TextInput } from '@primer/react'
 import { CloudIcon, DeviceDesktopIcon, GearIcon, GitBranchIcon, MarkGithubIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgent } from '../lib/agent/AgentProvider'
 import { useFeatures } from '../lib/features'
@@ -19,8 +19,9 @@ import { AccountMenu } from './AppHeader'
 import { InboxMenu } from './InboxMenu'
 import { TabItemPicker } from './HeaderPickers'
 import { useToolbarPanel } from './toolbarPanel'
-import { RepoCommands, useBranchActions, useClearRepoMenu } from './RepoCommands'
+import { GitErrorBanner, RepoCommands, useBranchActions, useClearRepoMenu } from './RepoCommands'
 import { RepoSettingsDialog } from './RepoSettingsDialog'
+import { WorktreeMenu } from './WorktreeMenu'
 import { displayRemote } from '../lib/links'
 
 // A long list of Primer's menu items is slow to open and to filter, and nobody scrolls through thousands of branches.
@@ -65,7 +66,7 @@ function useCurrentRepo(): WorkspaceRepo | null {
   return { key: `${account.host}/${key}`.toLowerCase(), name: parts[1], location: 'github', local: null, github: { host: account.host, owner: parts[0], repo: parts[1] }, remote: null, pending: isLoading }
 }
 
-function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
+function BranchMenu({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLElement | null }) {
   const local = useLocalRepo(repo.local)
   const actions = useBranchActions(repo, local)
   const info = useRepoQuery(repo.github?.owner ?? '', repo.github?.repo ?? '', !repo.local && !!repo.github)
@@ -97,12 +98,12 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
         ? [
             { id: 'rename', label: 'Rename…', enabled: here && !isDefault },
             { id: 'copy', label: 'Copy Branch Name' },
-            { id: 'worktree', label: 'Checkout in New Worktree…', enabled: !b.current },
+            { id: 'worktree', label: 'Checkout in New Worktree…', enabled: !b.current && !b.worktree },
             { type: 'separator' },
             { id: 'merge', label: `Merge into ${current}`, enabled: !b.current && !local.operation.data },
             { id: 'rebase', label: `Rebase ${current} onto This Branch`, enabled: !b.current && !local.operation.data },
             { type: 'separator' },
-            { id: 'delete', label: 'Delete…', enabled: here && !b.current && !isDefault },
+            { id: 'delete', label: 'Delete…', enabled: here && !b.current && !b.worktree && !isDefault },
           ]
         : [{ id: 'copy', label: 'Copy Branch Name' }],
     )
@@ -152,14 +153,15 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
                   onSelect={() => {
                     // What's checked out is what the page should show from here on.
                     setPicked(repo.local ? null : b.name)
-                    if (repo.local && !b.current) local.switchBranch(b.name)
+                    if (repo.local && b.worktree) actions.openWorktree(b.worktree)
+                    else if (repo.local && !b.current) local.switchBranch(b.name)
                     setFilter('')
                     actions.showBranchTab()
                   }}
                 >
                   {b.name}
                   <ActionList.Description variant="block">
-                    {!repo.local ? (b.name === info.data?.default_branch ? 'Default branch' : 'On GitHub') : [b.location === 'remote' ? `Only on ${hostName(repo)}` : b.location === 'local' ? 'Only on this Mac' : `On this Mac and ${hostName(repo)}`, b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : ''].filter(Boolean).join(' · ')}
+                    {!repo.local ? (b.name === info.data?.default_branch ? 'Default branch' : 'On GitHub') : [b.location === 'remote' ? `Only on ${hostName(repo)}` : b.location === 'local' ? 'Only on this Mac' : `On this Mac and ${hostName(repo)}`, b.worktree ? 'In another worktree' : '', b.ahead ? `↑${b.ahead}` : '', b.behind ? `↓${b.behind}` : ''].filter(Boolean).join(' · ')}
                   </ActionList.Description>
                 </ActionList.Item>
               ))}
@@ -184,7 +186,7 @@ function BranchMenu({ repo }: { repo: WorkspaceRepo }) {
         </ActionMenu.Overlay>
       </ActionMenu>
       {actions.dialogs}
-      {local.error && <Banner className="ws-error" variant="critical" title="Git said" description={local.error} onDismiss={local.clearError} />}
+      <GitErrorBanner local={local} slot={errorSlot} />
     </>
   )
 }
@@ -238,7 +240,7 @@ function LocationSeg({ repo }: { repo: WorkspaceRepo }) {
   )
 }
 
-function SyncButton({ repo }: { repo: WorkspaceRepo }) {
+function SyncButton({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLElement | null }) {
   const local = useLocalRepo(repo.local)
   const action = syncAction(repo.location, local.status.data)
   const [fetched, setFetched] = useState<Date | null>(null)
@@ -272,7 +274,7 @@ function SyncButton({ repo }: { repo: WorkspaceRepo }) {
           </span>
         )}
       </button>
-      {local.error && <Banner className="ws-error" variant="critical" title="Git said" description={local.error} onDismiss={local.clearError} />}
+      <GitErrorBanner local={local} slot={errorSlot} />
     </>
   )
 }
@@ -480,6 +482,7 @@ export function WorkspaceHeader() {
   const { account } = useGitHub()
   const navigate = useNavigate()
   const [cloning, setCloning] = useState(false)
+  const [errorSlot, setErrorSlot] = useState<HTMLDivElement | null>(null)
   // A folder's tab goes by the folder on all of its pages, not only the one that names it.
   useTabTitle(repo?.name)
   useClearRepoMenu(!repo)
@@ -490,8 +493,9 @@ export function WorkspaceHeader() {
         {repo && (
           <>
             <LocationSeg key={`where-${repo.key}`} repo={repo} />
-            <BranchMenu key={`branch-${repo.key}`} repo={repo} />
-            <SyncButton key={`sync-${repo.key}`} repo={repo} />
+            {repo.local && <WorktreeMenu key={`worktree-${repo.key}`} repo={repo} folder={repo.local} errorSlot={errorSlot} />}
+            <BranchMenu key={`branch-${repo.key}`} repo={repo} errorSlot={errorSlot} />
+            <SyncButton key={`sync-${repo.key}`} repo={repo} errorSlot={errorSlot} />
             {repo.github && repo.github.host.toLowerCase() === account.host.toLowerCase() && <TabItemPicker owner={repo.github.owner} repo={repo.github.repo} />}
           </>
         )}
@@ -510,7 +514,8 @@ export function WorkspaceHeader() {
           <AccountMenu />
         </div>
       </div>
-      {repo && <RepoCommands key={`commands-${repo.key}`} repo={repo} />}
+      <div ref={setErrorSlot} />
+      {repo && <RepoCommands key={`commands-${repo.key}`} repo={repo} errorSlot={errorSlot} />}
       {content}
       {cloning && <CloneDialog initial="" onClose={() => setCloning(false)} onCloned={(r) => navigate(`/local/${r.id}`)} />}
     </header>

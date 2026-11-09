@@ -15,6 +15,9 @@ git -C "$WORK/e2e-local" config user.name "gh-ui e2e"
 git -C "$WORK/e2e-local" config user.email "e2e@example.invalid"
 echo "# Notes" > "$WORK/e2e-local/notes.md"
 echo "hello from scratch" > "$WORK/e2e-local/scratch.txt"
+# A worktree whose folder has gone, as one made from a VM looks from the host.
+git -C "$WORK/e2e-local" worktree add -q -b stranded "$WORK/stranded"
+rm -rf "$WORK/stranded"
 
 # A repository for the merge scenarios: feature, conflict and rebase-base each branch off the first commit.
 M="$WORK/e2e-merge"

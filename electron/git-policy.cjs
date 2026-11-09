@@ -50,7 +50,7 @@ const RULES = {
   pull: { flags: ['--ff-only'], args: 'remote' },
   fetch: { flags: ['--prune'], args: 'remote' },
 }
-const ALLOWED_SUBCOMMANDS = new Set([...Object.keys(RULES), 'remote', 'config', 'stash', 'clean'])
+const ALLOWED_SUBCOMMANDS = new Set([...Object.keys(RULES), 'remote', 'config', 'stash', 'clean', 'worktree'])
 
 /**
  * The environment for one command. Where the app names files, a path means that one file: otherwise discarding
@@ -112,6 +112,11 @@ function validateGitArgs(args) {
   const [sub, ...rest] = args
   if (!ALLOWED_SUBCOMMANDS.has(sub)) throw new Error(`git ${sub} is not allowed`)
   if (sub === 'remote') return validateRemoteArgs(rest)
+  // Adding and removing name folders outside the repository, so those have their own channels.
+  if (sub === 'worktree') {
+    if (rest.length !== 2 || rest[0] !== 'list' || rest[1] !== '--porcelain') throw new Error('Only `git worktree list --porcelain` is allowed')
+    return
+  }
   // Force-deleting one named branch is the only deletion; the page confirms it first.
   if (sub === 'branch' && rest[0] === '-D' && rest[1] === '--' && rest.length === 3) return
   if (sub === 'branch' && rest[0] === '-m' && rest[1] === '--' && rest.length === 4) return

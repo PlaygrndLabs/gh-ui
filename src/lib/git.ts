@@ -40,6 +40,8 @@ export interface BranchState {
   gone: boolean
   sha: string
   date: string
+  /** The other worktree it's checked out in, which stops it being checked out here. */
+  worktree: string | null
 }
 
 /** Parses `git status --porcelain=v1 -b -z`. */
@@ -89,7 +91,7 @@ export function parseCommitLog(out: string): LogEntry[] {
     })
 }
 
-const BRANCH_FORMAT = '--format=%(refname)%1f%(upstream:short)%1f%(upstream:track,nobracket)%1f%(objectname:short)%1f%(committerdate:iso-strict)%1f%(HEAD)'
+const BRANCH_FORMAT = '--format=%(refname)%1f%(upstream:short)%1f%(upstream:track,nobracket)%1f%(objectname:short)%1f%(committerdate:iso-strict)%1f%(HEAD)%1f%(worktreepath)'
 
 /** Parses `git branch --all` in BRANCH_FORMAT into one entry per branch name, the current one first and then the newest. */
 export function parseBranches(out: string, remote = 'origin'): BranchState[] {
@@ -97,7 +99,7 @@ export function parseBranches(out: string, remote = 'origin'): BranchState[] {
   const local = new Map<string, BranchState>()
   const remoteOnly = new Map<string, BranchState>()
   for (const line of out.split('\n')) {
-    const [ref, upstream, track, sha, date, head] = line.split('\x1f')
+    const [ref, upstream, track, sha, date, head, worktree] = line.split('\x1f')
     if (ref?.startsWith('refs/heads/')) {
       const name = ref.slice('refs/heads/'.length)
       local.set(name, {
@@ -110,17 +112,41 @@ export function parseBranches(out: string, remote = 'origin'): BranchState[] {
         gone: track === 'gone',
         sha,
         date,
+        // Git gives the path for the branch checked out here too.
+        worktree: head === '*' ? null : worktree || null,
       })
     } else if (ref?.startsWith(remotePrefix)) {
       const name = ref.slice(remotePrefix.length)
       // origin/HEAD only points at the default branch.
-      if (name !== 'HEAD') remoteOnly.set(name, { name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha, date })
+      if (name !== 'HEAD') remoteOnly.set(name, { name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha, date, worktree: null })
     }
   }
   for (const [name, branch] of local) {
     if (remoteOnly.delete(name)) branch.location = 'both'
   }
   return [...local.values(), ...remoteOnly.values()].sort((a, b) => Number(b.current) - Number(a.current) || b.date.localeCompare(a.date) || a.name.localeCompare(b.name))
+}
+
+export interface Worktree {
+  path: string
+  name: string
+  sha: string
+  /** Null when its HEAD is detached. */
+  branch: string | null
+  main: boolean
+  /** Git can't find its folder, which can also mean it belongs to another machine or an unmounted disk. */
+  missing: boolean
+}
+
+/** Parses `git worktree list --porcelain`, which lists the main worktree first. A bare main worktree has no files to open, so it's left out. */
+export function parseWorktrees(out: string): Worktree[] {
+  const blocks = out.split('\n\n').filter((block) => block.trim())
+  return blocks.flatMap((block, i) => {
+    const fields = new Map(block.split('\n').map((line): [string, string] => [line.split(' ', 1)[0], line.slice(line.indexOf(' ') + 1)]))
+    const path = fields.get('worktree')
+    if (!path || fields.has('bare')) return []
+    return [{ path, name: path.split('/').pop() || path, sha: fields.get('HEAD') ?? '', branch: fields.get('branch')?.replace('refs/heads/', '') ?? null, main: i === 0, missing: fields.has('prunable') }]
+  })
 }
 
 export interface GitRemote {
@@ -207,6 +233,7 @@ export function createGitClient(run: GitRunner) {
     identity: async (key: IdentityKey) => (await run(['config', '--local', '--get', key], false)).stdout.trim(),
     setIdentity: (key: IdentityKey, value: string) => (value ? git(['config', '--local', key, value]) : run(['config', '--local', '--unset', key], false)),
     branches: async () => parseBranches(await git(['branch', '--all', BRANCH_FORMAT]), await remoteName()),
+    worktrees: async () => parseWorktrees(await git(['worktree', 'list', '--porcelain'])),
     async fileDiff(entry: StatusEntry): Promise<FileDiff | null> {
       if (entry.index === '?' && entry.worktree === '?') {
         // --no-index exits 1 when the files differ, which here they always do.

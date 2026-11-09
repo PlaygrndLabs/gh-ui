@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { changePaths, createGitClient, isStaged, isUnmerged, parseBranches, parseCommitLog, parseStatus, type GitClient } from './git'
+import { changePaths, createGitClient, isStaged, isUnmerged, parseBranches, parseCommitLog, parseStatus, parseWorktrees, type GitClient } from './git'
 
 const exec = promisify(execFile)
 const require = createRequire(import.meta.url)
@@ -91,6 +91,17 @@ describe('parseBranches', () => {
   })
 })
 
+describe('parseWorktrees', () => {
+  it('names the main worktree, reads a detached HEAD and leaves out a bare main worktree', () => {
+    const linked = 'worktree /w/b\nHEAD dc32efd000\ndetached\nprunable gitdir file points to non-existent location\n\n'
+    expect(parseWorktrees(`worktree /w/a\nHEAD abc\nbranch refs/heads/feat/x\n\n${linked}`)).toEqual([
+      { path: '/w/a', name: 'a', sha: 'abc', branch: 'feat/x', main: true, missing: false },
+      { path: '/w/b', name: 'b', sha: 'dc32efd000', branch: null, main: false, missing: true },
+    ])
+    expect(parseWorktrees(`worktree /w/a.git\nbare\n\n${linked}`).map((w) => [w.name, w.main])).toEqual([['b', false]])
+  })
+})
+
 // The real thing: the commands the app sends get past the policy Electron enforces, and git's output parses.
 describe('createGitClient against a real repository', () => {
   let root: string
@@ -145,6 +156,30 @@ describe('createGitClient against a real repository', () => {
     expect(by.main).toMatchObject({ current: false, location: 'both', upstream: 'origin/main', behind: 1, ahead: 0 })
     expect(by.release).toMatchObject({ current: false, location: 'remote', upstream: null })
     expect(by.HEAD).toBeUndefined()
+  })
+
+  it('lists worktrees and says which branches they hold, including one whose folder has gone', async () => {
+    const elsewhere = join(root, 'elsewhere')
+    await raw(work, 'worktree', 'add', '-b', 'held', elsewhere)
+    await raw(work, 'worktree', 'add', '-b', 'stranded', join(root, 'stranded'))
+    await rm(join(root, 'stranded'), { recursive: true, force: true })
+    try {
+      const trees = await client.worktrees()
+      expect(trees.map((w) => [w.name, w.branch, w.main, w.missing])).toEqual([
+        ['work', 'spike', true, false],
+        ['elsewhere', 'held', false, false],
+        ['stranded', 'stranded', false, true],
+      ])
+      const by = Object.fromEntries((await client.branches()).map((b) => [b.name, b]))
+      expect(by.held.worktree).toMatch(/elsewhere$/)
+      expect(by.stranded.worktree).toMatch(/stranded$/)
+      expect(by.spike.worktree).toBeNull()
+      await expect(client.switchTo('held')).rejects.toThrow(/worktree/)
+    } finally {
+      await raw(work, 'worktree', 'remove', join(root, 'elsewhere'))
+      await raw(work, 'worktree', 'prune')
+      await raw(work, 'branch', '-D', 'held', 'stranded')
+    }
   })
 
   it('renames and deletes a branch, even one with commits nothing else has', async () => {
