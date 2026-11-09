@@ -236,7 +236,7 @@ function PullRequestView() {
                 </nav>
                 {showCommits ? <PullCommitsPane pr={pr} /> : (
                   <div className="ws-scroll ws-pr-files">
-                    <FilesChanged pr={pr} />
+                    <FilesChanged pr={pr} defaultTreeWidth={200} />
                   </div>
                 )}
               </div>
