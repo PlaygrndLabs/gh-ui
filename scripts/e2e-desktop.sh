@@ -16,7 +16,24 @@ git -C "$WORK/e2e-local" config user.email "e2e@example.invalid"
 echo "# Notes" > "$WORK/e2e-local/notes.md"
 echo "hello from scratch" > "$WORK/e2e-local/scratch.txt"
 
+# A repository for the merge scenarios: feature, conflict and rebase-base each branch off the first commit.
+M="$WORK/e2e-merge"
+mkdir -p "$M"
+git -C "$M" init -q -b main
+git -C "$M" config user.name "gh-ui e2e"
+git -C "$M" config user.email "e2e@example.invalid"
+commit_file() { echo "$2" > "$M/$1"; git -C "$M" add -- "$1"; git -C "$M" commit -q -m "$3"; }
+commit_file shared.txt base "First"
+git -C "$M" branch conflict
+git -C "$M" branch rebase-base
+git -C "$M" branch feature
+commit_file main.txt main "Add main"
+git -C "$M" switch -q conflict; commit_file shared.txt theirs "Theirs"
+git -C "$M" switch -q rebase-base; commit_file other.txt other "Add other"
+git -C "$M" switch -q feature; commit_file shared.txt ours "Ours"
+
 GH_UI_USER_DATA="$WORK/profile" \
+E2E_MERGE_REPO="$M" \
 E2E_LOCAL_REPO="$WORK/e2e-local" \
 E2E_CLONE_PARENT="$WORK/clones" \
 GH_UI_E2E=e2e/desktop.e2e.cjs \

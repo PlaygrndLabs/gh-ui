@@ -148,6 +148,14 @@ export type IdentityKey = 'user.name' | 'user.email'
 
 export type GitClient = ReturnType<typeof createGitClient>
 
+/** A commit in a branch's history, marked when it's still to push (↑) or to pull (↓). */
+export type HistoryRow = LogEntry & { mark?: '↑' | '↓' }
+
+const unmarked = (c: LogEntry): HistoryRow => c
+
+/** What the repository has stopped in the middle of. */
+export type RepoOperation = 'merge' | 'rebase'
+
 /** Another program (an editor, a terminal) holds the index for a moment. Git changes nothing when it says this, so trying again is safe. */
 const INDEX_LOCKED = /index\.lock|another git process/i
 const LOCK_RETRY_MS = [100, 250, 500, 1000]
@@ -170,11 +178,26 @@ export function createGitClient(run: GitRunner) {
   }
   const remotes = async () => parseRemotes(await git(['remote', '-v']))
   const remoteName = async () => primaryRemote(await remotes().catch(() => []))?.name ?? 'origin'
+  const branchNames = async () => (await git(['branch', '--format=%(refname:short)'])).split('\n').filter(Boolean)
+  /** What the remote's HEAD names, or null when this clone doesn't know. */
+  const defaultBranch = async () => {
+    const remote = await remoteName()
+    const res = await run(['rev-parse', '--abbrev-ref', `${remote}/HEAD`], false)
+    const name = res.stdout.trim().slice(remote.length + 1)
+    return res.code === 0 && name && name !== 'HEAD' ? name : null
+  }
+  /** Conflicts stop git with an error, but they're a state to finish from, not a failure. */
+  const stopsOnConflicts = async (args: string[]) => {
+    const res = await run(args, false)
+    if (res.code === 0) return { conflicts: false }
+    if ((await status()).entries.some(isUnmerged)) return { conflicts: true }
+    throw new Error((res.stderr || res.stdout || `git ${args[0]} failed`).trim())
+  }
   return {
     status,
     /** Empty when there's no origin. */
     remoteUrl: async () => (await git(['remote', 'get-url', 'origin']).catch(() => '')).trim(),
-    branchNames: async () => (await git(['branch', '--format=%(refname:short)'])).split('\n').filter(Boolean),
+    branchNames,
     /** Throws when git can't tell, so nothing can mistake a failure for a folder with no remote. */
     remotes,
     addRemote: (name: string, url: string) => git(['remote', 'add', name, url]),
@@ -196,16 +219,27 @@ export function createGitClient(run: GitRunner) {
     stagedDiff: () => git(['diff', '--cached']),
     /** The newest commits of `ref`, or of the checked-out branch. Empty before the first commit. */
     log: (ref?: string, limit = 200) => log(ref ? [ref] : [], limit),
-    /** A branch's commits by where they are: only here, on origin, or on its upstream and not pulled yet. */
+    /**
+     * A branch's commits by where they are, and in `history` as a timeline. Not pushed means ahead of its upstream, so
+     * commits merged in from another branch count even though they're already on the remote.
+     */
     async branchCommits(branch: BranchState, limit = 100) {
       const remote = await remoteName()
       const ref = branch.location === 'remote' ? `${remote}/${branch.name}` : branch.name
-      const all = await log([ref], limit)
-      if (branch.location === 'remote') return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote: all }
-      const local = await log([ref, '--not', `--remotes=${remote}`], limit)
-      const onlyHere = new Set(local.map((c) => c.sha))
+      // A long-lived branch that just took in main can be far ahead: every commit there is to push gets listed.
+      const ahead = Math.min(branch.ahead, 1000)
+      const all = await log([ref], limit + ahead)
+      if (branch.location === 'remote') return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote: all, notOnRemote: [] as string[], history: all.map(unmarked) }
+      const notOnAnyRemote = await log([ref, '--not', `--remotes=${remote}`], limit + ahead)
+      const local = branch.upstream && !branch.gone ? await log([ref, '--not', branch.upstream], limit + ahead) : notOnAnyRemote
+      const toPush = new Set(local.map((c) => c.sha))
       const incoming = branch.upstream && branch.behind ? await log([`${ref}..${branch.upstream}`], limit) : []
-      return { local, incoming, remote: all.filter((c) => !onlyHere.has(c.sha)) }
+      // In log order, with what's not pulled after the run of newest commits to push.
+      const firstPushed = all.findIndex((c) => !toPush.has(c.sha))
+      const split = firstPushed < 0 ? all.length : firstPushed
+      const row = (c: LogEntry): HistoryRow => ({ ...c, mark: toPush.has(c.sha) ? '↑' : undefined })
+      const history = [...all.slice(0, split).map(row), ...incoming.map((c): HistoryRow => ({ ...c, mark: '↓' })), ...all.slice(split).map(row)]
+      return { local, incoming, remote: all.filter((c) => !toPush.has(c.sha)), notOnRemote: notOnAnyRemote.map((c) => c.sha), history }
     },
     async show(sha: string) {
       const res = await run(['show', '--format=%B%x1e', '--patch', '--no-color', sha], false)
@@ -221,12 +255,24 @@ export function createGitClient(run: GitRunner) {
     renameBranch: (from: string, to: string) => git(['branch', '-m', '--', from, to]),
     /** Forced, as GitHub Desktop's is: the app asks first, and a branch that was never merged is what people delete. */
     deleteBranch: (branch: string) => git(['branch', '-D', '--', branch]),
-    /** What the remote's HEAD names, or null when this clone doesn't know. */
-    async defaultBranch() {
-      const remote = await remoteName()
-      const res = await run(['rev-parse', '--abbrev-ref', `${remote}/HEAD`], false)
-      const name = res.stdout.trim().slice(remote.length + 1)
-      return res.code === 0 && name && name !== 'HEAD' ? name : null
+    defaultBranch,
+    /** The branch others merge into: the remote's default, or a local main or master when there's no remote to ask. */
+    mainBranch: async () => {
+      const known = await defaultBranch()
+      if (known) return known
+      const names = await branchNames()
+      return names.find((n) => n === 'main' || n === 'master') ?? null
+    },
+    merge: (ref: string, options: { squash?: boolean } = {}) => stopsOnConflicts(['merge', options.squash ? '--squash' : '--no-edit', ref]),
+    rebase: (ref: string) => stopsOnConflicts(['rebase', ref]),
+    continueRebase: () => stopsOnConflicts(['rebase', '--continue']),
+    abortMerge: () => git(['merge', '--abort']),
+    abortRebase: () => git(['rebase', '--abort']),
+    /** Commits a merge whose conflicts are resolved, with the message git prepared. */
+    finishMerge: () => git(['commit', '--no-edit']),
+    async operation(): Promise<RepoOperation | null> {
+      if ((await run(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], false)).code === 0) return 'merge'
+      return (await run(['rev-parse', '-q', '--verify', 'REBASE_HEAD'], false)).code === 0 ? 'rebase' : null
     },
     createBranch: (branch: string) => git(['switch', '-c', branch]),
     /** Saves every change, new files too, and leaves the working tree clean. */

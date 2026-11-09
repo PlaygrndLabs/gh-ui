@@ -8,6 +8,7 @@
 const path = require('node:path')
 const LOCAL = process.env.E2E_LOCAL_REPO
 const PARENT = process.env.E2E_CLONE_PARENT
+const MERGE = process.env.E2E_MERGE_REPO
 const j = JSON.stringify
 
 const helpers = `
@@ -46,11 +47,28 @@ const helpers = `
   }
 `
 
+const mergeHelpers = `
+  const repoId = (await g.repos.list()).find((r) => r.path === ${j(MERGE)}).id
+  const visible = (sel) => [...document.querySelectorAll(sel)].filter((s) => s.getClientRects().length)
+  const subject = async () => (await g.git(repoId, ['log', '-n', '1', '--pretty=format:%s'])).stdout
+  const midMerge = async () => (await g.git(repoId, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'])).code === 0
+  const pick = async (name) => {
+    const row = await until(() => byText('[role=dialog] li', name), 5000)
+    ;(row.querySelector('button') ?? row).click()
+  }
+  const untilAsync = async (check, ms = 10000) => {
+    const end = Date.now() + ms
+    while (Date.now() < end) { const v = await check(); if (v) return v; await sleep(250) }
+    return null
+  }
+`
+
 exports.steps = [
   {
     name: 'local repo: status, stage, commit, history, policy',
     js: `${helpers}
       const repo = await g.repos.add(${j(LOCAL)})
+      if (${j(MERGE ?? '')}) await g.repos.add(${j(MERGE ?? '')})
       const before = await g.git(repo.id, ['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'])
       await g.git(repo.id, ['add', '--', 'notes.md'])
       const commit = await g.git(repo.id, ['commit', '-m', 'Add notes', '-m', 'Written by the gh-ui e2e test'])
@@ -802,12 +820,12 @@ exports.steps = [
       const branchTab = (name) => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes(name))
       branchTab('History').click()
       await until(() => main().querySelector('.ws-commit-mark.is-unpushed'), 5000)
-      const r = { marks: main().querySelectorAll('.ws-commit-mark.is-unpushed').length, count: main().querySelector('.ws-history-filter .ws-pill')?.textContent }
+      const r = { marks: main().querySelectorAll('.ws-commit-mark.is-unpushed').length, count: main().querySelector('.ws-history-filter .ws-pill')?.textContent, tabCount: branchTab('History').querySelector('.ws-sync-count.is-unpushed')?.textContent }
       main().querySelector('.ws-history-filter').click()
       await sleep(100)
       r.on = main().querySelector('.ws-history-filter').getAttribute('aria-pressed') === 'true'
       r.rowsStayed = main().querySelectorAll('.ws-commit-row').length === r.marks
-      r.fail = !(r.marks > 0 && r.count === String(r.marks) && r.on && r.rowsStayed)
+      r.fail = !(r.marks > 0 && r.count === String(r.marks) && r.tabCount === r.count && r.on && r.rowsStayed)
       return r
     `,
     waitMs: 300,
@@ -1147,6 +1165,80 @@ exports.steps = [
       const under = stuck ? Math.round(stuck.top - bar.bottom) : null
       const r = { before, after, files: diffs.length, shownDiff: target.id, gap, under, barHeight: Math.round(bar.height) }
       r.fail = !after || gap !== 0
+      return r
+    `,
+  },
+  {
+    name: 'app menu: a folder on a feature branch opens',
+    js: `${helpers}${mergeHelpers}
+      clickLink('/local/' + repoId)
+      const open = await until(() => visible('.ws-seg-branch .ws-seg-value')[0]?.textContent === 'feature', 15000)
+      await sleep(5000) // The folder's status reaches the app menu.
+      return { open: !!open, fail: !open }
+    `,
+  },
+  { name: 'app menu: the Branch menu applies to this branch', readMenu: 'Branch', expectMenu: ['Update from main', 'Rename…', 'Delete…', 'Merge into Current Branch…', 'Rebase Current Branch…', 'New Branch…', 'Create Pull Request (off)'] },
+  { name: 'app menu: the Repository menu applies to a folder with no remote', readMenu: 'Repository', expectMenu: ['Push (off)', 'Pull (off)', 'Show in Finder', 'Repository Settings…', 'View on GitHub (off)'] },
+  {
+    name: 'app menu: Rebase Current Branch moves it onto the chosen branch',
+    accelerator: 'CmdOrCtrl+Shift+E',
+    js: `${helpers}${mergeHelpers}
+      await pick('rebase-base')
+      const moved = await untilAsync(async () => (await g.git(repoId, ['log', '-n', '5', '--pretty=format:%s'])).stdout.includes('Add other'))
+      return { moved: !!moved, top: await subject(), fail: !moved }
+    `,
+  },
+  {
+    name: 'app menu: Update from main merges main into the branch',
+    accelerator: 'CmdOrCtrl+Shift+U',
+    js: `${helpers}${mergeHelpers}
+      const merged = await untilAsync(async () => (await subject()).startsWith('Merge branch'))
+      return { merged: !!merged, top: await subject(), fail: !merged }
+    `,
+  },
+  {
+    name: 'app menu: a merge with conflicts stops and can be aborted',
+    accelerator: 'CmdOrCtrl+Shift+M',
+    js: `${helpers}${mergeHelpers}
+      await pick('conflict')
+      const bar = await until(() => visible('.ws-operation')[0], 8000)
+      const r = { bar: bar?.textContent, stopped: await midMerge(), finishOff: byText('.ws-operation button', 'Finish merge')?.disabled }
+      await until(() => byText('.ws-operation', 'with conflicts'), 6000)
+      r.conflicts = !!byText('.ws-operation', 'with conflicts')
+      byText('.ws-operation button', 'Abort merge').click()
+      ;(await until(() => byText('[role=alertdialog] button', 'Abort merge'), 5000)).click()
+      r.aborted = !!(await untilAsync(async () => !(await midMerge())))
+      r.barGone = !!(await until(() => !visible('.ws-operation').length, 8000))
+      r.fail = !(r.bar && r.stopped && r.conflicts && r.aborted && r.barGone)
+      return r
+    `,
+    waitMs: 500,
+  },
+  {
+    name: 'app menu: a conflicted merge finishes once its files are resolved',
+    accelerator: 'CmdOrCtrl+Shift+M',
+    js: `${helpers}${mergeHelpers}
+      await pick('conflict')
+      await until(() => byText('.ws-operation', 'with conflicts'), 8000)
+      await g.git(repoId, ['add', '--', 'shared.txt'])
+      const ready = await until(() => { const b = byText('.ws-operation button', 'Finish merge'); return b && !b.disabled && b }, 10000)
+      ready?.click()
+      const finished = await untilAsync(async () => (await subject()).includes("'conflict'"))
+      const r = { top: await subject(), ready: !!ready, finished: !!finished, barGone: !!(await until(() => !visible('.ws-operation').length, 8000)) }
+      r.fail = !(r.ready && r.finished && r.barGone)
+      return r
+    `,
+    waitMs: 500,
+  },
+  {
+    name: 'app menu: Delete moves off the branch and removes it',
+    accelerator: 'CmdOrCtrl+Shift+D',
+    js: `${helpers}${mergeHelpers}
+      ;(await until(() => byText('[role=alertdialog] button', 'Delete'), 8000)).click()
+      const names = async () => (await g.git(repoId, ['branch', '--format=%(refname:short)'])).stdout
+      const gone = await untilAsync(async () => !(await names()).includes('feature'))
+      const r = { gone: !!gone, on: (await g.git(repoId, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim() }
+      r.fail = !(r.gone && r.on === 'main')
       return r
     `,
   },

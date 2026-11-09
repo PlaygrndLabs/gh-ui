@@ -117,6 +117,8 @@ a.ws-tab, .ws-tab { display: inline-flex; align-items: center; gap: 6px; padding
 ul:is([role='menu'], [role='listbox']) { padding-block: 0; }
 :is([role='menu'], [role='listbox']) li[class*='ActionList-ActionListItem-'] { margin-inline: 0; border-radius: 0; }
 :is([role='menu'], [role='listbox']) [class*='ActionList-ActionListContent-'] { padding-inline: 16px; border-radius: 0; }
+.ws-operation { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: 13px; color: var(--fgColor-default); background: var(--bgColor-attention-muted); border-bottom: 1px solid var(--borderColor-attention-muted); }
+.ws-pick-list { max-height: 320px; margin-top: 8px; overflow: auto; }
 .ws-menu-filter { padding: 8px; border-bottom: 1px solid var(--ws-line); }
 .ws-menu-list { max-height: 380px; overflow: auto; }
 /* Primer positions overlays inline, so these have to win over its style attribute. */
@@ -199,6 +201,8 @@ button.ws-row:hover, a.ws-row:hover, .ws-row-file:hover { color: var(--ws-text);
 .ws-commit-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
 .ws-commit-subject { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
 .ws-commit-text .ws-row-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ws-sync-count { display: inline-flex; align-items: center; gap: 2px; }
+.ws-sync-count.is-unpushed { color: var(--fgColor-accent); background: var(--ws-selected); }
 .ws-commit-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--ws-muted); background: var(--ws-hover); border-radius: 50%; }
 .ws-commit-mark.is-unpushed { color: var(--fgColor-accent); background: var(--ws-selected); }
 .ws-commit-message { margin: 0 0 12px; font-family: inherit; white-space: pre-wrap; }

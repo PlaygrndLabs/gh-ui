@@ -471,6 +471,13 @@ export function useTabBranch() {
   return { picked, setPicked, showBranch, shownBranch: inTab ? (view?.branch ?? null) : null }
 }
 
+/** Whether this tab has the window's focus: the one shown or, in split view, the pane last used. Always true without tabs. */
+export function useIsActiveTab() {
+  const tabs = useContext(TabsContext)
+  const id = useContext(CurrentTabContext)
+  return !tabs || !id || tabs.activeTabId() === id
+}
+
 /** Names the tab a page is in. Does nothing in the web build, which has no tabs. */
 export function useTabTitle(title: string | undefined) {
   const tabs = useContext(TabActionsContext)
