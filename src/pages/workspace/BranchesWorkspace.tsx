@@ -6,11 +6,11 @@ import { ArrowDownIcon, ArrowUpIcon, CheckIcon, LinkExternalIcon, LinkIcon, Spar
 import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { generateCommitMessage } from '../../lib/agent/oneshot'
 import type { FileDiff } from '../../lib/diff'
-import { changePaths, isStaged, isUnmerged, type LogEntry, type StatusEntry } from '../../lib/git'
+import { changePaths, isStaged, isUnmerged, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
 import { errorMessage, useGitHub } from '../../lib/github'
 import { webUrl } from '../../lib/links'
 import { openExternal } from '../../lib/platform'
-import { firstLine, shortSha } from '../../lib/format'
+import { firstLine, plural, shortSha } from '../../lib/format'
 import { readPref } from '../../lib/storage'
 import { useLocalRepo, useStageError, useStageIntents } from '../../lib/useLocalRepo'
 import { useRepoQuery } from '../../lib/repo'
@@ -217,7 +217,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     queryFn: async () => {
       if (local.git) return local.git.branchCommits(branch!)
       const { data } = await octokit.rest.repos.listCommits({ owner: github!.owner, repo: github!.repo, sha: branch!.name, per_page: 100 })
-      return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote: data.map((c): LogEntry => ({ sha: c.sha, author: c.commit.author?.name ?? c.author?.login ?? '', date: c.commit.author?.date ?? '', subject: c.commit.message })) }
+      const remote = data.map((c): LogEntry => ({ sha: c.sha, author: c.commit.author?.name ?? c.author?.login ?? '', date: c.commit.author?.date ?? '', subject: c.commit.message }))
+      return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote, notOnRemote: [] as string[], history: remote as HistoryRow[] }
     },
   })
   const pulls = useQuery({
@@ -242,7 +243,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
 
   const entries = isCurrent ? (status?.entries ?? []) : []
   const data = commits.data
-  const shown = [...(data?.local ?? []), ...(data?.incoming ?? []), ...(data?.remote ?? [])]
+  const shown = data?.history ?? []
   // Until you choose a tab, this branch opens on whichever has something to do.
   const tab: BranchTab = chosenTab && chosenTab.branch === branch?.name && !(chosenTab.tab === 'pull' && isDefault) ? chosenTab.tab : !repo.local ? 'history' : entries.length || stashes.data?.length ? 'changes' : data?.local.length || github || repo.remote ? 'history' : 'changes'
   // The pull request and checks tabs link elsewhere, so they leave the commit pane out.
@@ -300,6 +301,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       if (branch) setChosenTab({ branch: branch.name, tab: 'changes' })
     })
 
+  const notPulled = data?.incoming.length ?? 0
   const tabs: Array<{ id: BranchTab; label: string; count?: number; show: boolean }> = [
     { id: 'changes', label: 'Changes', count: entries.length, show: !!repo.local },
     { id: 'history', label: 'History', show: true },
@@ -326,6 +328,18 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
             >
               {t.label}
               {!!t.count && <span className="ws-pill">{t.count}</span>}
+              {t.id === 'history' && unpushed.length > 0 && (
+                <span className="ws-pill ws-sync-count is-unpushed" title={plural(unpushed.length, 'commit') + ' not pushed'}>
+                  <ArrowUpIcon size={12} />
+                  {unpushed.length}
+                </span>
+              )}
+              {t.id === 'history' && notPulled > 0 && (
+                <span className="ws-pill ws-sync-count" title={plural(notPulled, 'commit') + ' not pulled'}>
+                  <ArrowDownIcon size={12} />
+                  {notPulled}
+                </span>
+              )}
             </button>
           ))}
       </div>
@@ -378,9 +392,11 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
               ) : undefined
             }
           >
-            {data?.local.map((c) => <CommitRow key={c.sha} commit={c} mark={canPush ? '↑' : undefined} selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
-            {!onlyNotPushed && data?.incoming.map((c) => <CommitRow key={c.sha} commit={c} mark="↓" selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
-            {!onlyNotPushed && data?.remote.map((c) => <CommitRow key={c.sha} commit={c} selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />)}
+            {shown
+              .filter((c) => !onlyNotPushed || c.mark === '↑')
+              .map((c) => (
+                <CommitRow key={c.sha} commit={c} mark={c.mark === '↑' && !canPush ? undefined : c.mark} selected={commit?.sha === c.sha} onSelect={() => setSelection({ kind: 'commit', sha: c.sha })} />
+              ))}
             {data && !shown.length && <p className="ws-note">No commits on this branch yet.</p>}
             {canPush && branch.location === 'local' && <p className="ws-note">This branch isn’t on {host} yet.</p>}
           </Section>
@@ -457,7 +473,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
             )}
           </div>
         </div>
-        {github && !data?.local.some((c) => c.sha === commit.sha) && (
+        {github && !data?.notOnRemote.includes(commit.sha) && (
           <>
             {/* The same icons as the tab row, which has none of its own on this tab. */}
             <CopyButton text={webUrl(account.host, `/${github.owner}/${github.repo}/commit/${commit.sha}`)} icon={LinkIcon} label="Copy link to commit" />

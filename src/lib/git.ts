@@ -148,6 +148,11 @@ export type IdentityKey = 'user.name' | 'user.email'
 
 export type GitClient = ReturnType<typeof createGitClient>
 
+/** A commit in a branch's history, marked when it's still to push (↑) or to pull (↓). */
+export type HistoryRow = LogEntry & { mark?: '↑' | '↓' }
+
+const unmarked = (c: LogEntry): HistoryRow => c
+
 /** What the repository has stopped in the middle of. */
 export type RepoOperation = 'merge' | 'rebase'
 
@@ -214,16 +219,27 @@ export function createGitClient(run: GitRunner) {
     stagedDiff: () => git(['diff', '--cached']),
     /** The newest commits of `ref`, or of the checked-out branch. Empty before the first commit. */
     log: (ref?: string, limit = 200) => log(ref ? [ref] : [], limit),
-    /** A branch's commits by where they are: only here, on origin, or on its upstream and not pulled yet. */
+    /**
+     * A branch's commits by where they are, and in `history` as a timeline. Not pushed means ahead of its upstream, so
+     * commits merged in from another branch count even though they're already on the remote.
+     */
     async branchCommits(branch: BranchState, limit = 100) {
       const remote = await remoteName()
       const ref = branch.location === 'remote' ? `${remote}/${branch.name}` : branch.name
-      const all = await log([ref], limit)
-      if (branch.location === 'remote') return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote: all }
-      const local = await log([ref, '--not', `--remotes=${remote}`], limit)
-      const onlyHere = new Set(local.map((c) => c.sha))
+      // A long-lived branch that just took in main can be far ahead: every commit there is to push gets listed.
+      const ahead = Math.min(branch.ahead, 1000)
+      const all = await log([ref], limit + ahead)
+      if (branch.location === 'remote') return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote: all, notOnRemote: [] as string[], history: all.map(unmarked) }
+      const notOnAnyRemote = await log([ref, '--not', `--remotes=${remote}`], limit + ahead)
+      const local = branch.upstream && !branch.gone ? await log([ref, '--not', branch.upstream], limit + ahead) : notOnAnyRemote
+      const toPush = new Set(local.map((c) => c.sha))
       const incoming = branch.upstream && branch.behind ? await log([`${ref}..${branch.upstream}`], limit) : []
-      return { local, incoming, remote: all.filter((c) => !onlyHere.has(c.sha)) }
+      // In log order, with what's not pulled after the run of newest commits to push.
+      const firstPushed = all.findIndex((c) => !toPush.has(c.sha))
+      const split = firstPushed < 0 ? all.length : firstPushed
+      const row = (c: LogEntry): HistoryRow => ({ ...c, mark: toPush.has(c.sha) ? '↑' : undefined })
+      const history = [...all.slice(0, split).map(row), ...incoming.map((c): HistoryRow => ({ ...c, mark: '↓' })), ...all.slice(split).map(row)]
+      return { local, incoming, remote: all.filter((c) => !toPush.has(c.sha)), notOnRemote: notOnAnyRemote.map((c) => c.sha), history }
     },
     async show(sha: string) {
       const res = await run(['show', '--format=%B%x1e', '--patch', '--no-color', sha], false)

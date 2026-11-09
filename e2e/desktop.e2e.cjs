@@ -803,12 +803,12 @@ exports.steps = [
       const branchTab = (name) => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes(name))
       branchTab('History').click()
       await until(() => main().querySelector('.ws-commit-mark.is-unpushed'), 5000)
-      const r = { marks: main().querySelectorAll('.ws-commit-mark.is-unpushed').length, count: main().querySelector('.ws-history-filter .ws-pill')?.textContent }
+      const r = { marks: main().querySelectorAll('.ws-commit-mark.is-unpushed').length, count: main().querySelector('.ws-history-filter .ws-pill')?.textContent, tabCount: branchTab('History').querySelector('.ws-sync-count.is-unpushed')?.textContent }
       main().querySelector('.ws-history-filter').click()
       await sleep(100)
       r.on = main().querySelector('.ws-history-filter').getAttribute('aria-pressed') === 'true'
       r.rowsStayed = main().querySelectorAll('.ws-commit-row').length === r.marks
-      r.fail = !(r.marks > 0 && r.count === String(r.marks) && r.on && r.rowsStayed)
+      r.fail = !(r.marks > 0 && r.count === String(r.marks) && r.tabCount === r.count && r.on && r.rowsStayed)
       return r
     `,
     waitMs: 300,

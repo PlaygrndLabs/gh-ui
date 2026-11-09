@@ -201,6 +201,8 @@ button.ws-row:hover, a.ws-row:hover, .ws-row-file:hover { color: var(--ws-text);
 .ws-commit-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
 .ws-commit-subject { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
 .ws-commit-text .ws-row-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ws-sync-count { display: inline-flex; align-items: center; gap: 2px; }
+.ws-sync-count.is-unpushed { color: var(--fgColor-accent); background: var(--ws-selected); }
 .ws-commit-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--ws-muted); background: var(--ws-hover); border-radius: 50%; }
 .ws-commit-mark.is-unpushed { color: var(--fgColor-accent); background: var(--ws-selected); }
 .ws-commit-message { margin: 0 0 12px; font-family: inherit; white-space: pre-wrap; }
