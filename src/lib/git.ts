@@ -297,8 +297,9 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
       const history = [...all.slice(0, split).map(row), ...incoming.map((c): HistoryRow => ({ ...c, mark: '↓' })), ...all.slice(split).map(row)]
       return { local, incoming, remote: all.filter((c) => !toPush.has(c.sha)), notOnRemote: notOnAnyRemote.map((c) => c.sha), history }
     },
+    /** A merge's changes are what it brought onto its first parent, as GitHub shows them, not only its conflict fixes. */
     async show(sha: string) {
-      const res = await run(['show', '--format=%B%x1e', '--patch', '--no-color', sha], false)
+      const res = await run(['show', '--format=%B%x1e', '--patch', '--diff-merges=first-parent', '--no-color', sha], false)
       const [message, patch = ''] = res.stdout.split('\x1e')
       return { message: message.trim(), files: parseUnifiedDiff(patch) }
     },

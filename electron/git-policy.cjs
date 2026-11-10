@@ -35,7 +35,7 @@ const RULES = {
   status: { flags: ['--porcelain=v1', '-b', '-z', '--untracked-files=all'], args: 'none' },
   diff: { flags: ['--cached'], args: 'any', paths: true },
   log: { flags: ['--not'], prefixes: ['--format=', '--pretty=', '--remotes='], valued: { '-n': /^\d+$/ }, args: 'any', paths: true },
-  show: { flags: ['--patch', '--no-color'], prefixes: ['--format='], args: 'any' },
+  show: { flags: ['--patch', '--diff-merges=first-parent', '--no-color'], prefixes: ['--format='], args: 'any' },
   branch: { flags: ['--all'], prefixes: ['--format='], args: 'any' },
   switch: { flags: ['-c', '--detach'], args: 'any' },
   add: { args: 'none', paths: true },

@@ -579,6 +579,8 @@ describe('createGitClient against a real repository', () => {
     expect(merged.mark).toBeUndefined()
     expect(commits.notOnRemote).not.toContain(merged.sha)
     expect(commits.history.filter((c) => c.mark === '↑').map((c) => c.sha)).toEqual(commits.local.map((c) => c.sha))
+    // A merge without conflicts shows what it brought in, not an empty combined diff.
+    expect((await client.show(commits.local[0].sha)).files.map((f) => f.newPath)).toEqual(['c.txt'])
     await raw(work, 'switch', 'spike')
     await raw(work, 'branch', '-D', 'tracked')
   })

@@ -44,7 +44,7 @@ describe('validateGitArgs', () => {
     [['log', '-n', '100', '--pretty=format:%H', 'main', '--not', '--remotes=origin', '--']],
     [['log', '-n', '100', '--pretty=format:%H', 'main..origin/main', '--']],
     [['log', '--format=%an%x09%aI', '--', 'Home.md']],
-    [['show', '--format=%B%x1e', '--patch', '--no-color', 'abc123']],
+    [['show', '--format=%B%x1e', '--patch', '--diff-merges=first-parent', '--no-color', 'abc123']],
     [['show', 'HEAD:Home.md']],
     [['branch', '--format=%(refname:short)']],
     [['branch', 'new-branch']],
