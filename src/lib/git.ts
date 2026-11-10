@@ -24,6 +24,7 @@ export interface LogEntry {
   author: string
   date: string
   subject: string
+  parents: string[]
 }
 
 /** Where a branch exists: both means a local branch and origin's branch of the same name. */
@@ -40,6 +41,8 @@ export interface BranchState {
   gone: boolean
   sha: string
   date: string
+  /** The other worktree it's checked out in, which stops it being checked out here. */
+  worktree: string | null
 }
 
 /** Parses `git status --porcelain=v1 -b -z`. */
@@ -50,6 +53,10 @@ export function parseStatus(out: string): RepoState {
     const p = parts[i]
     if (p.startsWith('## ')) {
       const head = p.slice(3)
+      if (head.startsWith('HEAD (no branch)')) {
+        state.branch = 'HEAD'
+        continue
+      }
       const m = head.match(/^(?:No commits yet on )?([^.\s]+(?:\.[^.\s]+)*?)(?:\.\.\.(\S+))?(?: \[(.+)\])?$/)
       state.branch = m?.[1] ?? head
       state.upstream = m?.[2] ?? null
@@ -77,19 +84,19 @@ export const isStaged = (e: StatusEntry) => !isUnmerged(e) && e.index !== ' ' &&
 /** Paths to restore or stage together: a rename's old path goes with the new one; a copy's source does not. */
 export const changePaths = (e: StatusEntry) => ((e.index === 'R' || e.worktree === 'R') && e.origPath ? [e.origPath, e.path] : [e.path])
 
-const LOG_FORMAT = '--pretty=format:%H%x1f%an%x1f%aI%x1f%s'
+const LOG_FORMAT = '--pretty=format:%H%x1f%an%x1f%aI%x1f%s%x1f%P'
 
 export function parseCommitLog(out: string): LogEntry[] {
   return out
     .split('\n')
     .filter(Boolean)
     .map((l) => {
-      const [sha, author, date, subject] = l.split('\x1f')
-      return { sha, author, date, subject }
+      const [sha, author, date, subject, parents] = l.split('\x1f')
+      return { sha, author, date, subject, parents: parents ? parents.split(' ') : [] }
     })
 }
 
-const BRANCH_FORMAT = '--format=%(refname)%1f%(upstream:short)%1f%(upstream:track,nobracket)%1f%(objectname:short)%1f%(committerdate:iso-strict)%1f%(HEAD)'
+const BRANCH_FORMAT = '--format=%(refname)%1f%(upstream:short)%1f%(upstream:track,nobracket)%1f%(objectname:short)%1f%(committerdate:iso-strict)%1f%(HEAD)%1f%(worktreepath)'
 
 /** Parses `git branch --all` in BRANCH_FORMAT into one entry per branch name, the current one first and then the newest. */
 export function parseBranches(out: string, remote = 'origin'): BranchState[] {
@@ -97,7 +104,9 @@ export function parseBranches(out: string, remote = 'origin'): BranchState[] {
   const local = new Map<string, BranchState>()
   const remoteOnly = new Map<string, BranchState>()
   for (const line of out.split('\n')) {
-    const [ref, upstream, track, sha, date, head] = line.split('\x1f')
+    const [ref, upstream, track, sha, date, head, worktree] = line.split('\x1f')
+    // "(HEAD detached at abc123)": a commit is checked out rather than a branch.
+    if (ref?.startsWith('(') && head === '*') local.set('HEAD', { name: 'HEAD', current: true, location: 'local', upstream: null, ahead: 0, behind: 0, gone: false, sha, date, worktree: null })
     if (ref?.startsWith('refs/heads/')) {
       const name = ref.slice('refs/heads/'.length)
       local.set(name, {
@@ -110,17 +119,41 @@ export function parseBranches(out: string, remote = 'origin'): BranchState[] {
         gone: track === 'gone',
         sha,
         date,
+        // Git gives the path for the branch checked out here too.
+        worktree: head === '*' ? null : worktree || null,
       })
     } else if (ref?.startsWith(remotePrefix)) {
       const name = ref.slice(remotePrefix.length)
       // origin/HEAD only points at the default branch.
-      if (name !== 'HEAD') remoteOnly.set(name, { name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha, date })
+      if (name !== 'HEAD') remoteOnly.set(name, { name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha, date, worktree: null })
     }
   }
   for (const [name, branch] of local) {
     if (remoteOnly.delete(name)) branch.location = 'both'
   }
   return [...local.values(), ...remoteOnly.values()].sort((a, b) => Number(b.current) - Number(a.current) || b.date.localeCompare(a.date) || a.name.localeCompare(b.name))
+}
+
+export interface Worktree {
+  path: string
+  name: string
+  sha: string
+  /** Null when its HEAD is detached. */
+  branch: string | null
+  main: boolean
+  /** Git can't find its folder, which can also mean it belongs to another machine or an unmounted disk. */
+  missing: boolean
+}
+
+/** Parses `git worktree list --porcelain`, which lists the main worktree first. A bare main worktree has no files to open, so it's left out. */
+export function parseWorktrees(out: string): Worktree[] {
+  const blocks = out.split('\n\n').filter((block) => block.trim())
+  return blocks.flatMap((block, i) => {
+    const fields = new Map(block.split('\n').map((line): [string, string] => [line.split(' ', 1)[0], line.slice(line.indexOf(' ') + 1)]))
+    const path = fields.get('worktree')
+    if (!path || fields.has('bare')) return []
+    return [{ path, name: path.split('/').pop() || path, sha: fields.get('HEAD') ?? '', branch: fields.get('branch')?.replace('refs/heads/', '') ?? null, main: i === 0, missing: fields.has('prunable') }]
+  })
 }
 
 export interface GitRemote {
@@ -144,6 +177,9 @@ export const primaryRemote = (remotes: GitRemote[]): GitRemote | null => remotes
 /** Runs git in one repository; withAuth marks the commands that talk to the remote. */
 export type GitRunner = (args: string[], withAuth: boolean) => Promise<GitResult>
 
+/** Puts the newest commits in a new order, newest first. Electron checks the order and runs the rebase. */
+export type CommitReorderer = (order: string[]) => Promise<GitResult>
+
 export type IdentityKey = 'user.name' | 'user.email'
 
 export type GitClient = ReturnType<typeof createGitClient>
@@ -153,14 +189,32 @@ export type HistoryRow = LogEntry & { mark?: '↑' | '↓' }
 
 const unmarked = (c: LogEntry): HistoryRow => c
 
+/** What a drag in History can rearrange: the newest commits to push, as far back as history is a straight line. */
+export function reorderableCommits(rows: HistoryRow[]) {
+  const end = rows.findIndex((r) => r.mark !== '↑' || r.parents.length > 1)
+  return (end < 0 ? rows : rows.slice(0, end)).map((r) => r.sha)
+}
+
+/** `order` with the commit at `from` moved into the gap before index `gap` (`order.length` is the gap after the last). */
+export function moveCommit(order: string[], from: number, gap: number) {
+  const next = order.filter((_, i) => i !== from)
+  next.splice(gap > from ? gap - 1 : gap, 0, order[from])
+  return next
+}
+
 /** What the repository has stopped in the middle of. */
-export type RepoOperation = 'merge' | 'rebase'
+export type RepoOperation = 'merge' | 'rebase' | 'revert' | 'cherry-pick'
+
+const OPERATION_HEADS: Array<[string, RepoOperation]> = [['MERGE_HEAD', 'merge'], ['REBASE_HEAD', 'rebase'], ['REVERT_HEAD', 'revert'], ['CHERRY_PICK_HEAD', 'cherry-pick']]
+
+/** What git diffs against for a commit with no parent. */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
 
 /** Another program (an editor, a terminal) holds the index for a moment. Git changes nothing when it says this, so trying again is safe. */
 const INDEX_LOCKED = /index\.lock|another git process/i
 const LOCK_RETRY_MS = [100, 250, 500, 1000]
 
-export function createGitClient(run: GitRunner) {
+export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
   const git = async (args: string[], withAuth = false) => {
     let res = await run(args, withAuth)
     for (const wait of LOCK_RETRY_MS) {
@@ -187,12 +241,12 @@ export function createGitClient(run: GitRunner) {
     return res.code === 0 && name && name !== 'HEAD' ? name : null
   }
   /** Conflicts stop git with an error, but they're a state to finish from, not a failure. */
-  const stopsOnConflicts = async (args: string[]) => {
-    const res = await run(args, false)
+  const conflictsIn = async (res: GitResult, command: string) => {
     if (res.code === 0) return { conflicts: false }
     if ((await status()).entries.some(isUnmerged)) return { conflicts: true }
-    throw new Error((res.stderr || res.stdout || `git ${args[0]} failed`).trim())
+    throw new Error((res.stderr || res.stdout || `git ${command} failed`).trim())
   }
+  const stopsOnConflicts = async (args: string[]) => conflictsIn(await run(args, false), args[0])
   return {
     status,
     /** Empty when there's no origin. */
@@ -207,6 +261,7 @@ export function createGitClient(run: GitRunner) {
     identity: async (key: IdentityKey) => (await run(['config', '--local', '--get', key], false)).stdout.trim(),
     setIdentity: (key: IdentityKey, value: string) => (value ? git(['config', '--local', key, value]) : run(['config', '--local', '--unset', key], false)),
     branches: async () => parseBranches(await git(['branch', '--all', BRANCH_FORMAT]), await remoteName()),
+    worktrees: async () => parseWorktrees(await git(['worktree', 'list', '--porcelain'])),
     async fileDiff(entry: StatusEntry): Promise<FileDiff | null> {
       if (entry.index === '?' && entry.worktree === '?') {
         // --no-index exits 1 when the files differ, which here they always do.
@@ -220,8 +275,8 @@ export function createGitClient(run: GitRunner) {
     /** The newest commits of `ref`, or of the checked-out branch. Empty before the first commit. */
     log: (ref?: string, limit = 200) => log(ref ? [ref] : [], limit),
     /**
-     * A branch's commits by where they are, and in `history` as a timeline. Not pushed means ahead of its upstream, so
-     * commits merged in from another branch count even though they're already on the remote.
+     * A branch's commits by where they are, and in `history` as a timeline. Not pushed means no branch on the remote has it
+     * yet: after merging main in, main's commits are already there, so only the merge itself is new.
      */
     async branchCommits(branch: BranchState, limit = 100) {
       const remote = await remoteName()
@@ -231,7 +286,8 @@ export function createGitClient(run: GitRunner) {
       const all = await log([ref], limit + ahead)
       if (branch.location === 'remote') return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote: all, notOnRemote: [] as string[], history: all.map(unmarked) }
       const notOnAnyRemote = await log([ref, '--not', `--remotes=${remote}`], limit + ahead)
-      const local = branch.upstream && !branch.gone ? await log([ref, '--not', branch.upstream], limit + ahead) : notOnAnyRemote
+      // The upstream as well, for a branch that tracks another local branch rather than the remote.
+      const local = branch.upstream && !branch.gone ? await log([ref, '--not', branch.upstream, `--remotes=${remote}`], limit + ahead) : notOnAnyRemote
       const toPush = new Set(local.map((c) => c.sha))
       const incoming = branch.upstream && branch.behind ? await log([`${ref}..${branch.upstream}`], limit) : []
       // In log order, with what's not pulled after the run of newest commits to push.
@@ -241,10 +297,26 @@ export function createGitClient(run: GitRunner) {
       const history = [...all.slice(0, split).map(row), ...incoming.map((c): HistoryRow => ({ ...c, mark: '↓' })), ...all.slice(split).map(row)]
       return { local, incoming, remote: all.filter((c) => !toPush.has(c.sha)), notOnRemote: notOnAnyRemote.map((c) => c.sha), history }
     },
+    /** A merge's changes are what it brought onto its first parent, as GitHub shows them, not only its conflict fixes. */
     async show(sha: string) {
-      const res = await run(['show', '--format=%B%x1e', '--patch', '--no-color', sha], false)
+      const res = await run(['show', '--format=%B%x1e', '--patch', '--diff-merges=first-parent', '--no-color', sha], false)
       const [message, patch = ''] = res.stdout.split('\x1e')
       return { message: message.trim(), files: parseUnifiedDiff(patch) }
+    },
+    /**
+     * What a run of commits adds up to, newest first: from just before the oldest to the newest, so a change that was
+     * later undone doesn't show. `others` counts commits the span holds that weren't asked for, which a merge brings in.
+     */
+    async combinedDiff(shas: string[]) {
+      const newest = shas[0]
+      const oldest = shas[shas.length - 1]
+      // Commits on two lines of history have no single before and after.
+      if ((await log([oldest, '--not', newest], 1)).length) return { related: false, others: 0, files: [] as FileDiff[] }
+      const parent = await run(['rev-parse', '-q', '--verify', `${oldest}^`], false)
+      const base = parent.code === 0 ? parent.stdout.trim() : null
+      const span = await log(base ? [newest, '--not', base] : [newest], shas.length + 1000)
+      const asked = new Set(shas)
+      return { related: true, others: span.filter((c) => !asked.has(c.sha)).length, files: parseUnifiedDiff(await git(['diff', base ?? EMPTY_TREE, newest])) }
     },
     addOrigin: (url: string) => git(['remote', 'add', 'origin', url]),
     publishBranch: async () => git(['push', '-u', await remoteName(), 'HEAD'], true),
@@ -266,15 +338,26 @@ export function createGitClient(run: GitRunner) {
     merge: (ref: string, options: { squash?: boolean } = {}) => stopsOnConflicts(['merge', options.squash ? '--squash' : '--no-edit', ref]),
     rebase: (ref: string) => stopsOnConflicts(['rebase', ref]),
     continueRebase: () => stopsOnConflicts(['rebase', '--continue']),
-    abortMerge: () => git(['merge', '--abort']),
-    abortRebase: () => git(['rebase', '--abort']),
+    reorderCommits: async (order: string[]) => conflictsIn(await reorder!(order), 'rebase'),
+    abortOperation: (operation: RepoOperation) => git([operation, '--abort']),
     /** Commits a merge whose conflicts are resolved, with the message git prepared. */
     finishMerge: () => git(['commit', '--no-edit']),
     async operation(): Promise<RepoOperation | null> {
-      if ((await run(['rev-parse', '-q', '--verify', 'MERGE_HEAD'], false)).code === 0) return 'merge'
-      return (await run(['rev-parse', '-q', '--verify', 'REBASE_HEAD'], false)).code === 0 ? 'rebase' : null
+      for (const [ref, operation] of OPERATION_HEADS) if ((await run(['rev-parse', '-q', '--verify', ref], false)).code === 0) return operation
+      return null
     },
     createBranch: (branch: string) => git(['switch', '-c', branch]),
+    createBranchAt: (branch: string, sha: string) => git(['switch', '-c', branch, sha]),
+    /** Puts HEAD on a commit instead of a branch. */
+    checkoutCommit: (sha: string) => git(['switch', '--detach', sha]),
+    /** Rewrites the last commit, with whatever is staged. */
+    amendCommit: (summary: string, description = '') => git(['commit', '--amend', '-m', summary, ...(description.trim() ? ['-m', description] : [])]),
+    revertCommit: (sha: string) => stopsOnConflicts(['revert', '--no-edit', sha]),
+    cherryPick: (sha: string) => stopsOnConflicts(['cherry-pick', sha]),
+    /** Moves the branch back to a commit. What came after it stays in the folder as uncommitted changes. */
+    resetTo: (sha: string) => git(['reset', '-q', sha]),
+    createTag: (name: string, sha: string) => git(['tag', name, sha]),
+    tagsAt: async (sha: string) => (await git(['tag', '--points-at', sha])).split('\n').filter(Boolean),
     /** Saves every change, new files too, and leaves the working tree clean. */
     stash: () => git(['stash', 'push', '-u']),
     stashPop: () => git(['stash', 'pop']),
@@ -296,5 +379,5 @@ export function createGitClient(run: GitRunner) {
 
 /** The client for a repository the desktop app has registered. */
 export function localGit(repoId: string, auth?: GitAuth): GitClient {
-  return createGitClient((args, withAuth) => native!.git(repoId, args, withAuth ? auth : undefined))
+  return createGitClient((args, withAuth) => native!.git(repoId, args, withAuth ? auth : undefined), (order) => native!.repos.reorderCommits(repoId, order))
 }
