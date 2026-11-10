@@ -63,6 +63,47 @@ const mergeHelpers = `
   }
 `
 
+const reorderHelpers = `
+  const refresh = () => [...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+  const historyTab = () => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes('History'))
+  const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+  const rowOf = (text) => rows().find((c) => c.textContent.includes(text))
+  const menuOn = async (row, pick = null) => {
+    window.__e2eMenuItems = null
+    window.__e2eMenuPick = pick
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+    await until(() => window.__e2eMenuItems, 5000)
+    const items = window.__e2eMenuItems
+    await sleep(150)
+    window.__e2eMenuPick = null
+    return items
+  }
+  const offered = (items) => items.find((i) => i.label === 'Reorder Commit')?.enabled
+  const log = async (n) => (await g.git(repoId, ['log', '-n', String(n), '--pretty=format:%s'])).stdout.split('\\n')
+  const sha = async (ref) => (await g.git(repoId, ['rev-parse', ref])).stdout.trim()
+  const pointer = (type, clientY) => document.body.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, clientY }))
+  /** Drags a row to just inside the far edge of another. Says whether the line showed where it would land. */
+  const drag = async (row, target, where) => {
+    row.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, clientY: row.getBoundingClientRect().top + 10 }))
+    const box = target.getBoundingClientRect()
+    const y = where === 'below' ? box.bottom - 4 : box.top + 4
+    pointer('pointermove', y)
+    await sleep(200)
+    const line = !!main().querySelector('.is-drop-' + where)
+    pointer('pointerup', y)
+    return line
+  }
+  const openBranch = async (name, row) => {
+    await g.git(repoId, ['switch', name])
+    clickLink('/local/' + repoId)
+    await until(() => visible('.ws-seg-branch .ws-seg-value')[0]?.textContent === name, 15000)
+    refresh()
+    const tab = await until(historyTab, 8000)
+    if (tab) tab.click()
+    return until(() => rowOf(row), 10000)
+  }
+`
+
 exports.steps = [
   {
     name: 'local repo: status, stage, commit, history, policy',
@@ -825,7 +866,12 @@ exports.steps = [
       await sleep(100)
       r.on = main().querySelector('.ws-history-filter').getAttribute('aria-pressed') === 'true'
       r.rowsStayed = main().querySelectorAll('.ws-commit-row').length === r.marks
-      r.fail = !(r.marks > 0 && r.count === String(r.marks) && r.tabCount === r.count && r.on && r.rowsStayed)
+      const sync = [...document.querySelectorAll('.ws-seg-sync')].find((b) => b.getClientRects().length)
+      r.syncLabel = sync?.textContent ?? ''
+      r.syncIcon = sync?.querySelector('svg')?.getAttribute('class') ?? ''
+      // Commits waiting to push turn the button's icon into an up arrow.
+      r.pushArrow = !r.syncLabel.includes('Push') || r.syncIcon.includes('octicon-arrow-up')
+      r.fail = !(r.marks > 0 && r.count === String(r.marks) && r.tabCount === r.count && r.on && r.rowsStayed && r.pushArrow)
       return r
     `,
     waitMs: 300,
@@ -961,6 +1007,359 @@ exports.steps = [
       return r
     `,
     screenshot: 'branch-panel',
+  },
+  {
+    name: 'worktrees: a branch held by a missing one reports it without covering the page',
+    js: `${helpers}
+      const r = {}
+      const visible = (sel) => [...document.querySelectorAll(sel)].find((s) => s.getClientRects().length)
+      const row = (n) => [...document.querySelectorAll('.ws-toolbar-panel-body [role=menuitemradio], .ws-toolbar-panel-body li')].find((x) => x.textContent.includes(n))
+      visible('.ws-header .ws-seg-branch').click()
+      await until(() => row('stranded'), 20000)
+      r.described = row('stranded').textContent.includes('In another worktree')
+      row('stranded').click()
+      const banner = await until(() => visible('.ws-error'), 8000)
+      r.message = banner.textContent
+      r.bannerAboveTabs = banner.getBoundingClientRect().bottom <= visible('.ws-tabs').getBoundingClientRect().top
+      r.fail = !(r.described && r.bannerAboveTabs && r.message.includes('Current worktree menu'))
+      return r
+    `,
+    screenshot: 'worktree-banner',
+  },
+  {
+    name: 'worktrees: the picker groups them and marks the missing one',
+    js: `${helpers}
+      const r = {}
+      const visible = (sel) => [...document.querySelectorAll(sel)].find((s) => s.getClientRects().length)
+      visible('.ws-error button[aria-label="Dismiss"]')?.click()
+      visible('.ws-header .ws-seg-worktree').click()
+      const panel = await until(() => { const p = visible('.ws-toolbar-panel-body'); return p?.innerText.includes('stranded') && p }, 8000)
+      await sleep(200)
+      r.panel = panel.innerText
+      r.fail = !(r.panel.includes('Main worktree') && r.panel.includes('Linked worktrees') && r.panel.includes('(missing)') && r.panel.includes('New worktree'))
+      return r
+    `,
+    screenshot: 'worktree-panel',
+  },
+  {
+    name: 'worktrees: removing a missing one frees its branch, and the picker moves between checkouts',
+    js: `${helpers}
+      const r = {}
+      const need = (v, what) => { if (!v) throw new Error('No ' + what + ': ' + document.body.innerText.slice(0, 300)); return v }
+      const visible = (sel) => [...document.querySelectorAll(sel)].find((s) => s.getClientRects().length)
+      const row = (n) => [...document.querySelectorAll('.ws-toolbar-panel-body [role=menuitemradio]')].find((x) => x.textContent.includes(n))
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const listed = async () => (await g.git(repo.id, ['worktree', 'list', '--porcelain'])).stdout
+      if (!row('stranded')) visible('.ws-header .ws-seg-worktree').click()
+      need(await until(() => row('stranded'), 8000), 'stranded row').click()
+      need(await until(() => byText('[role=alertdialog] button, [role=dialog] button', 'Remove'), 5000), 'Remove button').click()
+      await sleep(1500)
+      r.freed = !(await listed()).includes('stranded') && (await g.git(repo.id, ['switch', 'stranded'])).code === 0
+      await g.git(repo.id, ['switch', 'main'])
+      await g.git(repo.id, ['branch', 'wt-pick'])
+      const wt = await g.repos.addWorktree(repo.id, ${j(PARENT)}, 'wt-pick')
+      await sleep(500)
+      visible('.ws-header .ws-seg-worktree').click()
+      need(await until(() => row(wt.name), 8000), 'linked row').click()
+      await until(() => visible('.ws-seg-worktree .ws-seg-value')?.textContent === wt.name, 8000)
+      visible('.ws-header .ws-seg-worktree').click()
+      need(await until(() => row('e2e-local'), 8000), 'main row').click()
+      await until(() => visible('.ws-seg-worktree .ws-seg-value')?.textContent === 'e2e-local', 8000)
+      // Each folder keeps its own tab, so the checkout just visited is still open beside this one.
+      const wtTab = tabs().find((t) => tabName(t) === wt.name)
+      r.ownTab = !!wtTab
+      need([...document.querySelectorAll('.tab-close')].find((b) => b.getAttribute('aria-label').startsWith('Close ' + wt.name)), 'tab close button').click()
+      await until(() => !tabs().some((t) => tabName(t) === wt.name), 5000)
+      r.mainRefused = await g.repos.removeWorktree(repo.id, repo.path).then(() => false, () => true)
+      r.otherRefused = await g.repos.removeWorktree(repo.id, '/tmp').then(() => false, () => true)
+      await g.repos.removeWorktree(repo.id, wt.path)
+      r.removed = !(await listed()).includes(wt.path) && !(await g.repos.list()).some((x) => x.path === wt.path)
+      r.fail = !(r.freed && r.ownTab && r.mainRefused && r.otherRefused && r.removed)
+      return r
+    `,
+  },
+  {
+    name: 'history: shift-click shows what a run of commits adds up to',
+    js: `${helpers}
+      const r = {}
+      const need = (v, what) => { if (!v) throw new Error('No ' + what + ' in ' + savedActiveUrl() + ': ' + main()?.innerText.slice(0, 400)); return v }
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const branchTab = (name) => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes(name))
+      const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+      await g.git(repo.id, ['add', '--', 'scratch.txt'])
+      r.commit = await g.git(repo.id, ['commit', '-m', 'Range scratch'])
+      if (r.commit.code) throw new Error('commit: ' + r.commit.stderr + r.commit.stdout)
+      ;[...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      need(branchTab('History'), 'History tab').click()
+      await until(() => rows().some((c) => c.textContent.includes('Range scratch')), 20000)
+      need(rows()[0], 'first row').click()
+      rows()[rows().length - 1].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }))
+      await until(() => main().querySelector('.ws-details-head')?.textContent.includes('commits selected'), 5000)
+      await until(() => main().querySelector('.ws-file-row'), 8000)
+      r.rows = rows().length
+      r.selected = main().querySelectorAll('.ws-commit-row.is-selected').length
+      r.title = main().querySelector('.ws-details-head').textContent
+      r.files = [...main().querySelectorAll('.ws-file-row')].map((f) => f.textContent)
+      r.fail = !(r.rows >= 2 && r.selected === r.rows && r.title.includes(r.rows + ' commits selected') && r.files.some((f) => f.includes('scratch.txt')))
+      return r
+    `,
+    screenshot: 'history-range',
+  },
+  {
+    name: 'history: a plain click goes back to one commit',
+    js: `${helpers}
+      const r = {}
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+      rows()[0].click()
+      await until(() => !main().querySelector('.ws-details-head')?.textContent.includes('commits selected'), 5000)
+      r.selected = main().querySelectorAll('.ws-commit-row.is-selected').length
+      await g.git(repo.id, ['reset', '--soft', 'HEAD~1'])
+      ;[...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      ;[...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes('Changes')).click()
+      await sleep(500)
+      r.fail = r.selected !== 1
+      return r
+    `,
+  },
+  {
+    name: 'changes: the commit box is at the end of the pane, under the stash',
+    js: `${helpers}
+      const r = {}
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const refresh = () => [...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      // A stash and a change at once: scratch.txt goes into the stash, and undoing the last commit brings notes.md back.
+      await g.git(repo.id, ['stash', 'push', '-u'])
+      await g.git(repo.id, ['reset', '--soft', 'HEAD~1'])
+      refresh()
+      const stash = await until(() => main().querySelector('.ws-stash-row'), 8000)
+      await until(() => main().querySelector('.ws-commit'), 8000)
+      const box = main().querySelector('.ws-commit')
+      const pane = box.closest('.ws-scroll').getBoundingClientRect()
+      r.toPaneEnd = Math.abs(box.getBoundingClientRect().bottom - pane.bottom)
+      r.stashAbove = stash ? stash.getBoundingClientRect().bottom <= box.getBoundingClientRect().top + 1 : false
+      r.filesFirst = main().querySelector('.ws-row-file').getBoundingClientRect().bottom <= stash.getBoundingClientRect().top + 1
+      r.fail = !(r.toPaneEnd < 2 && r.stashAbove && r.filesFirst)
+      return r
+    `,
+    screenshot: 'commit-end',
+  },
+  {
+    name: 'changes: putting back the stash and the commit',
+    js: `${helpers}
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const commit = await g.git(repo.id, ['commit', '-m', 'Add notes'])
+      const pop = await g.git(repo.id, ['stash', 'pop'])
+      ;[...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      await sleep(500)
+      return { commit: commit.code, pop: pop.code, fail: !!(commit.code || pop.code) }
+    `,
+  },
+  {
+    name: 'commit menu: offers what applies to the newest and to an older commit',
+    js: `${helpers}
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const need = (v, what) => { if (!v) throw new Error('No ' + what + ': ' + main()?.innerText.slice(0, 300)); return v }
+      const refresh = () => [...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      const historyTab = () => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes('History'))
+      const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+      const rowOf = (text) => rows().find((c) => c.textContent.includes(text))
+      const menuOn = async (row, pick = null) => {
+        window.__e2eMenuItems = null
+        window.__e2eMenuPick = pick
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+        await until(() => window.__e2eMenuItems, 5000)
+        const items = window.__e2eMenuItems
+        await sleep(150)
+        window.__e2eMenuPick = null
+        return items
+      }
+      const on = (items) => items.filter((i) => i.label && i.enabled).map((i) => i.label)
+      const off = (items) => items.filter((i) => i.label && !i.enabled).map((i) => i.label)
+      const gitOut = async (...args) => (await g.git(repo.id, args)).stdout.trim()
+
+      const r = {}
+      need(historyTab(), 'History tab').click()
+      await until(() => rowOf('Add notes') && rowOf('Initial commit'), 8000)
+      const newest = await menuOn(rowOf('Add notes'))
+      const older = await menuOn(rowOf('Initial commit'))
+      r.newestOn = on(newest); r.newestOff = off(newest); r.olderOn = on(older); r.olderOff = off(older)
+      const has = (list, ...names) => names.every((n) => list.includes(n))
+      r.fail = !(has(r.newestOn, 'Amend Commit…', 'Undo Commit', 'Revert Changes in Commit', 'Create Branch from Commit…', 'Create Tag…', 'Cherry-pick Commit…', 'Copy SHA')
+        && has(r.newestOff, 'Reset to Commit…', 'Checkout Commit', 'Copy Tag')
+        && has(r.olderOn, 'Reset to Commit…', 'Checkout Commit')
+        && !older.some((i) => i.label === 'Amend Commit…' || i.label === 'Undo Commit'))
+      return r
+    `,
+  },
+  {
+    name: 'commit menu: a tag, a new branch and an amended message',
+    js: `${helpers}
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const need = (v, what) => { if (!v) throw new Error('No ' + what + ': ' + main()?.innerText.slice(0, 300)); return v }
+      const refresh = () => [...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      const historyTab = () => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes('History'))
+      const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+      const rowOf = (text) => rows().find((c) => c.textContent.includes(text))
+      const menuOn = async (row, pick = null) => {
+        window.__e2eMenuItems = null
+        window.__e2eMenuPick = pick
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+        await until(() => window.__e2eMenuItems, 5000)
+        const items = window.__e2eMenuItems
+        await sleep(150)
+        window.__e2eMenuPick = null
+        return items
+      }
+      const on = (items) => items.filter((i) => i.label && i.enabled).map((i) => i.label)
+      const off = (items) => items.filter((i) => i.label && !i.enabled).map((i) => i.label)
+      const gitOut = async (...args) => (await g.git(repo.id, args)).stdout.trim()
+
+      const r = {}
+      const nameDialog = async (value, button) => {
+        const input = need(await until(() => document.querySelector('[role=dialog] input'), 5000), 'name input')
+        setInput(input, value)
+        await sleep(100)
+        need(byText('[role=dialog] button', button), button + ' button').click()
+        await sleep(1200)
+      }
+      const initial = (await gitOut('log', '-n', '100', '--pretty=format:%H %s')).split('\\n').find((l) => l.endsWith(' Initial commit')).split(' ')[0]
+      await menuOn(rowOf('Initial commit'), 'Create Tag…')
+      await nameDialog('e2e-tag', 'Create tag')
+      r.tags = await gitOut('tag', '--points-at', initial)
+      r.copyTagOn = on(await menuOn(rowOf('Initial commit'))).includes('Copy Tag')
+
+      await menuOn(rowOf('Initial commit'), 'Create Branch from Commit…')
+      await nameDialog('from-initial', 'Create branch')
+      r.branch = await gitOut('rev-parse', '--abbrev-ref', 'HEAD')
+      await g.git(repo.id, ['switch', 'main'])
+      await g.git(repo.id, ['branch', '-D', '--', 'from-initial'])
+      refresh()
+      await until(() => rowOf('Add notes'), 8000)
+
+      // Out of the way first, so only the message changes.
+      await g.git(repo.id, ['reset', '-q', '--', 'scratch.txt'])
+      await menuOn(rowOf('Add notes'), 'Amend Commit…')
+      const summary = need(await until(() => document.querySelector('[role=dialog] input'), 5000), 'summary input')
+      r.prefilled = summary.value
+      setInput(summary, 'Add notes amended')
+      await sleep(100)
+      need(byText('[role=dialog] button', 'Amend commit'), 'Amend button').click()
+      await sleep(1200)
+      r.amended = await gitOut('log', '-n', '1', '--pretty=format:%s')
+      await g.git(repo.id, ['commit', '--amend', '-m', 'Add notes'])
+      await g.git(repo.id, ['add', '--', 'scratch.txt'])
+      refresh()
+      await sleep(800)
+      r.fail = !(r.tags === 'e2e-tag' && r.copyTagOn && r.branch === 'from-initial' && r.prefilled === 'Add notes' && r.amended === 'Add notes amended')
+      return r
+    `,
+  },
+  {
+    name: 'commit menu: checking out a commit shows it as detached',
+    js: `${helpers}
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const need = (v, what) => { if (!v) throw new Error('No ' + what + ': ' + main()?.innerText.slice(0, 300)); return v }
+      const refresh = () => [...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      const historyTab = () => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes('History'))
+      const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+      const rowOf = (text) => rows().find((c) => c.textContent.includes(text))
+      const menuOn = async (row, pick = null) => {
+        window.__e2eMenuItems = null
+        window.__e2eMenuPick = pick
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+        await until(() => window.__e2eMenuItems, 5000)
+        const items = window.__e2eMenuItems
+        await sleep(150)
+        window.__e2eMenuPick = null
+        return items
+      }
+      const on = (items) => items.filter((i) => i.label && i.enabled).map((i) => i.label)
+      const off = (items) => items.filter((i) => i.label && !i.enabled).map((i) => i.label)
+      const gitOut = async (...args) => (await g.git(repo.id, args)).stdout.trim()
+
+      const r = {}
+      await until(() => rowOf('Initial commit'), 8000)
+      await menuOn(rowOf('Initial commit'), 'Checkout Commit')
+      await until(() => main().querySelector('.ws-branch-title')?.textContent.includes('Detached at'), 8000)
+      r.title = main().querySelector('.ws-branch-title').textContent
+      r.seg = [...document.querySelectorAll('.ws-seg-branch .ws-seg-value')].find((s) => s.getClientRects().length)?.textContent
+      r.head = await gitOut('rev-parse', '--abbrev-ref', 'HEAD')
+      r.fail = !(r.title.includes('Detached at') && !r.title.includes('Current branch') && r.seg === 'Detached HEAD' && r.head === 'HEAD')
+      return r
+    `,
+    screenshot: 'commit-detached',
+  },
+  {
+    name: 'commit menu: back on a branch, revert and reset work',
+    js: `${helpers}
+      const repo = (await g.repos.list()).find((x) => x.path === ${j(LOCAL)})
+      const need = (v, what) => { if (!v) throw new Error('No ' + what + ': ' + main()?.innerText.slice(0, 300)); return v }
+      const refresh = () => [...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      const historyTab = () => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes('History'))
+      const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+      const rowOf = (text) => rows().find((c) => c.textContent.includes(text))
+      const menuOn = async (row, pick = null) => {
+        window.__e2eMenuItems = null
+        window.__e2eMenuPick = pick
+        row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }))
+        await until(() => window.__e2eMenuItems, 5000)
+        const items = window.__e2eMenuItems
+        await sleep(150)
+        window.__e2eMenuPick = null
+        return items
+      }
+      const on = (items) => items.filter((i) => i.label && i.enabled).map((i) => i.label)
+      const off = (items) => items.filter((i) => i.label && !i.enabled).map((i) => i.label)
+      const gitOut = async (...args) => (await g.git(repo.id, args)).stdout.trim()
+
+      const r = {}
+      await g.git(repo.id, ['switch', 'main'])
+      refresh()
+      await until(() => rowOf('Add notes'), 8000)
+      await g.git(repo.id, ['reset', '-q', '--', 'scratch.txt'])
+      await menuOn(rowOf('Add notes'), 'Revert Changes in Commit')
+      await sleep(1500)
+      r.reverted = await gitOut('log', '-n', '1', '--pretty=format:%s')
+      refresh()
+      await until(() => rowOf('Revert'), 8000)
+      await menuOn(rows().find((c) => c.querySelector('.ws-commit-subject').textContent === 'Add notes'), 'Reset to Commit…')
+      need(await until(() => byText('[role=alertdialog] button, [role=dialog] button', 'Reset'), 5000), 'Reset button').click()
+      await sleep(1500)
+      r.afterReset = await gitOut('log', '-n', '1', '--pretty=format:%s')
+      // The revert's deletion of notes.md was left as a change: put it back as it was.
+      await g.git(repo.id, ['restore', '--staged', '--worktree', '--source=HEAD', '--', 'notes.md'])
+      await g.git(repo.id, ['add', '--', 'scratch.txt'])
+      refresh()
+      ;[...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes('Changes')).click()
+      await sleep(500)
+      r.status = await gitOut('status', '--porcelain=v1', '-z', '--untracked-files=all')
+      r.fail = !(r.reverted === 'Revert "Add notes"' && r.afterReset === 'Add notes' && r.status.includes('scratch.txt') && !r.status.includes('notes.md'))
+      return r
+    `,
+  },
+  {
+    name: 'history: a repository only on GitHub combines commits too',
+    js: `${helpers}
+      const r = {}
+      const rows = () => [...main().querySelectorAll('.ws-section[aria-label="History"] .ws-commit-row')]
+      tabs().find((t) => tabName(t) === 'jq').click()
+      await sleep(500)
+      clickLink('/jqlang/jq')
+      await until(() => rows().length >= 3, 20000)
+      rows()[0].click()
+      await sleep(200)
+      rows()[2].dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey: true }))
+      await until(() => main().querySelector('.ws-details-head')?.textContent.includes('3 commits selected'), 5000)
+      await until(() => main().querySelector('.ws-file-row') || main().querySelector('.ws-details .error-box'), 15000)
+      r.selected = main().querySelectorAll('.ws-commit-row.is-selected').length
+      r.files = main().querySelectorAll('.ws-file-row').length
+      r.error = main().querySelector('.ws-details .error-box')?.textContent
+      tabs().find((t) => tabName(t) === 'e2e-local').click()
+      await sleep(500)
+      r.fail = !(r.selected === 3 && r.files > 0 && !r.error)
+      return r
+    `,
   },
   {
     name: 'panes: drag a divider with the real pointer',
@@ -1241,6 +1640,82 @@ exports.steps = [
       r.fail = !(r.gone && r.on === 'main')
       return r
     `,
+  },
+  {
+    name: 'reorder: the menu offers it only for unpushed commits',
+    js: `${helpers}${mergeHelpers}${reorderHelpers}
+      const r = {}
+      if (!await openBranch('reorder-demo', 'Reorder three')) throw new Error('No commits: ' + main()?.innerText.slice(0, 300))
+      const items = await menuOn(rowOf('Reorder one'))
+      r.labels = items.map((i) => i.label).filter(Boolean)
+      r.unpushed = offered(items)
+      r.pushed = offered(await menuOn(rowOf('Reorder base')))
+      const at = (label) => r.labels.indexOf(label)
+      r.fail = !(r.unpushed === true && r.pushed === false && at('Checkout Commit') + 1 === at('Reorder Commit') && at('Reorder Commit') + 1 === at('Revert Changes in Commit'))
+      return r
+    `,
+  },
+  {
+    name: 'reorder: picking it shows which commit moves and which can’t',
+    js: `${helpers}${mergeHelpers}${reorderHelpers}
+      const r = {}
+      await menuOn(rowOf('Reorder three'), 'Reorder Commit')
+      r.entered = !!await until(() => main().querySelector('.ws-commit-row.is-moving'), 5000)
+      r.hint = main().querySelector('.ws-reorder-hint')?.textContent
+      r.fixed = main().querySelectorAll('.ws-commit-row.is-fixed').length
+      r.fail = !(r.entered && r.hint && r.fixed > 0)
+      return r
+    `,
+    screenshot: 'reorder-mode',
+  },
+  {
+    name: 'reorder: a drag rewrites the order, and pushed commits stay put',
+    js: `${helpers}${mergeHelpers}${reorderHelpers}
+      const r = {}
+      r.base = await sha('HEAD~3')
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      r.cancelled = !!await until(() => !main().querySelector('.ws-commit-row.is-moving'), 3000)
+      r.unchanged = (await log(3)).join()
+
+      await menuOn(rowOf('Reorder three'), 'Reorder Commit')
+      await until(() => main().querySelector('.ws-commit-row.is-moving'), 5000)
+      r.line = await drag(rowOf('Reorder three'), rowOf('Reorder one'), 'below')
+      await untilAsync(async () => (await log(1))[0] === 'Reorder two', 10000)
+      r.after = (await log(4)).join()
+      r.baseAfter = await sha('HEAD~3')
+      r.modeEnded = !main().querySelector('.ws-commit-row.is-moving')
+      r.diff = (await g.git(repoId, ['diff', 'HEAD~3', 'HEAD~2'])).stdout
+      r.fail = !(r.cancelled && r.unchanged === 'Reorder three,Reorder two,Reorder one' && r.line && r.after === 'Reorder two,Reorder one,Reorder three,Reorder base' && r.baseAfter === r.base && r.modeEnded && r.diff.includes('r3.txt') && !r.diff.includes('r1.txt'))
+      return r
+    `,
+    screenshot: 'reorder-done',
+  },
+  {
+    name: 'reorder: a conflict stops in the operation bar and aborts cleanly',
+    js: `${helpers}${mergeHelpers}${reorderHelpers}
+      const r = {}
+      if (!await openBranch('reorder-clash', 'Clash two')) throw new Error('No commits: ' + main()?.innerText.slice(0, 300))
+      r.head = await sha('HEAD')
+      await menuOn(rowOf('Clash two'), 'Reorder Commit')
+      await until(() => main().querySelector('.ws-commit-row.is-moving'), 5000)
+      await drag(rowOf('Clash two'), rowOf('Clash one'), 'below')
+      const bar = await until(() => visible('.ws-operation')[0], 10000)
+      r.bar = bar?.textContent
+      r.rebasing = (await g.git(repoId, ['rev-parse', '-q', '--verify', 'REBASE_HEAD'])).code === 0
+      historyTab().click()
+      await until(() => rows().length, 5000)
+      r.whileBusy = offered(await menuOn(rows()[0]))
+      byText('.ws-operation button', 'Abort rebase').click()
+      ;(await until(() => byText('[role=alertdialog] button', 'Abort rebase'), 5000)).click()
+      await until(() => !visible('.ws-operation').length, 10000)
+      r.gone = !visible('.ws-operation').length
+      r.restored = (await sha('HEAD')) === r.head
+      r.branch = (await g.git(repoId, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()
+      await g.git(repoId, ['switch', 'main'])
+      r.fail = !(r.bar?.includes('Rebase in progress') && r.bar?.includes('with conflicts') && r.rebasing && r.whileBusy === false && r.gone && r.restored && r.branch === 'reorder-clash')
+      return r
+    `,
+    screenshot: 'reorder-conflict',
   },
   {
     name: 'cleanup: forget repos and account in the test profile',

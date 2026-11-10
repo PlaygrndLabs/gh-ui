@@ -86,6 +86,7 @@ button.ws-seg:disabled { cursor: default; opacity: 0.75; }
 .ws-seg-gear { flex: none; width: 36px; padding: 0; color: var(--ws-chrome-muted); background: none; border: 0; cursor: pointer; }
 .ws-seg-gear:hover { color: var(--ws-chrome-text); background: var(--ws-chrome-hover); }
 .ws-seg-gear:focus-visible { outline: 2px solid var(--ws-chrome-text); outline-offset: -2px; }
+.ws-seg-worktree { flex: 0 1 220px; width: 220px; }
 .ws-seg-branch { flex: none; width: 340px; }
 .ws-seg-sync { width: 240px; }
 .ws-seg-pick { flex: 0 1 380px; width: 380px; }
@@ -98,7 +99,10 @@ button.ws-seg:disabled { cursor: default; opacity: 0.75; }
 a.ws-tool, .ws-tool { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; font: inherit; color: inherit; background: none; border: 0; border-radius: 6px; cursor: pointer; }
 .ws-tool:hover, .ws-tool[aria-pressed='true'] { color: inherit; text-decoration: none; background: var(--ws-chrome-hover); }
 .ws-tool:focus-visible { outline: 2px solid var(--ws-chrome-text); outline-offset: 1px; }
-.ws-error { position: absolute; top: 100%; left: 8px; right: 8px; z-index: 30; }
+.ws-error { margin: 8px; }
+.ws-worktree-filter { display: flex; gap: 8px; }
+.ws-worktree-missing { color: var(--ws-muted); }
+.ws-worktree-branch { display: block; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .ws-tabs { display: flex; align-items: stretch; min-height: 37px; padding: 0 6px; overflow: auto hidden; background: var(--ws-panel); border-bottom: 1px solid var(--ws-line); }
 a.ws-tab, .ws-tab { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; margin-bottom: -1px; font: inherit; font-weight: 500; color: var(--ws-muted); white-space: nowrap; background: none; border: 0; border-bottom: 2px solid transparent; cursor: pointer; }
@@ -107,6 +111,8 @@ a.ws-tab, .ws-tab { display: inline-flex; align-items: center; gap: 6px; padding
 .ws-tab[aria-current='page'], .ws-tab[aria-selected='true'] { font-weight: 600; color: var(--ws-text); border-bottom-color: var(--ws-accent); }
 .ws-tabs-end { display: flex; align-items: center; gap: 2px; margin-left: auto; padding-left: 8px; }
 .ws-refreshing svg, .ws-spin { animation: gd-spin 1s linear infinite; }
+/* Octicons has no up-and-down arrow: its side-by-side pair, turned upright. */
+.ws-sync-both { transform: rotate(90deg); }
 .ws-pill { padding: 0 6px; font-size: 11px; font-weight: 600; line-height: 17px; color: var(--ws-text); background: var(--ws-hover); border-radius: 9px; }
 .ws-mark { font-size: 12px; font-weight: 700; }
 .ws-ok { color: var(--ws-ok); }
@@ -166,6 +172,11 @@ ul:is([role='menu'], [role='listbox']) { padding-block: 0; }
 .ws-section-flush .ws-section-head { align-items: center; justify-content: flex-start; gap: 8px; min-height: 40px; padding: 6px 12px; margin: 0; border-bottom: 1px solid var(--ws-line); }
 .ws-section-flush .ws-note { margin: 12px; }
 .ws-section-pad { padding: 0 12px 12px; }
+/* The commit box stays at the end of the pane while the files above it scroll. */
+.ws-section-fill { display: flex; flex-direction: column; min-height: 100%; }
+.ws-section-fill .ws-commit { position: sticky; bottom: 0; margin-top: auto; background: var(--ws-bg); }
+.ws-section-fill .ws-stash-row { margin-top: auto; border-top: 1px solid var(--ws-line); }
+.ws-section-fill .ws-stash-row + .ws-commit { margin-top: 0; }
 .ws-history-filter { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; font: inherit; font-size: 12px; font-weight: 500; color: var(--ws-muted); background: none; border: 1px solid var(--ws-line); border-radius: 14px; cursor: pointer; }
 .ws-history-filter:hover { color: var(--ws-text); background: var(--ws-hover); }
 .ws-history-filter:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: 1px; }
@@ -197,7 +208,13 @@ button.ws-row:hover, a.ws-row:hover, .ws-row-file:hover { color: var(--ws-text);
 .ws-file-path { display: flex; flex: 1; min-width: 0; white-space: nowrap; }
 .ws-file-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ws-muted); }
 .ws-file-name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-.ws-commit-row { gap: 10px; min-height: 52px; padding: 8px 12px; border-bottom: 1px solid var(--ws-line); border-radius: 0; }
+.ws-commit-row { gap: 10px; min-height: 52px; padding: 8px 12px; border-bottom: 1px solid var(--ws-line); border-radius: 0; user-select: none; }
+.ws-reorder-hint { font-size: 12px; font-weight: 500; }
+.ws-commit-row.is-moving { cursor: grab; touch-action: none; background: var(--ws-selected); outline: 1px solid var(--ws-accent); outline-offset: -1px; }
+.ws-commit-row.is-moving:active { cursor: grabbing; }
+.ws-commit-row.is-fixed { opacity: .5; }
+.ws-commit-row.is-drop-above { box-shadow: inset 0 2px 0 var(--ws-accent); }
+.ws-commit-row.is-drop-below { box-shadow: inset 0 -2px 0 var(--ws-accent); }
 .ws-commit-text { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }
 .ws-commit-subject { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-weight: 500; }
 .ws-commit-text .ws-row-sub { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -323,7 +340,7 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 
 /* Split view: a pane is narrower than the window, so the toolbar gives way. */
 .in-split .ws-search { display: none; }
-.in-split .ws-seg-where, .in-split .ws-seg-branch, .in-split .ws-seg-sync, .in-split .ws-seg-pick { flex: 1 1 0; width: auto; }
+.in-split .ws-seg-where, .in-split .ws-seg-worktree, .in-split .ws-seg-branch, .in-split .ws-seg-sync, .in-split .ws-seg-pick { flex: 1 1 0; width: auto; }
 .is-native-mac .ws-tab-add { -webkit-app-region: no-drag; }
 
 /* Repository settings */

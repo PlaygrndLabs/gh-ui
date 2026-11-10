@@ -5,10 +5,10 @@ import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea
 import { ArrowDownIcon, ArrowUpIcon, CheckIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import type { FileDiff } from '../../lib/diff'
-import { changePaths, isStaged, isUnmerged, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
+import { changePaths, isStaged, isUnmerged, reorderableCommits, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
 import { errorMessage, useGitHub } from '../../lib/github'
 import { webUrl } from '../../lib/links'
-import { openExternal } from '../../lib/platform'
+import { native, openExternal } from '../../lib/platform'
 import { firstLine, plural, shortSha } from '../../lib/format'
 import { readPref } from '../../lib/storage'
 import { useLocalRepo, useStageError, useStageIntents } from '../../lib/useLocalRepo'
@@ -19,8 +19,10 @@ import { FileDiffBox } from '../../components/DiffView'
 import { SplitPane } from '../../components/SplitPane'
 import { PublishDialog } from '../../components/WorkspaceHeader'
 import { useTabBranch } from '../../lib/TabsProvider'
+import { useCommitMenu } from './CommitMenu'
+import { useCommitReorder, type GrabRow } from './CommitReorder'
 
-type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | null
+type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | { kind: 'range'; anchor: string; focus: string } | null
 
 function ChangeBadge({ e }: { e: StatusEntry }) {
   const code = isUnmerged(e) ? '!' : e.index === '?' ? 'U' : e.index !== ' ' ? e.index : e.worktree
@@ -110,7 +112,7 @@ function CommitBox({ local, draft, branchName, stagedCount, conflictCount, onCom
 }
 
 /** The changed files and the commit box. A box shows the click at once; git catches up behind it (lib/repoOps.ts). */
-function ChangesList({ local, draft, entries, selectedPath, branchName, onSelect, onCommitted }: { local: LocalRepoState; draft: CommitDraft; entries: StatusEntry[]; selectedPath: string | undefined; branchName: string; onSelect(path: string): void; onCommitted(): void }) {
+function ChangesList({ local, draft, entries, selectedPath, branchName, onSelect, onCommitted, beforeCommit }: { local: LocalRepoState; draft: CommitDraft; entries: StatusEntry[]; selectedPath: string | undefined; branchName: string; onSelect(path: string): void; onCommitted(): void; beforeCommit: ReactNode }) {
   const confirm = useConfirm()
   const intents = useStageIntents(local.ops)
   const { setStaged } = local
@@ -142,6 +144,7 @@ function ChangesList({ local, draft, entries, selectedPath, branchName, onSelect
       {entries.map((e) => (
         <ChangeRow key={e.path} entry={e} staged={stagedOf(e)} selected={selectedPath === e.path} onToggle={onToggle} onSelect={onSelect} />
       ))}
+      {beforeCommit}
       <CommitBox local={local} draft={draft} branchName={branchName} stagedCount={stagedCount} conflictCount={conflictCount} onCommitted={onCommitted} />
     </>
   )
@@ -149,19 +152,43 @@ function ChangesList({ local, draft, entries, selectedPath, branchName, onSelect
 
 type BranchTab = 'changes' | 'history' | 'pull' | 'checks'
 
+interface GitHubFile {
+  filename: string
+  previous_filename?: string
+  status: string
+  changes: number
+  additions: number
+  deletions: number
+  patch?: string
+}
+
+const toFileDiff = (f: GitHubFile): FileDiff => ({ oldPath: f.previous_filename ?? f.filename, newPath: f.filename, status: f.status as FileDiff['status'], binary: !f.patch && f.changes > 0, additions: f.additions, deletions: f.deletions, patch: f.patch ?? '' })
+
 /** One tab's content. The tab names it, so a heading only appears when there's an action to hold. */
-function Section({ title, action, flush, children }: { title: string; action?: ReactNode; flush?: boolean; children: ReactNode }) {
+function Section({ title, action, flush, fill, children }: { title: string; action?: ReactNode; flush?: boolean; fill?: boolean; children: ReactNode }) {
   return (
-    <section className={`ws-section ${flush ? 'ws-section-flush' : ''}`} aria-label={title}>
+    <section className={`ws-section ${flush ? 'ws-section-flush' : ''} ${fill ? 'ws-section-fill' : ''}`} aria-label={title}>
       {action && <div className="ws-section-head">{action}</div>}
       {children}
     </section>
   )
 }
 
-const CommitRow = memo(function CommitRow({ commit, selected, mark, onSelect }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; onSelect(sha: string): void }) {
+/** No commit menu while one is being reordered. */
+const ignoreMenu = () => {}
+
+/** A row while a commit is being reordered: the one picked up, one it can land among, or one that has to stay put. */
+type ReorderRole = 'moving' | 'movable' | 'fixed'
+
+const CommitRow = memo(function CommitRow({ commit, selected, mark, role, dropLine, onSelect, onMenu, onGrab }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; role?: ReorderRole; dropLine?: 'above' | 'below'; onSelect(sha: string, extend: boolean): void; onMenu(sha: string): void; onGrab: GrabRow }) {
   return (
-    <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''}`} aria-pressed={selected} onClick={() => onSelect(commit.sha)}>
+    <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''} ${role ? `is-${role}` : ''} ${dropLine ? `is-drop-${dropLine}` : ''}`} aria-pressed={selected} data-reorder={role && role !== 'fixed' ? '' : undefined} onPointerDown={role === 'moving' ? onGrab : undefined} onClick={(e) => onSelect(commit.sha, e.shiftKey || e.metaKey || e.ctrlKey)}
+      onContextMenu={(e) => {
+        if (!native) return
+        e.preventDefault()
+        onMenu(commit.sha)
+      }}
+    >
       <span className="ws-commit-text">
         <span className="ws-commit-subject">{firstLine(commit.subject)}</span>
         <span className="ws-row-sub">
@@ -198,7 +225,15 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const stageError = useStageError(local.ops)
   const split = readPref('diffSplit', false)
   const selectFile = useCallback((path: string) => setSelection({ kind: 'file', path }), [])
-  const selectCommit = useCallback((sha: string) => setSelection({ kind: 'commit', sha }), [])
+  // With nothing clicked yet, the commit on show is the newest, so that's where a range starts.
+  const newestShown = useRef<string | undefined>(undefined)
+  const selectCommit = useCallback((sha: string, extend: boolean) => {
+    setSelection((s) => {
+      if (!extend) return { kind: 'commit', sha }
+      const anchor = s?.kind === 'range' ? s.anchor : s?.kind === 'commit' ? s.sha : newestShown.current
+      return anchor ? { kind: 'range', anchor, focus: sha } : { kind: 'commit', sha }
+    })
+  }, [])
   const clearSelection = useCallback(() => setSelection(null), [])
 
   const remoteBranches = useRemoteBranches(repo)
@@ -218,7 +253,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     queryFn: async () => {
       if (local.git) return local.git.branchCommits(branch!)
       const { data } = await octokit.rest.repos.listCommits({ owner: github!.owner, repo: github!.repo, sha: branch!.name, per_page: 100 })
-      const remote = data.map((c): LogEntry => ({ sha: c.sha, author: c.commit.author?.name ?? c.author?.login ?? '', date: c.commit.author?.date ?? '', subject: c.commit.message }))
+      const remote = data.map((c): LogEntry => ({ sha: c.sha, author: c.commit.author?.name ?? c.author?.login ?? '', date: c.commit.author?.date ?? '', subject: c.commit.message, parents: c.parents.map((p) => p.sha) }))
       return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote, notOnRemote: [] as string[], history: remote as HistoryRow[] }
     },
   })
@@ -256,7 +291,15 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const onlyNotPushed = notPushedOn === branch?.name && unpushed.length > 0
   const tabCommits = tab === 'history' && onlyNotPushed ? unpushed : commitTab ? shown : []
   const entry = tab === 'changes' ? (entries.find((e) => selection?.kind === 'file' && e.path === selection.path) ?? entries[0] ?? null) : null
-  const commit = entry ? null : (tabCommits.find((c) => selection?.kind === 'commit' && c.sha === selection.sha) ?? tabCommits[0] ?? null)
+  newestShown.current = tabCommits[0]?.sha
+  // Always the commits between the two clicks, so the combined change never has gaps in it.
+  const rangeEnds = selection?.kind === 'range' && tab === 'history' ? [tabCommits.findIndex((c) => c.sha === selection.anchor), tabCommits.findIndex((c) => c.sha === selection.focus)] : []
+  const inRange = rangeEnds.length && Math.min(...rangeEnds) >= 0 && rangeEnds[0] !== rangeEnds[1] ? tabCommits.slice(Math.min(...rangeEnds), Math.max(...rangeEnds) + 1) : null
+  const rangeShas = useMemo(() => new Set(inRange?.map((c) => c.sha)), [inRange?.[0]?.sha, inRange?.length])
+  const newest = inRange?.[0]
+  const oldest = inRange?.[inRange.length - 1]
+  const onlyCommit = selection?.kind === 'commit' ? selection.sha : selection?.kind === 'range' ? selection.focus : null
+  const commit = entry || inRange ? null : (tabCommits.find((c) => c.sha === onlyCommit) ?? tabCommits[0] ?? null)
 
   const diff = useQuery({
     // The path alone: staging a file doesn't change what it differs by, so a click has no reason to reload this.
@@ -275,8 +318,21 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       const { data: c } = await octokit.rest.repos.getCommit({ owner: github!.owner, repo: github!.repo, ref: commit!.sha })
       return {
         message: c.commit.message,
-        files: (c.files ?? []).map((f) => ({ oldPath: f.previous_filename ?? f.filename, newPath: f.filename, status: f.status as FileDiff['status'], binary: !f.patch && f.changes > 0, additions: f.additions, deletions: f.deletions, patch: f.patch ?? '' })),
+        files: (c.files ?? []).map(toFileDiff),
       }
+    },
+  })
+
+  const combined = useQuery({
+    queryKey: repo.local ? ['local-show', repo.local.id, 'combined', oldest?.sha, newest?.sha, inRange?.length] : [key, 'workspace-combined', github?.owner, github?.repo, oldest?.sha, newest?.sha, inRange?.length],
+    enabled: !!inRange,
+    queryFn: async (): Promise<{ related: boolean; others: number; files: FileDiff[] }> => {
+      if (local.git) return local.git.combinedDiff(inRange!.map((c) => c.sha))
+      const { data: first } = await octokit.rest.repos.getCommit({ owner: github!.owner, repo: github!.repo, ref: oldest!.sha })
+      const base = first.parents[0]?.sha
+      if (!base) throw new Error('GitHub can’t compare from before a repository’s first commit. Leave that commit out of the selection.')
+      const { data: c } = await octokit.rest.repos.compareCommitsWithBasehead({ owner: github!.owner, repo: github!.repo, basehead: `${base}...${newest!.sha}` })
+      return { related: c.status === 'ahead', others: Math.max(0, c.total_commits - inRange!.length), files: (c.files ?? []).map(toFileDiff) }
     },
   })
 
@@ -302,6 +358,14 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       if (branch) setChosenTab({ branch: branch.name, tab: 'changes' })
     })
 
+  // A detached HEAD has no branch to rewrite. Empty off the History tab, which ends a reorder on the way out.
+  const movable = useMemo(() => (isCurrent && branch?.name !== 'HEAD' && tab === 'history' && !local.operation.data ? reorderableCommits(shown) : []), [isCurrent, branch?.name, tab, local.operation.data, shown])
+  const reorder = useCommitReorder(movable, (order) => {
+    setSelection(null)
+    local.op.mutate(() => local.git!.reorderCommits(order))
+  })
+  const { openMenu: openCommitMenu, dialogs: commitDialogs } = useCommitMenu({ local, github, isCurrent, rows: shown, notOnRemote: data?.notOnRemote ?? [], undo, movable, reorder: reorder.start })
+
   const notPulled = data?.incoming.length ?? 0
   const tabs: Array<{ id: BranchTab; label: string; count?: number; show: boolean }> = [
     { id: 'changes', label: 'Changes', count: entries.length, show: !!repo.local },
@@ -309,6 +373,18 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     { id: 'pull', label: 'Pull request', show: !!github && !isDefault },
     { id: 'checks', label: 'Checks', show: !!github },
   ]
+
+  const hasChanges = isCurrent && entries.length > 0
+  const stashRow = !!stashes.data?.length && (
+    <div className="ws-row ws-stash-row">
+      <span className="ws-row-main">
+        {stashes.data.length} stashed change{stashes.data.length === 1 ? '' : 's'}: {stashes.data[0]}
+      </span>
+      <Button size="small" onClick={() => local.op.mutate(() => local.git!.stashPop())}>
+        Restore
+      </Button>
+    </div>
+  )
 
   const timeline = branch && (
     <div className="ws-branch-timeline">
@@ -346,19 +422,9 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       </div>
       <div className="ws-scroll" role="tabpanel">
         {tab === 'changes' && (
-          <Section title="Changes" flush>
-            {isCurrent && entries.length > 0 && <ChangesList local={local} draft={draft} entries={entries} selectedPath={entry?.path} branchName={branch.name} onSelect={selectFile} onCommitted={clearSelection} />}
+          <Section title="Changes" flush fill>
+            {hasChanges ? <ChangesList local={local} draft={draft} entries={entries} selectedPath={entry?.path} branchName={branch.name} onSelect={selectFile} onCommitted={clearSelection} beforeCommit={stashRow} /> : stashRow}
             {isCurrent && !entries.length && <p className="ws-note">No uncommitted changes.</p>}
-            {!!stashes.data?.length && (
-              <div className="ws-row">
-                <span className="ws-row-main">
-                  {stashes.data.length} stashed change{stashes.data.length === 1 ? '' : 's'}: {stashes.data[0]}
-                </span>
-                <Button size="small" onClick={() => local.op.mutate(() => local.git!.stashPop())}>
-                  Restore
-                </Button>
-              </div>
-            )}
           </Section>
         )}
 
@@ -367,7 +433,14 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
             title="History"
             flush
             action={
-              unpushed.length > 0 || (isCurrent && !!data?.local.length) ? (
+              reorder.moving ? (
+                <>
+                  <span className="ws-reorder-hint">Drag this commit to its new place</span>
+                  <Button size="small" className="ws-history-end" onClick={reorder.cancel}>
+                    Cancel
+                  </Button>
+                </>
+              ) : unpushed.length > 0 || (isCurrent && !!data?.local.length) ? (
                 <>
                   {unpushed.length > 0 && (
                     <button
@@ -395,8 +468,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           >
             {shown
               .filter((c) => !onlyNotPushed || c.mark === '↑')
-              .map((c) => (
-                <CommitRow key={c.sha} commit={c} mark={c.mark === '↑' && !canPush ? undefined : c.mark} selected={commit?.sha === c.sha} onSelect={selectCommit} />
+              .map((c, i) => (
+                <CommitRow key={c.sha} commit={c} mark={c.mark === '↑' && !canPush ? undefined : c.mark} selected={inRange ? rangeShas.has(c.sha) : commit?.sha === c.sha} role={!reorder.moving ? undefined : c.sha === reorder.moving ? 'moving' : i < movable.length ? 'movable' : 'fixed'} dropLine={i >= movable.length ? undefined : reorder.dropGap === i ? 'above' : reorder.dropGap === i + 1 && i === movable.length - 1 ? 'below' : undefined} onSelect={selectCommit} onMenu={reorder.moving ? ignoreMenu : openCommitMenu} onGrab={reorder.grab} />
               ))}
             {data && !shown.length && <p className="ws-note">No commits on this branch yet.</p>}
             {canPush && branch.location === 'local' && <p className="ws-note">This branch isn’t on {host} yet.</p>}
@@ -458,6 +531,30 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
         </Button>
       </div>
       <div className="ws-scroll ws-diff">{diff.isLoading ? <Loading /> : diff.data ? <LocalFileDiff file={diff.data} split={split} eager /> : <p className="ws-note">No textual changes to show.</p>}</div>
+    </div>
+  ) : inRange ? (
+    <div className="ws-details">
+      <div className="ws-details-head">
+        <div className="ws-details-title">
+          <div className="text-bold">{plural(inRange.length, 'commit')} selected</div>
+          <div className="ws-row-sub">
+            Combined changes, <span className="text-mono">{shortSha(oldest!.sha)}</span> to <span className="text-mono">{shortSha(newest!.sha)}</span>
+            {!!combined.data?.others && ` · Includes ${plural(combined.data.others, 'more commit')} from merges`}
+          </div>
+        </div>
+      </div>
+      {combined.isLoading ? (
+        <div className="ws-scroll ws-diff">
+          <Loading />
+        </div>
+      ) : combined.data?.files.length ? (
+        <CommitFiles key={`${oldest!.sha}-${newest!.sha}`} files={combined.data.files} split={split} message="" />
+      ) : (
+        <div className="ws-scroll ws-diff">
+          {combined.data && <p className="ws-note">{combined.data.related ? 'These commits add up to no change.' : 'These commits aren’t on one line of history, so they have no combined change. Select commits from one side only.'}</p>}
+          {combined.error ? <div className="error-box">{errorMessage(combined.error)}</div> : null}
+        </div>
+      )}
     </div>
   ) : commit ? (
     <div className="ws-details">
@@ -526,8 +623,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
             <>
               <div className="ws-branch-head">
                 <div className="ws-branch-title">
-                  <span className="text-mono text-bold">{branch.name}</span>
-                  {isCurrent && (
+                  <span className="text-mono text-bold">{branch.name === 'HEAD' ? `Detached at ${shortSha(branch.sha)}` : branch.name}</span>
+                  {isCurrent && branch.name !== 'HEAD' && (
                     <span className="ws-tag ws-tag-ok">
                       <CheckIcon size={12} /> Current branch
                     </span>
@@ -548,6 +645,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           )}
       </div>
       {dialog === 'publish' && <PublishDialog repo={repo} onClose={() => setDialog(null)} />}
+      {commitDialogs}
     </div>
   )
 }

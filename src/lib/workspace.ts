@@ -92,14 +92,23 @@ export function repoWhere(repo: WorkspaceRepo): string {
 export type SyncKind = 'clone' | 'publish-repo' | 'publish-branch' | 'pull' | 'push' | 'fetch'
 
 /** The one network action the toolbar offers, the way GitHub Desktop picks it. */
-export function syncAction(location: RepoLocation, status: { upstream: string | null; ahead: number; behind: number } | undefined): { kind: SyncKind; count: number } | null {
+export function syncAction(location: RepoLocation, status: { branch?: string | null; upstream: string | null; ahead: number; behind: number } | undefined): { kind: SyncKind; count: number } | null {
   if (location === 'github') return { kind: 'clone', count: 0 }
   if (location === 'local') return { kind: 'publish-repo', count: 0 }
   if (!status) return null
+  // A checked-out commit isn't a branch, so there's nothing to publish.
+  if (status.branch === 'HEAD') return { kind: 'fetch', count: 0 }
   if (!status.upstream) return { kind: 'publish-branch', count: 0 }
   if (status.behind > 0) return { kind: 'pull', count: status.behind }
   if (status.ahead > 0) return { kind: 'push', count: status.ahead }
   return { kind: 'fetch', count: 0 }
+}
+
+/** Which way the sync button's arrows point: up to push, down to pull, both when there's something to push and to pull. */
+export function syncDirection(kind: SyncKind, status: { ahead: number; behind: number } | undefined): 'up' | 'down' | 'both' | null {
+  if (kind === 'push') return 'up'
+  if (kind === 'pull') return status?.ahead ? 'both' : 'down'
+  return null
 }
 
 export function addGitHubRepo(list: GitHubRepoRef[], ref: GitHubRepoRef): GitHubRepoRef[] {
@@ -145,7 +154,7 @@ export function useRemoteBranches(repo: WorkspaceRepo) {
     enabled: !repo.local && !repo.pending && !!github,
     queryFn: async () => {
       const [info, list] = await Promise.all([octokit.rest.repos.get({ owner: github!.owner, repo: github!.repo }), octokit.rest.repos.listBranches({ owner: github!.owner, repo: github!.repo, per_page: 100 })])
-      const toState = (b: (typeof list.data)[number]): BranchState => ({ name: b.name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha: b.commit.sha, date: '' })
+      const toState = (b: (typeof list.data)[number]): BranchState => ({ name: b.name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha: b.commit.sha, date: '', worktree: null })
       return list.data.map(toState).sort((a, b) => Number(b.name === info.data.default_branch) - Number(a.name === info.data.default_branch))
     },
   })

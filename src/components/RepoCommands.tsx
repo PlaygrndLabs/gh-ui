@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, Banner, Button, Dialog, FormControl, TextInput, useConfirm } from '@primer/react'
 import { copyText, plural } from '../lib/format'
-import { isUnmerged, type BranchState } from '../lib/git'
+import { isUnmerged, type BranchState, type RepoOperation } from '../lib/git'
 import { useGitHub } from '../lib/github'
 import { webUrl } from '../lib/links'
-import { native, openExternal } from '../lib/platform'
+import { native, openExternal, type LocalRepo } from '../lib/platform'
 import { confirmDialogOpen } from '../lib/scroll'
 import { useIsActiveTab } from '../lib/TabsProvider'
 import { useLocalRepo } from '../lib/useLocalRepo'
@@ -17,7 +18,7 @@ import { encodePath } from '../lib/repo'
 type LocalRepoState = ReturnType<typeof useLocalRepo>
 type Integration = 'merge' | 'squash' | 'rebase'
 
-function NameDialog({ title, action, initial, taken, note, onSubmit, onClose }: { title: string; action: string; initial: string; taken: string[]; note?: ReactNode; onSubmit(name: string): void; onClose(): void }) {
+export function NameDialog({ title, action, initial, taken, note, onSubmit, onClose }: { title: string; action: string; initial: string; taken: string[]; note?: ReactNode; onSubmit(name: string): void; onClose(): void }) {
   const [value, setValue] = useState(initial)
   const name = value.trim().replace(/\s+/g, '-')
   const ok = !!name && name !== initial && !taken.includes(name)
@@ -45,7 +46,7 @@ function NameDialog({ title, action, initial, taken, note, onSubmit, onClose }: 
   )
 }
 
-function BranchPickDialog({ title, branches, onPick, onClose }: { title: string; branches: BranchState[]; onPick(branch: BranchState): void; onClose(): void }) {
+export function BranchPickDialog({ title, branches, onPick, onClose }: { title: string; branches: BranchState[]; onPick(branch: BranchState): void; onClose(): void }) {
   const [filter, setFilter] = useState('')
   const shown = branches.filter((b) => b.name.toLowerCase().includes(filter.toLowerCase()))
   return (
@@ -67,6 +68,12 @@ function BranchPickDialog({ title, branches, onPick, onClose }: { title: string;
       {!shown.length && <p className="ws-note">No branches match.</p>}
     </Dialog>
   )
+}
+
+/** Takes a row of its own under the toolbar. Laid over the page, Primer's see-through background mixes its text with what's behind it. */
+export function GitErrorBanner({ local, slot }: { local: LocalRepoState; slot: HTMLElement | null }) {
+  if (!local.error || !slot) return null
+  return createPortal(<Banner className="ws-error" variant="critical" title="Git said" description={local.error} onDismiss={local.clearError} />, slot)
 }
 
 /** What can be done to a branch, shared by its right-click menu and the app's Branch menu. */
@@ -93,16 +100,27 @@ export function useBranchActions(repo: WorkspaceRepo, local: LocalRepoState) {
       showBranchTab()
     })
 
+  const openFolder = async (folder: LocalRepo) => {
+    await qc.invalidateQueries({ queryKey: ['local-repos'] })
+    await qc.invalidateQueries({ queryKey: ['workspace-folders'] })
+    navigate(`/local/${folder.id}`)
+  }
+
   const worktree = async (b: BranchState) => {
     const parent = await native!.pickDirectory('Choose where to put the worktree')
     if (!parent) return
-    local.op.mutate(async () => {
-      const added = await native!.repos.addWorktree(repo.local!.id, parent, b.name)
-      await qc.invalidateQueries({ queryKey: ['local-repos'] })
-      await qc.invalidateQueries({ queryKey: ['workspace-folders'] })
-      navigate(`/local/${added.id}`)
-    })
+    local.op.mutate(async () => openFolder(await native!.repos.addWorktree(repo.local!.id, parent, b.name)))
   }
+
+  /** A branch can only be checked out in one place, so going to it means going there. */
+  const openWorktree = (path: string) =>
+    local.unqueued.mutate(async () => {
+      const folder = await native!.repos.add(path).catch(() => {
+        // Usually a worktree made from another machine or a disk that isn't mounted, and git won't free the branch by itself.
+        throw new Error(`The worktree at ${path} can’t be opened on this Mac. To free its branch, remove it from the Current worktree menu.`)
+      })
+      await openFolder(folder)
+    })
 
   /** The checked-out branch can't be deleted, so `moveTo` says where to go first. */
   const remove = async (b: BranchState, moveTo?: string) => {
@@ -131,17 +149,19 @@ export function useBranchActions(repo: WorkspaceRepo, local: LocalRepoState) {
       onClose={() => setRenaming(null)}
     />
   )
-  return { rename: setRenaming, copyName: (b: BranchState) => void copyText(b.name), worktree, remove, integrate, refFor, showBranchTab, dialogs }
+  return { rename: setRenaming, copyName: (b: BranchState) => void copyText(b.name), worktree, openWorktree, remove, integrate, refFor, showBranchTab, dialogs }
 }
 
-/** Says a merge or rebase has stopped, and offers the ways out of it. */
+const OPERATION_WORD: Record<RepoOperation, string> = { merge: 'Merge', rebase: 'Rebase', revert: 'Revert', 'cherry-pick': 'Cherry-pick' }
+
+/** Says git has stopped partway through something, and offers the ways out of it. */
 function OperationBar({ local }: { local: LocalRepoState }) {
   const confirm = useConfirm()
   const operation = local.operation.data
   if (!operation) return null
   const conflicts = (local.status.data?.entries ?? []).filter(isUnmerged).length
-  const isMerge = operation === 'merge'
-  const word = isMerge ? 'Merge' : 'Rebase'
+  const isRebase = operation === 'rebase'
+  const word = OPERATION_WORD[operation]
   const abort = async () => {
     const ok = await confirm({
       title: `Abort this ${word.toLowerCase()}?`,
@@ -149,7 +169,7 @@ function OperationBar({ local }: { local: LocalRepoState }) {
       confirmButtonContent: `Abort ${word.toLowerCase()}`,
       confirmButtonType: 'danger',
     })
-    if (ok) local.op.mutate(() => (isMerge ? local.git!.abortMerge() : local.git!.abortRebase()))
+    if (ok) local.op.mutate(() => local.git!.abortOperation(operation))
   }
   return (
     <div className="ws-operation" role="status">
@@ -159,8 +179,8 @@ function OperationBar({ local }: { local: LocalRepoState }) {
       <Button size="small" onClick={() => void abort()}>
         Abort {word.toLowerCase()}
       </Button>
-      <Button size="small" variant="primary" disabled={conflicts > 0 || local.op.isPending} onClick={() => local.op.mutate(() => (isMerge ? local.git!.finishMerge() : local.git!.continueRebase()))}>
-        {isMerge ? 'Finish merge' : 'Continue rebase'}
+      <Button size="small" variant="primary" disabled={conflicts > 0 || local.op.isPending} onClick={() => local.op.mutate(() => (isRebase ? local.git!.continueRebase() : local.git!.finishMerge()))}>
+        {isRebase ? 'Continue rebase' : `Finish ${word.toLowerCase()}`}
       </Button>
     </div>
   )
@@ -176,7 +196,7 @@ const PICK_TITLE = (branch: string): Record<Picking, string> => ({
 })
 
 /** Answers the app's Repository and Branch menus for the repository in the focused tab, and tells them what applies. */
-export function RepoCommands({ repo }: { repo: WorkspaceRepo }) {
+export function RepoCommands({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLElement | null }) {
   const local = useLocalRepo(repo.local)
   const actions = useBranchActions(repo, local)
   const confirm = useConfirm()
@@ -273,7 +293,7 @@ export function RepoCommands({ repo }: { repo: WorkspaceRepo }) {
       {picking && branch && (
         <BranchPickDialog
           title={PICK_TITLE(branch)[picking]}
-          branches={all.filter((b) => b.name !== branch)}
+          branches={all.filter((b) => b.name !== branch && !(picking === 'worktree' && b.worktree))}
           onClose={() => setPicking(null)}
           onPick={(b) => (picking === 'worktree' ? void actions.worktree(b) : actions.integrate(b, picking))}
         />
@@ -295,7 +315,7 @@ export function RepoCommands({ repo }: { repo: WorkspaceRepo }) {
       )}
       {settings && <RepoSettingsDialog repo={repo} onClose={() => setSettings(false)} />}
       {actions.dialogs}
-      {local.error && <Banner className="ws-error" variant="critical" title="Git said" description={local.error} onDismiss={local.clearError} />}
+      <GitErrorBanner local={local} slot={errorSlot} />
     </>
   )
 }

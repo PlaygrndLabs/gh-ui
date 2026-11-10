@@ -128,7 +128,7 @@ function run(cmd, args, opts = {}) {
   })
 }
 
-const { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, gitCommandEnv, GIT_BASE_ENV } = require('./git-policy.cjs')
+const { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, gitCommandEnv, reorderCommits, GIT_BASE_ENV } = require('./git-policy.cjs')
 
 // ---------------------------------------------------------------------------
 // Local repository registry
@@ -343,11 +343,30 @@ function registerIpc() {
     return addRepo(dest)
   })
 
+  // Only a path git already lists as linked to this repository, so the renderer can't aim this at any other folder.
+  // No --force: git keeps a worktree with uncommitted changes, and one that's locked.
+  handle('repos:removeWorktree', async (_e, repoId, target) => {
+    const repo = await repoById(repoId)
+    const list = await run('git', ['worktree', 'list', '--porcelain'], { cwd: repo.path, env: GIT_BASE_ENV })
+    if (list.code !== 0) throw new Error(list.stderr.trim() || 'git worktree list failed')
+    const linked = list.stdout.split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice('worktree '.length)).slice(1)
+    if (target === repo.path || !linked.includes(target)) throw new Error('That worktree can’t be removed from here')
+    const res = await run('git', ['worktree', 'remove', '--', target], { cwd: repo.path, env: GIT_BASE_ENV })
+    if (res.code !== 0) throw new Error(res.stderr.trim() || 'git worktree remove failed')
+    await changeRepos((repos) => repos.filter((r) => r.path !== target))
+  })
+
   handle('git', async (_e, repoId, args, auth) => {
     const repo = await repoById(repoId)
     validateGitArgs(args)
     const network = ['push', 'pull', 'fetch'].includes(args[0])
     return run('git', args, { cwd: repo.path, env: { ...gitCommandEnv(args[0]), ...(network ? gitAuthEnv(auth) : {}) } })
+  })
+
+  // Its own channel: an interactive rebase needs an editor command, so the renderer sends only the order it wants.
+  handle('repos:reorderCommits', async (_e, repoId, order) => {
+    const repo = await repoById(repoId)
+    return reorderCommits((args, env) => run('git', args, { cwd: repo.path, env }), order)
   })
 
   handle('repo:reveal', async (_e, repoId) => shell.showItemInFolder((await repoById(repoId)).path))

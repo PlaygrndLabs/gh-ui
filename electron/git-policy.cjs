@@ -1,5 +1,6 @@
 // Rules for what the renderer may ask git to do. Kept separate from main.cjs so
 // they can be unit tested (electron/git-policy.test.ts).
+const fs = require('node:fs')
 const path = require('node:path')
 
 const HOST_RE = /^[a-z0-9.-]+$/i
@@ -34,15 +35,18 @@ const RULES = {
   status: { flags: ['--porcelain=v1', '-b', '-z', '--untracked-files=all'], args: 'none' },
   diff: { flags: ['--cached'], args: 'any', paths: true },
   log: { flags: ['--not'], prefixes: ['--format=', '--pretty=', '--remotes='], valued: { '-n': /^\d+$/ }, args: 'any', paths: true },
-  show: { flags: ['--patch', '--no-color'], prefixes: ['--format='], args: 'any' },
+  show: { flags: ['--patch', '--diff-merges=first-parent', '--no-color'], prefixes: ['--format='], args: 'any' },
   branch: { flags: ['--all'], prefixes: ['--format='], args: 'any' },
-  switch: { flags: ['-c'], args: 'any' },
+  switch: { flags: ['-c', '--detach'], args: 'any' },
   add: { args: 'none', paths: true },
   restore: { flags: ['--staged', '--worktree'], prefixes: ['--source='], args: 'none', paths: true },
   reset: { flags: ['-q', '--soft'], args: 'any', paths: true },
-  commit: { flags: ['--no-edit'], valued: { '-m': ANYTHING }, args: 'none' },
+  commit: { flags: ['--no-edit', '--amend'], valued: { '-m': ANYTHING }, args: 'none' },
   merge: { flags: ['--no-edit', '--squash', '--abort'], args: 'any' },
   rebase: { flags: ['--abort', '--continue'], args: 'any' },
+  revert: { flags: ['--no-edit', '--abort'], args: 'any' },
+  'cherry-pick': { flags: ['--abort'], args: 'any' },
+  tag: { flags: ['--points-at'], args: 'any' },
   'rev-parse': { flags: ['--abbrev-ref', '-q', '--verify'], args: 'any' },
   'ls-tree': { flags: ['-r', '--name-only'], args: 'any' },
   // The first bare argument names a configured remote, never a URL or folder, which could connect anywhere or run its hooks.
@@ -50,7 +54,7 @@ const RULES = {
   pull: { flags: ['--ff-only'], args: 'remote' },
   fetch: { flags: ['--prune'], args: 'remote' },
 }
-const ALLOWED_SUBCOMMANDS = new Set([...Object.keys(RULES), 'remote', 'config', 'stash', 'clean'])
+const ALLOWED_SUBCOMMANDS = new Set([...Object.keys(RULES), 'remote', 'config', 'stash', 'clean', 'worktree'])
 
 /**
  * The environment for one command. Where the app names files, a path means that one file: otherwise discarding
@@ -112,6 +116,11 @@ function validateGitArgs(args) {
   const [sub, ...rest] = args
   if (!ALLOWED_SUBCOMMANDS.has(sub)) throw new Error(`git ${sub} is not allowed`)
   if (sub === 'remote') return validateRemoteArgs(rest)
+  // Adding and removing name folders outside the repository, so those have their own channels.
+  if (sub === 'worktree') {
+    if (rest.length !== 2 || rest[0] !== 'list' || rest[1] !== '--porcelain') throw new Error('Only `git worktree list --porcelain` is allowed')
+    return
+  }
   // Force-deleting one named branch is the only deletion; the page confirms it first.
   if (sub === 'branch' && rest[0] === '-D' && rest[1] === '--' && rest.length === 3) return
   if (sub === 'branch' && rest[0] === '-m' && rest[1] === '--' && rest.length === 4) return
@@ -141,10 +150,53 @@ function validateGitArgs(args) {
   validateOptions(sub, rest)
 }
 
+// ---------------------------------------------------------------------------
+// Reordering commits. An interactive rebase needs a sequence editor, and a command the renderer could name is a
+// command it could run, so `rebase -i` stays off the allow-list above. The renderer says only what order it wants.
+
+const COMMIT_ID = /^[0-9a-f]{40}([0-9a-f]{24})?$/
+// Git runs this through a shell with the todo file's path added on the end. The list arrives by the environment, so the
+// command itself never changes, and the list only ever holds ids that passed the checks below.
+const WRITE_TODO = `printf '%s\\n' "$GH_UI_REBASE_TODO" >`
+const IN_PROGRESS = ['rebase-merge', 'rebase-apply', 'MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD']
+const STALE = 'These commits have changed since you picked one up. Check the history and try again.'
+
+/**
+ * Puts the newest commits in `order` (newest first), which must be those same commits. They all have to be unpushed and
+ * on a straight line, because a rebase rewrites them and would flatten a merge. Commits below the lowest one that moves
+ * are left alone. A conflict stops in git's rebase state to continue or abort; any other failure puts everything back.
+ * `git` runs one command: (args, env) => { code, stdout, stderr }.
+ */
+async function reorderCommits(git, order) {
+  if (!Array.isArray(order) || order.length < 2 || !order.every((sha) => typeof sha === 'string' && COMMIT_ID.test(sha)) || new Set(order).size !== order.length) throw new Error('Invalid commit order')
+
+  const gitDir = (await git(['rev-parse', '--absolute-git-dir'], GIT_BASE_ENV)).stdout.trim()
+  if (!gitDir || IN_PROGRESS.some((name) => fs.existsSync(path.join(gitDir, name)))) throw new Error('Finish what’s in progress in this folder first.')
+
+  const upstream = (await git(['rev-parse', '-q', '--verify', '@{upstream}'], GIT_BASE_ENV)).stdout.trim()
+  const log = await git(['log', '-n', String(order.length), '--pretty=format:%H %P', 'HEAD', '--not', upstream || '--remotes', '--'], GIT_BASE_ENV)
+  const current = log.stdout.split('\n').filter(Boolean).map((line) => line.trim().split(' '))
+  const same = current.length === order.length && current.every(([sha, ...parents]) => order.includes(sha) && parents.length <= 1)
+  if (!same) throw new Error(STALE)
+
+  // The oldest commits that stay where they are don't need rewriting.
+  let moved = order.length
+  while (moved > 0 && order[moved - 1] === current[moved - 1][0]) moved--
+  if (!moved) return { code: 0, stdout: '', stderr: '' }
+
+  const parent = current[moved - 1][1]
+  const todo = order.slice(0, moved).reverse().map((sha) => `pick ${sha}`).join('\n')
+  // Keeping emptied commits means a reorder never loses one or stops with nothing to resolve. Other branches stay put: the
+  // todo written here has no update-ref lines for them. As config, because older git doesn't know the option.
+  const res = await git(['-c', 'rebase.updateRefs=false', 'rebase', '-i', '--empty=keep', parent ?? '--root'], { ...gitCommandEnv('rebase'), GIT_SEQUENCE_EDITOR: WRITE_TODO, GH_UI_REBASE_TODO: todo })
+  if (res.code !== 0 && !(await git(['ls-files', '-u'], GIT_BASE_ENV)).stdout.trim()) await git(['rebase', '--abort'], gitCommandEnv('rebase'))
+  return res
+}
+
 /** The folder a branch's worktree goes in, named after the repository and the branch. */
 function worktreeFolder(repoName, branch) {
   if (typeof branch !== 'string' || !branch || branch.startsWith('-') || /[\s\0-\x1f]/.test(branch)) throw new Error('Invalid branch name')
   return `${repoName}-${branch.replace(/[^\w.-]+/g, '-')}`
 }
 
-module.exports = { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, gitCommandEnv, GIT_BASE_ENV }
+module.exports = { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, gitCommandEnv, reorderCommits, GIT_BASE_ENV }
