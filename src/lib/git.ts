@@ -275,8 +275,8 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
     /** The newest commits of `ref`, or of the checked-out branch. Empty before the first commit. */
     log: (ref?: string, limit = 200) => log(ref ? [ref] : [], limit),
     /**
-     * A branch's commits by where they are, and in `history` as a timeline. Not pushed means ahead of its upstream, so
-     * commits merged in from another branch count even though they're already on the remote.
+     * A branch's commits by where they are, and in `history` as a timeline. Not pushed means no branch on the remote has it
+     * yet: after merging main in, main's commits are already there, so only the merge itself is new.
      */
     async branchCommits(branch: BranchState, limit = 100) {
       const remote = await remoteName()
@@ -286,7 +286,8 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
       const all = await log([ref], limit + ahead)
       if (branch.location === 'remote') return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote: all, notOnRemote: [] as string[], history: all.map(unmarked) }
       const notOnAnyRemote = await log([ref, '--not', `--remotes=${remote}`], limit + ahead)
-      const local = branch.upstream && !branch.gone ? await log([ref, '--not', branch.upstream], limit + ahead) : notOnAnyRemote
+      // The upstream as well, for a branch that tracks another local branch rather than the remote.
+      const local = branch.upstream && !branch.gone ? await log([ref, '--not', branch.upstream, `--remotes=${remote}`], limit + ahead) : notOnAnyRemote
       const toPush = new Set(local.map((c) => c.sha))
       const incoming = branch.upstream && branch.behind ? await log([`${ref}..${branch.upstream}`], limit) : []
       // In log order, with what's not pulled after the run of newest commits to push.

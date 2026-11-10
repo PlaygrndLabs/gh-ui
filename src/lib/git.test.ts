@@ -566,18 +566,19 @@ describe('createGitClient against a real repository', () => {
     await raw(work, 'branch', '-D', 'base-a', 'base-b')
   })
 
-  it('counts commits merged in from another branch as not pushed, and keeps log order', async () => {
+  it('leaves commits merged in from the remote out of what is not pushed, and keeps log order', async () => {
     await raw(work, 'switch', '-c', 'tracked', '--track', 'origin/main')
     await commitFile(work, 'tracked.txt', 'mine')
     await raw(work, 'merge', '--no-edit', 'origin/release')
     const tracked = (await client.branches()).find((b) => b.name === 'tracked')!
     const commits = await client.branchCommits(tracked)
-    expect(commits.local.map((c) => c.subject)).toContain('release')
-    expect(commits.local).toHaveLength(tracked.ahead)
-    const merged = commits.local.find((c) => c.subject === 'release')!
+    // Git's own count still has release's commit: a push moves the branch past it.
+    expect(tracked.ahead).toBe(3)
+    expect(commits.local.map((c) => c.subject)).toEqual([expect.stringMatching(/^Merge/), 'mine'])
+    const merged = commits.history.find((c) => c.subject === 'release')!
+    expect(merged.mark).toBeUndefined()
     expect(commits.notOnRemote).not.toContain(merged.sha)
-    expect(commits.history.filter((c) => c.mark === '↑')).toHaveLength(tracked.ahead)
-    expect(commits.history.map((c) => c.sha)).toEqual(expect.arrayContaining(commits.local.map((c) => c.sha)))
+    expect(commits.history.filter((c) => c.mark === '↑').map((c) => c.sha)).toEqual(commits.local.map((c) => c.sha))
     await raw(work, 'switch', 'spike')
     await raw(work, 'branch', '-D', 'tracked')
   })
