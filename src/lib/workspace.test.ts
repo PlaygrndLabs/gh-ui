@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addGitHubRepo, buildWorkspaceRepos, githubKey, removeGitHubRepo, syncAction, workspacePath, type GitHubRepoRef } from './workspace'
+import { addGitHubRepo, buildWorkspaceRepos, githubKey, removeGitHubRepo, syncAction, syncDirection, workspacePath, type GitHubRepoRef } from './workspace'
 import type { LocalRepo } from './platform'
 
 const folder = (id: string, addedAt: number, remoteUrl = '') => ({ repo: { id, path: `/code/${id}`, name: id, addedAt } satisfies LocalRepo, remoteUrl })
@@ -81,6 +81,16 @@ describe('the GitHub-only list', () => {
     const list = addGitHubRepo(addGitHubRepo([], web), { ...web, owner: 'ACME' })
     expect(list).toEqual([web])
     expect(removeGitHubRepo(list, githubKey(web))).toEqual([])
+  })
+})
+
+describe('syncDirection', () => {
+  it('points up to push, down to pull, and both ways when the branch has commits to push and to pull', () => {
+    expect(syncDirection('push', { ahead: 7, behind: 0 })).toBe('up')
+    expect(syncDirection('pull', { ahead: 0, behind: 2 })).toBe('down')
+    expect(syncDirection('pull', { ahead: 7, behind: 2 })).toBe('both')
+    expect(syncDirection('fetch', { ahead: 0, behind: 0 })).toBeNull()
+    expect(syncDirection('publish-branch', undefined)).toBeNull()
   })
 })
 

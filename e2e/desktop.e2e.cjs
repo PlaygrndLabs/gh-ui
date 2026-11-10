@@ -866,7 +866,12 @@ exports.steps = [
       await sleep(100)
       r.on = main().querySelector('.ws-history-filter').getAttribute('aria-pressed') === 'true'
       r.rowsStayed = main().querySelectorAll('.ws-commit-row').length === r.marks
-      r.fail = !(r.marks > 0 && r.count === String(r.marks) && r.tabCount === r.count && r.on && r.rowsStayed)
+      const sync = [...document.querySelectorAll('.ws-seg-sync')].find((b) => b.getClientRects().length)
+      r.syncLabel = sync?.textContent ?? ''
+      r.syncIcon = sync?.querySelector('svg')?.getAttribute('class') ?? ''
+      // Commits waiting to push turn the button's icon into an up arrow.
+      r.pushArrow = !r.syncLabel.includes('Push') || r.syncIcon.includes('octicon-arrow-up')
+      r.fail = !(r.marks > 0 && r.count === String(r.marks) && r.tabCount === r.count && r.on && r.rowsStayed && r.pushArrow)
       return r
     `,
     waitMs: 300,

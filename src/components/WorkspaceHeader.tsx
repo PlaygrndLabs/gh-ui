@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Checkbox, Dialog, FormControl, IconButton, TextInput } from '@primer/react'
-import { CloudIcon, DeviceDesktopIcon, GearIcon, GitBranchIcon, MarkGithubIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
+import { ArrowDownIcon, ArrowSwitchIcon, ArrowUpIcon, CloudIcon, DeviceDesktopIcon, GearIcon, GitBranchIcon, MarkGithubIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgent } from '../lib/agent/AgentProvider'
 import { useFeatures } from '../lib/features'
 import { errorMessage, useGitHub } from '../lib/github'
@@ -12,7 +12,7 @@ import { native } from '../lib/platform'
 import { useRepoCounts, useRepoQuery } from '../lib/repo'
 import { useLocalRepo } from '../lib/useLocalRepo'
 import { useTabBranch, useTabTitle } from '../lib/TabsProvider'
-import { hostName, repoWhere, syncAction, useRemoteBranches, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
+import { hostName, repoWhere, syncAction, syncDirection, useRemoteBranches, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
 import { repoKeyFromUrl } from '../lib/tabs'
 import { CloneDialog } from '../pages/Local'
 import { AccountMenu } from './AppHeader'
@@ -260,18 +260,22 @@ function SyncButton({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
     })
   }
   const syncing = local.op.isPending || local.unqueued.isPending
+  const status = local.status.data
+  const direction = syncDirection(action.kind, status)
+  // The arrows say which way the commits go; the circle is for fetching and for while it works.
+  const Icon = syncing || !direction ? SyncIcon : direction === 'up' ? ArrowUpIcon : direction === 'down' ? ArrowDownIcon : ArrowSwitchIcon
   const hint = syncing ? 'Working…' : action.kind === 'publish-branch' ? 'Only on this Mac' : fetched ? `Synced at ${fetched.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not synced this session'
   return (
     <>
       <button type="button" className="ws-seg ws-seg-sync" disabled={syncing} onClick={run}>
-        <SyncIcon className={syncing ? 'ws-spin' : undefined} />
+        <Icon className={syncing ? 'ws-spin' : direction === 'both' ? 'ws-sync-both' : undefined} />
         <span className="ws-seg-text">
           <span className="ws-seg-key">{hint}</span>
           <span className="ws-seg-value">{SYNC_LABEL[action.kind].replace('origin', repo.remote?.name ?? 'origin')}</span>
         </span>
         {action.count > 0 && (
           <span className="ws-seg-count">
-            {action.kind === 'pull' ? '↓' : '↑'} {action.count}
+            {direction === 'both' ? `↓ ${action.count} ↑ ${status!.ahead}` : `${action.kind === 'pull' ? '↓' : '↑'} ${action.count}`}
           </span>
         )}
       </button>

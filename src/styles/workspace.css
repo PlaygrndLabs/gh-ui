@@ -111,6 +111,8 @@ a.ws-tab, .ws-tab { display: inline-flex; align-items: center; gap: 6px; padding
 .ws-tab[aria-current='page'], .ws-tab[aria-selected='true'] { font-weight: 600; color: var(--ws-text); border-bottom-color: var(--ws-accent); }
 .ws-tabs-end { display: flex; align-items: center; gap: 2px; margin-left: auto; padding-left: 8px; }
 .ws-refreshing svg, .ws-spin { animation: gd-spin 1s linear infinite; }
+/* Octicons has no up-and-down arrow: its side-by-side pair, turned upright. */
+.ws-sync-both { transform: rotate(90deg); }
 .ws-pill { padding: 0 6px; font-size: 11px; font-weight: 600; line-height: 17px; color: var(--ws-text); background: var(--ws-hover); border-radius: 9px; }
 .ws-mark { font-size: 12px; font-weight: 700; }
 .ws-ok { color: var(--ws-ok); }

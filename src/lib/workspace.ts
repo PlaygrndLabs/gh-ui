@@ -104,6 +104,13 @@ export function syncAction(location: RepoLocation, status: { branch?: string | n
   return { kind: 'fetch', count: 0 }
 }
 
+/** Which way the sync button's arrows point: up to push, down to pull, both when there's something to push and to pull. */
+export function syncDirection(kind: SyncKind, status: { ahead: number; behind: number } | undefined): 'up' | 'down' | 'both' | null {
+  if (kind === 'push') return 'up'
+  if (kind === 'pull') return status?.ahead ? 'both' : 'down'
+  return null
+}
+
 export function addGitHubRepo(list: GitHubRepoRef[], ref: GitHubRepoRef): GitHubRepoRef[] {
   return list.some((r) => githubKey(r) === githubKey(ref)) ? list : [...list, ref]
 }
