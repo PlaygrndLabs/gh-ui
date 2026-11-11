@@ -220,7 +220,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const [selection, setSelection] = useState<Selection>(null)
   const [draft] = useState(createCommitDraft)
   const [dialog, setDialog] = useState<'publish' | null>(null)
-  const [chosenTab, setChosenTab] = useState<{ branch: string; tab: BranchTab } | null>(null)
+  // The tab you chose, kept as you switch branches so the view doesn't jump.
+  const [chosenTab, setChosenTab] = useState<BranchTab | null>(null)
   const [notPushedOn, setNotPushedOn] = useState<string | null>(null)
   const stageError = useStageError(local.ops)
   const split = readPref('diffSplit', false)
@@ -280,8 +281,9 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const entries = isCurrent ? (status?.entries ?? []) : []
   const data = commits.data
   const shown = data?.history ?? []
-  // Until you choose a tab, this branch opens on whichever has something to do.
-  const tab: BranchTab = chosenTab && chosenTab.branch === branch?.name && !(chosenTab.tab === 'pull' && isDefault) ? chosenTab.tab : !repo.local ? 'history' : entries.length || stashes.data?.length ? 'changes' : data?.local.length || github || repo.remote ? 'history' : 'changes'
+  const tabShown: Record<BranchTab, boolean> = { changes: !!repo.local, history: true, pull: !!github && !isDefault, checks: !!github }
+  // Until you choose a tab, or when this branch lacks the one you chose, it opens on whichever has something to do.
+  const tab: BranchTab = chosenTab && tabShown[chosenTab] ? chosenTab : !repo.local ? 'history' : entries.length || stashes.data?.length ? 'changes' : data?.local.length || github || repo.remote ? 'history' : 'changes'
   // The pull request and checks tabs link elsewhere, so they leave the commit pane out.
   const commitTab = tab === 'changes' || tab === 'history'
   // With nowhere to push to, every commit is "not pushed", so saying so tells you nothing.
@@ -355,7 +357,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       draft.set({ summary: firstLine(subject) })
       setSelection(null)
       // The commit's files and message are back in Changes, so show them there.
-      if (branch) setChosenTab({ branch: branch.name, tab: 'changes' })
+      setChosenTab('changes')
     })
 
   // A detached HEAD has no branch to rewrite. Empty off the History tab, which ends a reorder on the way out.
@@ -368,10 +370,10 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
 
   const notPulled = data?.incoming.length ?? 0
   const tabs: Array<{ id: BranchTab; label: string; count?: number; show: boolean }> = [
-    { id: 'changes', label: 'Changes', count: entries.length, show: !!repo.local },
-    { id: 'history', label: 'History', show: true },
-    { id: 'pull', label: 'Pull request', show: !!github && !isDefault },
-    { id: 'checks', label: 'Checks', show: !!github },
+    { id: 'changes', label: 'Changes', count: entries.length, show: tabShown.changes },
+    { id: 'history', label: 'History', show: tabShown.history },
+    { id: 'pull', label: 'Pull request', show: tabShown.pull },
+    { id: 'checks', label: 'Checks', show: tabShown.checks },
   ]
 
   const hasChanges = isCurrent && entries.length > 0
@@ -399,7 +401,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
               className="ws-tab"
               aria-selected={tab === t.id}
               onClick={() => {
-                setChosenTab({ branch: branch.name, tab: t.id })
+                setChosenTab(t.id)
                 setSelection(null)
               }}
             >
