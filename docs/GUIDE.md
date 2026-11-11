@@ -24,9 +24,15 @@ The app checks GitHub for a newer release every 6 hours, without sending any tok
 
 ### Releases
 
-Work lands on `main`. Merging `main` into the `release` branch builds the macOS installers in GitHub Actions and publishes them as a new GitHub Release (`.github/workflows/release.yml`). A pull request from `main` into `release` runs the same build without publishing and shows the version it would release in the run's summary. To add a platform, add a row to the workflow's matrix.
+Work lands on `main`. Moving `release` up to `main` builds the macOS installers in GitHub Actions and publishes them as a new GitHub Release (`.github/workflows/release.yml`). A pull request from `main` into `release` runs the same build without publishing and shows the version it would release in the run's summary. To add a platform, add a row to the workflow's matrix.
 
-Use **Create a merge commit** on that pull request. A squash, a rebase or a direct commit to `release` fails the run without publishing, because it would give wrong versions; undo it on `release` and merge again.
+Once that pull request's build passes, fast-forward `release` instead of using the merge button:
+
+```bash
+git fetch origin && git push origin origin/main:release
+```
+
+GitHub marks the pull request merged, and `release` stays the same commit as `main`, so neither branch is ever ahead of the other. GitHub's merge button can't fast-forward: **Create a merge commit** still works, but leaves `release` one merge commit ahead of `main` each time. A squash, a rebase or a direct commit to `release` fails the run without publishing, because it would give wrong versions; undo it on `release` and release again.
 
 Versions are `vX.Y.Z` git tags, and a published version is never replaced. `scripts/next-version.mjs` bumps the latest tag from the commit messages since it:
 
