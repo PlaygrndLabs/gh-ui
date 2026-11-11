@@ -79,7 +79,8 @@ function BranchMenu({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
   const all = (repo.local ? local.branches.data : remote.data) ?? []
   const isPicked = (name: string | null): name is string => !!name && all.some((b) => b.name === name)
   // A folder's menu says what's checked out. Without a folder, picking a branch is all there is to do with it.
-  const current = local.status.data?.branch ?? (!repo.local && isPicked(picked) ? picked : info.data?.default_branch) ?? '…'
+  // A switch shows from the click: only the sync button waits for git.
+  const current = switchingTo ?? local.status.data?.branch ?? (!repo.local && isPicked(picked) ? picked : info.data?.default_branch) ?? '…'
   const shown = current === '…' ? null : current
   useEffect(() => {
     // Compared with the tab's, because moving to the repository's other address clears that.
@@ -122,8 +123,8 @@ function BranchMenu({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
     <>
       <GitBranchIcon />
       <span className="ws-seg-text">
-        <span className="ws-seg-key">{switchingTo ? 'Switching to' : repo.local ? 'Current branch' : current === info.data?.default_branch ? 'Default branch' : 'Branch'}</span>
-        <span className="ws-seg-value">{switchingTo ?? (current === 'HEAD' ? 'Detached HEAD' : current)}</span>
+        <span className="ws-seg-key">{repo.local ? 'Current branch' : current === info.data?.default_branch ? 'Default branch' : 'Branch'}</span>
+        <span className="ws-seg-value">{current === 'HEAD' ? 'Detached HEAD' : current}</span>
       </span>
     </>
   )
@@ -244,6 +245,8 @@ function LocationSeg({ repo }: { repo: WorkspaceRepo }) {
 
 function SyncButton({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLElement | null }) {
   const local = useLocalRepo(repo.local)
+  // Until git confirms a switch, the old branch's counts would be wrong, so this says it's checking instead.
+  const checking = !!useSwitchingTo(repo.local?.id)
   const action = syncAction(repo.location, local.status.data)
   const [fetched, setFetched] = useState<Date | null>(null)
   // The Location button offers these.
@@ -260,12 +263,12 @@ function SyncButton({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
       setFetched(new Date())
     })
   }
-  const syncing = local.op.isPending || local.unqueued.isPending
+  const syncing = local.op.isPending || local.unqueued.isPending || checking
   const status = local.status.data
   const direction = syncDirection(action.kind, status)
   // The arrows say which way the commits go; the circle is for fetching and for while it works.
   const Icon = syncing || !direction ? SyncIcon : direction === 'up' ? ArrowUpIcon : direction === 'down' ? ArrowDownIcon : ArrowSwitchIcon
-  const hint = syncing ? 'Working…' : action.kind === 'publish-branch' ? 'Only on this Mac' : fetched ? `Synced at ${fetched.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not synced this session'
+  const hint = checking ? 'Checking…' : syncing ? 'Working…' : action.kind === 'publish-branch' ? 'Only on this Mac' : fetched ? `Synced at ${fetched.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not synced this session'
   return (
     <>
       <button type="button" className="ws-seg ws-seg-sync" disabled={syncing} onClick={run}>

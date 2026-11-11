@@ -1139,7 +1139,13 @@ exports.steps = [
       r.toPaneEnd = Math.abs(box.getBoundingClientRect().bottom - pane.bottom)
       r.stashAbove = stash ? stash.getBoundingClientRect().bottom <= box.getBoundingClientRect().top + 1 : false
       r.filesFirst = main().querySelector('.ws-row-file').getBoundingClientRect().bottom <= stash.getBoundingClientRect().top + 1
-      r.fail = !(r.toPaneEnd < 2 && r.stashAbove && r.filesFirst)
+      // Clicking it shows what the stash holds beside the list, with Restore and Discard.
+      stash.click()
+      r.title = (await until(() => main().querySelector('.ws-stash-title'), 5000))?.textContent
+      r.stashFiles = (await until(() => main().querySelectorAll('.ws-details .ws-file-row').length && [...main().querySelectorAll('.ws-details .ws-file-row')].map((f) => f.textContent), 8000)) || []
+      r.buttons = [...main().querySelectorAll('.ws-stash-head button')].map((b) => b.textContent.trim())
+      stash.click()
+      r.fail = !(r.toPaneEnd < 2 && r.stashAbove && r.filesFirst && r.title === 'Stashed changes' && r.stashFiles.some((f) => f.includes('scratch.txt')) && r.buttons.join() === 'Discard,Restore')
       return r
     `,
     screenshot: 'commit-end',
