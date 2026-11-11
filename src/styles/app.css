@@ -866,7 +866,9 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 .boot-node, .boot-trunk { stroke: var(--fgColor-muted); }
 .boot-c, .boot-branch, .boot-head { stroke: var(--fgColor-accent); }
 .boot-node { transform-box: fill-box; transform-origin: center; }
-.boot-line { stroke-dasharray: 1; }
+/* The gap is longer than the line, so no dash begins at its far end while it is still hidden:
+   a zero-length dash there would paint its round cap as a stray dot. */
+.boot-line { stroke-dasharray: 1 2; }
 .boot-a, .boot-b, .boot-c, .boot-trunk, .boot-branch, .boot-head { animation-duration: var(--boot-time); animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); animation-iteration-count: infinite; }
 .boot-a { animation-name: boot-a; }
 .boot-b { animation-name: boot-b; }
