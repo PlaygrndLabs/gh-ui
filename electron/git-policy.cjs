@@ -71,6 +71,12 @@ const gitCommandEnv = (sub) => ({
 // One ref, or source:destination. No leading "+" (forces the update) and no leading ":" (deletes the remote branch).
 const REFSPEC = /^[^\s:+~^?*[\\-][^\s:~^?*[\\]*(:[^\s:~^?*[\\]+)?$/
 const STASH_FORMS = [['push', '-u'], ['pop']]
+// One stash, by its place in the list (pop and drop take nothing else) or, to read it, by its commit.
+const STASH_REF = /^stash@\{\d+\}$/
+const COMMIT_SHA = /^[0-9a-f]{40}$/
+const stashOneForm = (rest) =>
+  (rest.length === 2 && ['pop', 'drop'].includes(rest[0]) && STASH_REF.test(rest[1])) ||
+  (rest.length === 5 && rest[0] === 'show' && rest[1] === '-p' && rest[2] === '--include-untracked' && rest[3] === '--no-color' && COMMIT_SHA.test(rest[4]))
 
 function validateOptions(sub, rest) {
   const { flags = [], prefixes = [], valued = {}, args: kind, paths } = RULES[sub]
@@ -126,7 +132,7 @@ function validateGitArgs(args) {
   if (sub === 'branch' && rest[0] === '-m' && rest[1] === '--' && rest.length === 4) return
   if (sub === 'stash') {
     const listing = rest.length === 2 && rest[0] === 'list' && rest[1].startsWith('--format=')
-    if (!listing && !STASH_FORMS.some((form) => form.join('\0') === rest.join('\0'))) throw new Error('That `git stash` command is not allowed')
+    if (!listing && !stashOneForm(rest) && !STASH_FORMS.some((form) => form.join('\0') === rest.join('\0'))) throw new Error('That `git stash` command is not allowed')
     return
   }
   // Only this repository's commit identity; any other setting could make git run a program.

@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExterna
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
-import { ArrowDownIcon, ArrowUpIcon, CheckIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, UndoIcon, XIcon } from '@primer/octicons-react'
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, StackIcon, UndoIcon, XIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import type { FileDiff } from '../../lib/diff'
 import { changePaths, isStaged, isUnmerged, reorderableCommits, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
@@ -11,7 +11,7 @@ import { webUrl } from '../../lib/links'
 import { native, openExternal } from '../../lib/platform'
 import { firstLine, plural, shortSha } from '../../lib/format'
 import { readPref } from '../../lib/storage'
-import { useLocalRepo, useStageError, useStageIntents } from '../../lib/useLocalRepo'
+import { useLocalRepo, useStageError, useStageIntents, useSwitchingTo } from '../../lib/useLocalRepo'
 import { useRepoQuery } from '../../lib/repo'
 import { hostName, useRemoteBranches, type WorkspaceRepo } from '../../lib/workspace'
 import { CopyButton, Loading } from '../../components/Bits'
@@ -22,7 +22,7 @@ import { useTabBranch } from '../../lib/TabsProvider'
 import { useCommitMenu } from './CommitMenu'
 import { useCommitReorder, type GrabRow } from './CommitReorder'
 
-type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | { kind: 'range'; anchor: string; focus: string } | null
+type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | { kind: 'range'; anchor: string; focus: string } | { kind: 'stash' } | null
 
 function ChangeBadge({ e }: { e: StatusEntry }) {
   const code = isUnmerged(e) ? '!' : e.index === '?' ? 'U' : e.index !== ' ' ? e.index : e.worktree
@@ -144,8 +144,10 @@ function ChangesList({ local, draft, entries, selectedPath, branchName, onSelect
       {entries.map((e) => (
         <ChangeRow key={e.path} entry={e} staged={stagedOf(e)} selected={selectedPath === e.path} onToggle={onToggle} onSelect={onSelect} />
       ))}
-      {beforeCommit}
-      <CommitBox local={local} draft={draft} branchName={branchName} stagedCount={stagedCount} conflictCount={conflictCount} onCommitted={onCommitted} />
+      <div className="ws-commit-foot">
+        {beforeCommit}
+        <CommitBox local={local} draft={draft} branchName={branchName} stagedCount={stagedCount} conflictCount={conflictCount} onCommitted={onCommitted} />
+      </div>
     </>
   )
 }
@@ -242,8 +244,11 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const branches = (repo.local ? local.branches.data : remoteBranches.data) ?? []
   const status = local.status.data
   // The top menu chooses: in a folder by checking out, without one by picking.
-  const branch = (repo.local ? undefined : branches.find((b) => b.name === picked)) ?? branches.find((b) => b.current) ?? branches[0] ?? null
-  const isCurrent = !!branch?.current
+  // A branch being switched to is shown from the click: its history and the uncommitted changes are all on this Mac.
+  const switchingTo = useSwitchingTo(repo.local?.id)
+  const target = switchingTo ? branches.find((b) => b.name === switchingTo) : undefined
+  const branch = target ?? (repo.local ? undefined : branches.find((b) => b.name === picked)) ?? branches.find((b) => b.current) ?? branches[0] ?? null
+  const isCurrent = !!target || !!branch?.current
   const info = useRepoQuery(github?.owner ?? '', github?.repo ?? '', !!github)
   // Pull requests merge into the default branch, so it never has one of its own.
   const isDefault = !!branch && branch.name === info.data?.default_branch
@@ -275,15 +280,17 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const stashes = useQuery({
     queryKey: ['local-stash', repo.local?.id ?? ''],
     enabled: !!local.git,
-    queryFn: () => local.git!.stashList(),
+    queryFn: () => local.git!.stashes(),
   })
 
   const entries = isCurrent ? (status?.entries ?? []) : []
+  // As in GitHub Desktop, a stash belongs to the branch it was made on, and shows only there: the newest one.
+  const branchStash = (isCurrent && stashes.data?.find((s) => s.branch === branch?.name)) || null
   const data = commits.data
   const shown = data?.history ?? []
   const tabShown: Record<BranchTab, boolean> = { changes: !!repo.local, history: true, pull: !!github && !isDefault, checks: !!github }
   // Until you choose a tab, or when this branch lacks the one you chose, it opens on whichever has something to do.
-  const tab: BranchTab = chosenTab && tabShown[chosenTab] ? chosenTab : !repo.local ? 'history' : entries.length || stashes.data?.length ? 'changes' : data?.local.length || github || repo.remote ? 'history' : 'changes'
+  const tab: BranchTab = chosenTab && tabShown[chosenTab] ? chosenTab : !repo.local ? 'history' : entries.length || branchStash ? 'changes' : data?.local.length || github || repo.remote ? 'history' : 'changes'
   // The pull request and checks tabs link elsewhere, so they leave the commit pane out.
   const commitTab = tab === 'changes' || tab === 'history'
   // With nowhere to push to, every commit is "not pushed", so saying so tells you nothing.
@@ -292,7 +299,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   // Pushing the last one empties the filter, so it lets go by itself.
   const onlyNotPushed = notPushedOn === branch?.name && unpushed.length > 0
   const tabCommits = tab === 'history' && onlyNotPushed ? unpushed : commitTab ? shown : []
-  const entry = tab === 'changes' ? (entries.find((e) => selection?.kind === 'file' && e.path === selection.path) ?? entries[0] ?? null) : null
+  const showStash = tab === 'changes' && selection?.kind === 'stash' && !!branchStash
+  const entry = tab === 'changes' && !showStash ? (entries.find((e) => selection?.kind === 'file' && e.path === selection.path) ?? entries[0] ?? null) : null
   newestShown.current = tabCommits[0]?.sha
   // Always the commits between the two clicks, so the combined change never has gaps in it.
   const rangeEnds = selection?.kind === 'range' && tab === 'history' ? [tabCommits.findIndex((c) => c.sha === selection.anchor), tabCommits.findIndex((c) => c.sha === selection.focus)] : []
@@ -301,7 +309,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const newest = inRange?.[0]
   const oldest = inRange?.[inRange.length - 1]
   const onlyCommit = selection?.kind === 'commit' ? selection.sha : selection?.kind === 'range' ? selection.focus : null
-  const commit = entry || inRange ? null : (tabCommits.find((c) => c.sha === onlyCommit) ?? tabCommits[0] ?? null)
+  const commit = entry || inRange || showStash ? null : (tabCommits.find((c) => c.sha === onlyCommit) ?? tabCommits[0] ?? null)
 
   const diff = useQuery({
     // The path alone: staging a file doesn't change what it differs by, so a click has no reason to reload this.
@@ -311,6 +319,11 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     // What's on screen is what Discard would throw away, so edits made in another program show up here.
     staleTime: 0,
     refetchInterval: 4000,
+  })
+  const stashFiles = useQuery({
+    queryKey: ['local-stash', repo.local?.id ?? '', 'files', branchStash?.sha],
+    enabled: showStash && !!local.git,
+    queryFn: () => local.git!.stashFiles(branchStash!.sha),
   })
   const shownCommit = useQuery({
     queryKey: repo.local ? ['local-show', repo.local.id, commit?.sha] : [key, 'workspace-commit', github?.owner, github?.repo, commit?.sha],
@@ -377,16 +390,25 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   ]
 
   const hasChanges = isCurrent && entries.length > 0
-  const stashRow = !!stashes.data?.length && (
-    <div className="ws-row ws-stash-row">
-      <span className="ws-row-main">
-        {stashes.data.length} stashed change{stashes.data.length === 1 ? '' : 's'}: {stashes.data[0]}
-      </span>
-      <Button size="small" onClick={() => local.op.mutate(() => local.git!.stashPop())}>
-        Restore
-      </Button>
-    </div>
+  const stashRow = branchStash && (
+    <button type="button" className={`ws-row ws-stash-row ${showStash ? 'is-selected' : ''}`} aria-pressed={showStash} onClick={() => setSelection(showStash ? null : { kind: 'stash' })}>
+      <StackIcon className="ws-stash-icon" />
+      <span className="ws-row-main">Stashed Changes</span>
+      <ChevronRightIcon />
+    </button>
   )
+  const restoreStash = (sha: string) =>
+    local.op.mutate(async () => {
+      await local.git!.restoreStash(sha)
+      setSelection(null)
+    })
+  const discardStash = async (sha: string) => {
+    if (await confirm({ title: 'Discard stashed changes?', content: 'The changes in this stash will be lost. This can’t be undone.', confirmButtonType: 'danger', confirmButtonContent: 'Discard' }))
+      local.op.mutate(async () => {
+        await local.git!.dropStash(sha)
+        setSelection(null)
+      })
+  }
 
   const timeline = branch && (
     <div className="ws-branch-timeline">
@@ -425,8 +447,14 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       <div className="ws-scroll" role="tabpanel">
         {tab === 'changes' && (
           <Section title="Changes" flush fill>
-            {hasChanges ? <ChangesList local={local} draft={draft} entries={entries} selectedPath={entry?.path} branchName={branch.name} onSelect={selectFile} onCommitted={clearSelection} beforeCommit={stashRow} /> : stashRow}
-            {isCurrent && !entries.length && <p className="ws-note">No uncommitted changes.</p>}
+            {hasChanges ? (
+              <ChangesList local={local} draft={draft} entries={entries} selectedPath={entry?.path} branchName={branch.name} onSelect={selectFile} onCommitted={clearSelection} beforeCommit={stashRow} />
+            ) : (
+              <>
+                {isCurrent && <p className="ws-note">No uncommitted changes.</p>}
+                {stashRow}
+              </>
+            )}
           </Section>
         )}
 
@@ -523,7 +551,38 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     </div>
   )
 
-  const details = entry ? (
+  const details = showStash && branchStash ? (
+    <div className="ws-details">
+      <div className="ws-details-head ws-stash-head">
+        <div className="ws-details-title">
+          <div className="ws-stash-title">Stashed changes</div>
+          <div className="ws-stash-actions">
+            <Button size="small" disabled={local.op.isPending} onClick={() => void discardStash(branchStash.sha)}>
+              Discard
+            </Button>
+            <Button size="small" variant="primary" loading={local.op.isPending} onClick={() => restoreStash(branchStash.sha)}>
+              Restore
+            </Button>
+            <span className="ws-row-sub">
+              <strong>Restore</strong> will move your stashed files to the Changes list.
+            </span>
+          </div>
+        </div>
+      </div>
+      {stashFiles.isLoading ? (
+        <div className="ws-scroll ws-diff">
+          <Loading />
+        </div>
+      ) : stashFiles.data?.length ? (
+        <CommitFiles key={branchStash.sha} files={stashFiles.data} split={split} message="" />
+      ) : (
+        <div className="ws-scroll ws-diff">
+          {stashFiles.data && <p className="ws-note">This stash has no file changes.</p>}
+          {stashFiles.error ? <div className="error-box">{errorMessage(stashFiles.error)}</div> : null}
+        </div>
+      )}
+    </div>
+  ) : entry ? (
     <div className="ws-details">
       <div className="ws-details-head">
         <span className="ws-details-title text-mono">{entry.path}</span>
