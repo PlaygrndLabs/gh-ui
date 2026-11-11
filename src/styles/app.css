@@ -1987,3 +1987,15 @@ a.hook-url:hover { color: var(--fgColor-accent); }
   .actions-config-row.variables { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 72px; }
   .actions-config-row > :nth-last-child(2) { display: none; }
 }
+
+/* Find in page (src/components/FindBar.tsx) */
+.find-bar { position: fixed; z-index: 90; width: 400px; max-width: calc(100vw - 32px); padding: 6px; background: var(--overlay-bgColor, var(--bgColor-default)); border: 1px solid var(--borderColor-default); border-radius: 8px; box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(0, 0, 0, 0.2)); }
+.find-bar-row { display: flex; align-items: center; gap: 2px; }
+.find-bar-input { flex: 1; min-width: 0; margin-right: 4px; }
+.find-bar-count { font-size: 12px; color: var(--fgColor-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.find-bar-toggle { height: 28px; min-width: 28px; padding: 0 6px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--fgColor-muted); font: 600 12px var(--fontStack-system); cursor: pointer; }
+.find-bar-toggle:hover { background: var(--control-transparent-bgColor-hover, var(--bgColor-neutral-muted)); }
+.find-bar-toggle.is-on, .find-bar-toggle-on { background: var(--bgColor-accent-muted); border-color: var(--borderColor-accent-muted, transparent); color: var(--fgColor-accent); }
+.find-bar-note { padding: 6px 4px 2px; font-size: 12px; color: var(--fgColor-muted); }
+::highlight(gh-find) { background-color: var(--bgColor-attention-muted); }
+::highlight(gh-find-current) { background-color: #ff9632; color: #1f2328; }

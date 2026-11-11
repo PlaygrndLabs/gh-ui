@@ -475,7 +475,24 @@ function buildMenu() {
         ...(isMac ? [] : [{ type: 'separator' }, { role: 'quit' }]),
       ],
     },
-    { role: 'editMenu' },
+    {
+      label: 'Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        ...(isMac ? [{ role: 'pasteAndMatchStyle' }, { role: 'delete' }, { role: 'selectAll' }] : [{ role: 'delete' }, { type: 'separator' }, { role: 'selectAll' }]),
+        { type: 'separator' },
+        // The page's own find (src/components/FindBar.tsx): it also searches the parts of a long page that aren't drawn.
+        { label: 'Find…', accelerator: 'CmdOrCtrl+F', click: () => sendMenu('find') },
+        { label: 'Find Next', accelerator: 'CmdOrCtrl+G', click: () => sendMenu('find-next') },
+        { label: 'Find Previous', accelerator: 'CmdOrCtrl+Shift+G', click: () => sendMenu('find-previous') },
+        ...(isMac ? [{ type: 'separator' }, { label: 'Speech', submenu: [{ role: 'startSpeaking' }, { role: 'stopSpeaking' }] }] : []),
+      ],
+    },
     {
       label: 'View',
       submenu: [
