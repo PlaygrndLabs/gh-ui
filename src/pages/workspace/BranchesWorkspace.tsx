@@ -11,7 +11,7 @@ import { webUrl } from '../../lib/links'
 import { native, openExternal } from '../../lib/platform'
 import { firstLine, plural, shortSha } from '../../lib/format'
 import { readPref } from '../../lib/storage'
-import { useLocalRepo, useStageError, useStageIntents } from '../../lib/useLocalRepo'
+import { useLocalRepo, useStageError, useStageIntents, useSwitchingTo } from '../../lib/useLocalRepo'
 import { useRepoQuery } from '../../lib/repo'
 import { hostName, useRemoteBranches, type WorkspaceRepo } from '../../lib/workspace'
 import { CopyButton, Loading } from '../../components/Bits'
@@ -241,8 +241,11 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const branches = (repo.local ? local.branches.data : remoteBranches.data) ?? []
   const status = local.status.data
   // The top menu chooses: in a folder by checking out, without one by picking.
-  const branch = (repo.local ? undefined : branches.find((b) => b.name === picked)) ?? branches.find((b) => b.current) ?? branches[0] ?? null
-  const isCurrent = !!branch?.current
+  // A branch being switched to is shown from the click: its history and the uncommitted changes are all on this Mac.
+  const switchingTo = useSwitchingTo(repo.local?.id)
+  const target = switchingTo ? branches.find((b) => b.name === switchingTo) : undefined
+  const branch = target ?? (repo.local ? undefined : branches.find((b) => b.name === picked)) ?? branches.find((b) => b.current) ?? branches[0] ?? null
+  const isCurrent = !!target || !!branch?.current
   const info = useRepoQuery(github?.owner ?? '', github?.repo ?? '', !!github)
   // Pull requests merge into the default branch, so it never has one of its own.
   const isDefault = !!branch && branch.name === info.data?.default_branch

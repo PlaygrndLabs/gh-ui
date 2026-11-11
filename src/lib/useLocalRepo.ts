@@ -28,7 +28,10 @@ function repoOpsFor(id: string, qc: QueryClient) {
   return ops
 }
 
-/** The branch each folder is being switched to, so the menu can say so before git has answered. */
+/**
+ * The branch each folder is being switched to. Everything read from this Mac shows it from the click on; what depends
+ * on the remote (how far ahead or behind it is) waits for git's own answer, and says it's loading until then.
+ */
 const switching = new Map<string, string>()
 const switchListeners = new Set<() => void>()
 function setSwitching(id: string, name: string | null) {
@@ -41,7 +44,7 @@ const subscribeSwitching = (listener: () => void) => {
   return () => void switchListeners.delete(listener)
 }
 
-/** The branch a switch in this folder is heading to, while it's under way. */
+/** The branch a switch in this folder is heading to, until git has confirmed it. */
 export function useSwitchingTo(id: string | undefined) {
   return useSyncExternalStore(subscribeSwitching, () => (id ? (switching.get(id) ?? null) : null))
 }
@@ -133,7 +136,7 @@ export function useLocalRepo(repo: LocalRepo | null) {
           // Asked outside the queue: an open dialog mustn't stop everything else in this folder.
           const ok = await confirm({
             title: `Stash your changes and switch to ${name}?`,
-            content: 'Your uncommitted changes conflict with that branch. They’ll be saved as a stash, and you can restore them from Uncommitted.',
+            content: 'Your uncommitted changes conflict with that branch. They’ll be saved as a stash, and you can restore them from Stashed Changes.',
             confirmButtonContent: 'Stash and switch',
           })
           if (!ok) return
@@ -144,6 +147,8 @@ export function useLocalRepo(repo: LocalRepo | null) {
           })
         }
         await showSwitched(name)
+        // The new branch's upstream and how far it is from it come with this read.
+        await qc.refetchQueries({ queryKey: ['local-status', id], exact: true })
       } finally {
         setSwitching(id, null)
       }
