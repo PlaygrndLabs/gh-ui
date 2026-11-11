@@ -42,6 +42,12 @@ export function BranchPicker({ owner, repo, value, onChange, prefix, includeTags
   const [tab, setTab] = useState<'branch' | 'tag' | 'commit'>('branch')
   const inputRef = useRef<HTMLInputElement>(null)
   const branches = useBranches(owner, repo)
+  const { refetch: refetchBranches, isStale: branchesStale } = branches
+  useEffect(() => {
+    // Opening the picker is where you'd look for a branch just pushed.
+    if (open && branchesStale) void refetchBranches()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
   const isSha = /^[0-9a-f]{40}$/i.test(value)
   // A ref that is not a branch is probably a tag: load tags up front so the icon, label and first tab are right.
   const notABranch = !!branches.data && !branches.data.some((b) => b.name === value)

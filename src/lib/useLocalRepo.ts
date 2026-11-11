@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useConfirm } from '@primer/react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { errorMessage, useGitHub } from './github'
 import { localGit, type BranchState, type RepoState, type StatusEntry } from './git'
 import type { LocalRepo } from './platform'
 import { createRepoOps, type RepoOps, type StageIntents } from './repoOps'
+import { createFetchTracker } from './fetchTracker'
 
 const opsByRepo = new Map<string, RepoOps>()
 
@@ -49,6 +50,40 @@ export function useSwitchingTo(id: string | undefined) {
   return useSyncExternalStore(subscribeSwitching, () => (id ? (switching.get(id) ?? null) : null))
 }
 
+/** Every fetch in a folder goes through this, the ones you ask for and the ones the app makes by itself. */
+const fetches = createFetchTracker()
+
+/** How old what a folder knows of its remote may get before the app fetches by itself, while its window is in front. */
+export const AUTO_FETCH_AFTER = 5 * 60_000
+/** Opening the branch menu is where you look for a branch just pushed, so it asks again sooner. */
+export const FETCH_ON_OPEN_AFTER = 30_000
+
+/** When the last fetch (or pull) in this folder worked, this session. */
+export function useLastFetched(id: string | undefined) {
+  return useSyncExternalStore(fetches.subscribe, () => (id ? fetches.lastSucceeded(id) : null))
+}
+
+/**
+ * Keeps a folder's remote branches current as GitHub Desktop does: a branch pushed from elsewhere is only in
+ * `refs/remotes` after a fetch. Fetches on opening the folder, every few minutes while the window is in front, and on
+ * coming back to it. Pass null for a folder with no remote.
+ */
+export function useAutoFetch(fetchIfStale: ((maxAge: number) => Promise<void>) | null) {
+  useEffect(() => {
+    if (!fetchIfStale) return
+    const check = () => {
+      if (document.visibilityState === 'visible') void fetchIfStale(AUTO_FETCH_AFTER)
+    }
+    check()
+    const timer = setInterval(check, 60_000)
+    window.addEventListener('focus', check)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', check)
+    }
+  }, [fetchIfStale])
+}
+
 const NO_INTENTS: StageIntents = new Map()
 const noSubscribe = () => () => {}
 
@@ -68,7 +103,21 @@ export function useLocalRepo(repo: LocalRepo | null) {
   const confirm = useConfirm()
   const [error, setError] = useState<string | null>(null)
   const id = repo?.id ?? ''
-  const git = useMemo(() => (id ? localGit(id, { token: account.token, host: account.host }) : null), [id, account.token, account.host])
+  const raw = useMemo(() => (id ? localGit(id, { token: account.token, host: account.host }) : null), [id, account.token, account.host])
+  // A fetch you ask for joins one the app is already making, and either counts as the folder having heard from its remote.
+  const git = useMemo(
+    () =>
+      raw && {
+        ...raw,
+        fetch: () => fetches.run(id, raw.fetch),
+        pull: async () => {
+          const out = await raw.pull()
+          fetches.mark(id)
+          return out
+        },
+      },
+    [raw, id],
+  )
   const ops = useMemo(() => (id ? repoOpsFor(id, qc) : null), [id, qc])
 
   const status = useQuery({
@@ -109,6 +158,16 @@ export function useLocalRepo(repo: LocalRepo | null) {
   const op = useMutation({ mutationFn: async (fn: () => Promise<unknown>) => ops!.run(fn), ...settled })
   /** For what only talks to the remote, or queues its own steps: a slow push shouldn't hold up staging. */
   const unqueued = useMutation({ mutationFn: async (fn: () => Promise<unknown>) => fn(), ...settled })
+
+  /** A fetch nobody asked for: no error banner when it fails (offline, signed out), and none at all if one ran lately. */
+  const fetchIfStale = useCallback(
+    async (maxAge: number) => {
+      if (!raw || !(await fetches.fetchIfStale(id, maxAge, raw.fetch))) return
+      // What a fetch changes: the remote's branches and how far each branch here is from them.
+      for (const key of ['local-branch-states', 'local-status', 'local-log']) void qc.invalidateQueries({ queryKey: [key, id] })
+    },
+    [raw, id, qc],
+  )
 
   const setStaged = useCallback((entries: StatusEntry[], staged: boolean) => ops?.setStaged(entries, staged), [ops])
 
@@ -159,5 +218,5 @@ export function useLocalRepo(repo: LocalRepo | null) {
       }
     })
 
-  return { git, ops, status, branches, operation, op, unqueued, setStaged, switchBranch, refresh, error, clearError: () => setError(null) }
+  return { git, ops, status, branches, operation, op, unqueued, setStaged, switchBranch, refresh, fetchIfStale, error, clearError: () => setError(null) }
 }

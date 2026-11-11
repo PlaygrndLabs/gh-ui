@@ -10,7 +10,7 @@ import { plural } from '../lib/format'
 import type { BranchState } from '../lib/git'
 import { native } from '../lib/platform'
 import { useRepoCounts, useRepoQuery } from '../lib/repo'
-import { useLocalRepo, useSwitchingTo } from '../lib/useLocalRepo'
+import { FETCH_ON_OPEN_AFTER, useAutoFetch, useLastFetched, useLocalRepo, useSwitchingTo } from '../lib/useLocalRepo'
 import { useTabBranch, useTabTitle } from '../lib/TabsProvider'
 import { hostName, repoWhere, syncAction, syncDirection, useRemoteBranches, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
 import { repoKeyFromUrl } from '../lib/tabs'
@@ -75,6 +75,18 @@ function BranchMenu({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
   const [open, setOpen] = useState(false)
   const { anchor, frame } = useToolbarPanel(open)
   const remote = useRemoteBranches(repo)
+  // A branch pushed from elsewhere is only in a folder after a fetch, so the folder fetches by itself.
+  const fetchesHere = !!repo.local && !!repo.remote
+  useAutoFetch(fetchesHere ? local.fetchIfStale : null)
+  const { fetchIfStale } = local
+  const { refetch: refetchRemote, isStale: remoteStale } = remote
+  useEffect(() => {
+    // Opening the menu is where you'd look for a branch just pushed.
+    if (!open) return
+    if (fetchesHere) void fetchIfStale(FETCH_ON_OPEN_AFTER)
+    else if (!repo.local && remoteStale) void refetchRemote()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
   const { picked, setPicked, showBranch, shownBranch } = useTabBranch()
   // Git only knows the branches its last fetch brought, and a clone set to fetch one branch never learns of the others,
   // so the remote is asked for its list whenever the menu opens.
@@ -269,6 +281,9 @@ function SyncButton({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
   const checking = !!useSwitchingTo(repo.local?.id)
   const action = syncAction(repo.location, local.status.data)
   const [fetched, setFetched] = useState<Date | null>(null)
+  // The app's own fetches count too.
+  const lastFetched = useLastFetched(repo.local?.id)
+  const synced = Math.max(fetched?.getTime() ?? 0, lastFetched ?? 0)
   // The Location button offers these.
   if (action?.kind === 'clone' || action?.kind === 'publish-repo') return null
   if (!action) return <div className="ws-seg ws-seg-sync" />
@@ -288,7 +303,7 @@ function SyncButton({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
   const direction = syncDirection(action.kind, status)
   // The arrows say which way the commits go; the circle is for fetching and for while it works.
   const Icon = syncing || !direction ? SyncIcon : direction === 'up' ? ArrowUpIcon : direction === 'down' ? ArrowDownIcon : ArrowSwitchIcon
-  const hint = checking ? 'Checking…' : syncing ? 'Working…' : action.kind === 'publish-branch' ? 'Only on this Mac' : fetched ? `Synced at ${fetched.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not synced this session'
+  const hint = checking ? 'Checking…' : syncing ? 'Working…' : action.kind === 'publish-branch' ? 'Only on this Mac' : synced ? `Synced at ${new Date(synced).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : 'Not synced this session'
   return (
     <>
       <button type="button" className="ws-seg ws-seg-sync" disabled={syncing} onClick={run}>
@@ -397,13 +412,20 @@ function Search({ repo }: { repo: WorkspaceRepo | null }) {
   )
 }
 
-/** Refetches what the page shows, for when you don't want to wait for it to check again. */
-/** Labelled like the buttons beside it: an icon on its own, out at the edge, was easy to miss. */
-function RefreshButton() {
+/**
+ * Refetches what the page shows, for when you don't want to wait for it to check again. A folder fetches from its remote too.
+ * Labelled like the buttons beside it: an icon on its own, out at the edge, was easy to miss.
+ */
+function RefreshButton({ repo }: { repo: WorkspaceRepo }) {
   const qc = useQueryClient()
+  const local = useLocalRepo(repo.local)
   const fetching = useIsFetching() > 0
+  const refresh = () => {
+    void qc.invalidateQueries({ type: 'active' })
+    if (repo.local && repo.remote) void local.fetchIfStale(0)
+  }
   return (
-    <button type="button" className={`ws-tab${fetching ? ' ws-refreshing' : ''}`} title="Reload what this page shows" onClick={() => void qc.invalidateQueries({ type: 'active' })}>
+    <button type="button" className={`ws-tab${fetching ? ' ws-refreshing' : ''}`} title="Reload what this page shows" onClick={refresh}>
       <SyncIcon size={14} />
       Refresh
     </button>
@@ -498,7 +520,7 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
         ))}
       <div className="ws-tabs-end">
         {/* Copy link and Open in browser are in the tab's right-click menu. */}
-        <RefreshButton />
+        <RefreshButton repo={repo} />
         {repo.local && FOLDER_SECTIONS.has(section) && (
           <>
             <button type="button" className="ws-tab" onClick={() => void native!.openInEditor(repo.local!.id)}>
