@@ -10,7 +10,7 @@ import { plural } from '../lib/format'
 import type { BranchState } from '../lib/git'
 import { native } from '../lib/platform'
 import { useRepoCounts, useRepoQuery } from '../lib/repo'
-import { useLocalRepo } from '../lib/useLocalRepo'
+import { useLocalRepo, useSwitchingTo } from '../lib/useLocalRepo'
 import { useTabBranch, useTabTitle } from '../lib/TabsProvider'
 import { hostName, repoWhere, syncAction, syncDirection, useRemoteBranches, useWorkspaceRepos, workspacePath, type SyncKind, type WorkspaceRepo } from '../lib/workspace'
 import { repoKeyFromUrl } from '../lib/tabs'
@@ -68,6 +68,7 @@ function useCurrentRepo(): WorkspaceRepo | null {
 
 function BranchMenu({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLElement | null }) {
   const local = useLocalRepo(repo.local)
+  const switchingTo = useSwitchingTo(repo.local?.id)
   const actions = useBranchActions(repo, local)
   const info = useRepoQuery(repo.github?.owner ?? '', repo.github?.repo ?? '', !repo.local && !!repo.github)
   const [filter, setFilter] = useState('')
@@ -121,8 +122,8 @@ function BranchMenu({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
     <>
       <GitBranchIcon />
       <span className="ws-seg-text">
-        <span className="ws-seg-key">{repo.local ? 'Current branch' : current === info.data?.default_branch ? 'Default branch' : 'Branch'}</span>
-        <span className="ws-seg-value">{current === 'HEAD' ? 'Detached HEAD' : current}</span>
+        <span className="ws-seg-key">{switchingTo ? 'Switching to' : repo.local ? 'Current branch' : current === info.data?.default_branch ? 'Default branch' : 'Branch'}</span>
+        <span className="ws-seg-value">{switchingTo ?? (current === 'HEAD' ? 'Detached HEAD' : current)}</span>
       </span>
     </>
   )
