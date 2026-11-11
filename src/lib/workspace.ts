@@ -153,9 +153,17 @@ export function useRemoteBranches(repo: WorkspaceRepo) {
     queryKey: [key, 'workspace-branches', github?.owner, github?.repo],
     enabled: !repo.local && !repo.pending && !!github,
     queryFn: async () => {
-      const [info, list] = await Promise.all([octokit.rest.repos.get({ owner: github!.owner, repo: github!.repo }), octokit.rest.repos.listBranches({ owner: github!.owner, repo: github!.repo, per_page: 100 })])
-      const toState = (b: (typeof list.data)[number]): BranchState => ({ name: b.name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha: b.commit.sha, date: '', worktree: null })
-      return list.data.map(toState).sort((a, b) => Number(b.name === info.data.default_branch) - Number(a.name === info.data.default_branch))
+      // Every page, not just the first 100: a repository with many branches would otherwise hide most of them from the menu's filter.
+      const listAll = async () => {
+        const out: BranchState[] = []
+        for await (const page of octokit.paginate.iterator(octokit.rest.repos.listBranches, { owner: github!.owner, repo: github!.repo, per_page: 100 })) {
+          for (const b of page.data) out.push({ name: b.name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha: b.commit.sha, date: '', worktree: null })
+          if (out.length >= 5000) break
+        }
+        return out
+      }
+      const [info, list] = await Promise.all([octokit.rest.repos.get({ owner: github!.owner, repo: github!.repo }), listAll()])
+      return list.sort((a, b) => Number(b.name === info.data.default_branch) - Number(a.name === info.data.default_branch))
     },
   })
 }
