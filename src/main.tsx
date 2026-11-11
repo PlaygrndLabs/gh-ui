@@ -19,6 +19,7 @@ import './styles/app.css'
 import './styles/workspace.css'
 import App from './App'
 import { NativeApp } from './NativeApp'
+import { FindBar } from './components/FindBar'
 import { AuthProvider } from './lib/auth'
 import { AppThemeProvider } from './lib/theme'
 import { native } from './lib/platform'
@@ -65,6 +66,7 @@ createRoot(document.getElementById('root')!).render(
               <App />
             </BrowserRouter>
           )}
+          <FindBar />
         </AuthProvider>
       </AppThemeProvider>
     </QueryClientProvider>

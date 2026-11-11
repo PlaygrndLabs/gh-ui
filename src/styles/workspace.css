@@ -174,9 +174,14 @@ ul:is([role='menu'], [role='listbox']) { padding-block: 0; }
 .ws-section-pad { padding: 0 12px 12px; }
 /* The commit box stays at the end of the pane while the files above it scroll. */
 .ws-section-fill { display: flex; flex-direction: column; min-height: 100%; }
-.ws-section-fill .ws-commit { position: sticky; bottom: 0; margin-top: auto; background: var(--ws-bg); }
-.ws-section-fill .ws-stash-row { margin-top: auto; border-top: 1px solid var(--ws-line); }
-.ws-section-fill .ws-stash-row + .ws-commit { margin-top: 0; }
+.ws-section-fill .ws-commit-foot { position: sticky; bottom: 0; margin-top: auto; background: var(--ws-bg); }
+/* With nothing to commit, the stash still sits at the bottom, where the commit box would start. */
+.ws-section-fill > .ws-stash-row { margin-top: auto; }
+.ws-stash-row { min-height: 36px; font-weight: 500; border-top: 1px solid var(--ws-line); cursor: pointer; }
+.ws-stash-icon { flex: none; color: var(--fgColor-attention); }
+.ws-stash-title { margin-bottom: 8px; font-size: 20px; font-weight: 600; }
+.ws-stash-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ws-stash-head { padding-block: 14px; }
 .ws-history-filter { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; font: inherit; font-size: 12px; font-weight: 500; color: var(--ws-muted); background: none; border: 1px solid var(--ws-line); border-radius: 14px; cursor: pointer; }
 .ws-history-filter:hover { color: var(--ws-text); background: var(--ws-hover); }
 .ws-history-filter:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: 1px; }

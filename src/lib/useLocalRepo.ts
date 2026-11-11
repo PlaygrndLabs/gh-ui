@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState, useSyncExternalStore } from 'react'
 import { useConfirm } from '@primer/react'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { errorMessage, useGitHub } from './github'
-import { localGit, type StatusEntry } from './git'
+import { localGit, type BranchState, type RepoState, type StatusEntry } from './git'
 import type { LocalRepo } from './platform'
 import { createRepoOps, type RepoOps, type StageIntents } from './repoOps'
 
@@ -26,6 +26,27 @@ function repoOpsFor(id: string, qc: QueryClient) {
     opsByRepo.set(id, ops)
   }
   return ops
+}
+
+/**
+ * The branch each folder is being switched to. Everything read from this Mac shows it from the click on; what depends
+ * on the remote (how far ahead or behind it is) waits for git's own answer, and says it's loading until then.
+ */
+const switching = new Map<string, string>()
+const switchListeners = new Set<() => void>()
+function setSwitching(id: string, name: string | null) {
+  if (name) switching.set(id, name)
+  else switching.delete(id)
+  switchListeners.forEach((listener) => listener())
+}
+const subscribeSwitching = (listener: () => void) => {
+  switchListeners.add(listener)
+  return () => void switchListeners.delete(listener)
+}
+
+/** The branch a switch in this folder is heading to, until git has confirmed it. */
+export function useSwitchingTo(id: string | undefined) {
+  return useSyncExternalStore(subscribeSwitching, () => (id ? (switching.get(id) ?? null) : null))
 }
 
 const NO_INTENTS: StageIntents = new Map()
@@ -90,24 +111,46 @@ export function useLocalRepo(repo: LocalRepo | null) {
 
   const setStaged = useCallback((entries: StatusEntry[], staged: boolean) => ops?.setStaged(entries, staged), [ops])
 
+  /**
+   * Puts the branch git just switched to on screen straight away. The checks that confirm it can take a while in a
+   * folder other programs are busy in, and the menu and the page would otherwise catch up at different times.
+   */
+  const showSwitched = async (name: string) => {
+    await Promise.all([qc.cancelQueries({ queryKey: ['local-status', id] }), qc.cancelQueries({ queryKey: ['local-branch-states', id] })])
+    const known = qc.getQueryData<BranchState[]>(['local-branch-states', id])?.find((b) => b.name === name)
+    qc.setQueryData<RepoState>(['local-status', id], (s) => s && { ...s, branch: name, upstream: known?.upstream ?? null, ahead: known?.ahead ?? 0, behind: known?.behind ?? 0 })
+    qc.setQueryData<BranchState[]>(['local-branch-states', id], (list) => list?.map((b) => (b.current === (b.name === name) ? b : { ...b, current: b.name === name })))
+  }
+
   /** Git refuses a switch that would overwrite uncommitted changes, so that one offers to stash them first. */
   const switchBranch = (name: string) =>
     unqueued.mutate(async () => {
+      setSwitching(id, name)
       try {
-        await ops!.run(() => git!.switchTo(name))
-      } catch (e) {
-        if (!/overwritten|commit your changes|stash them/i.test(errorMessage(e))) throw e
-        // Asked outside the queue: an open dialog mustn't stop everything else in this folder.
-        const ok = await confirm({
-          title: `Stash your changes and switch to ${name}?`,
-          content: 'Your uncommitted changes conflict with that branch. They’ll be saved as a stash, and you can restore them from Uncommitted.',
-          confirmButtonContent: 'Stash and switch',
-        })
-        if (!ok) return
-        await ops!.run(async () => {
-          await git!.stash()
-          await git!.switchTo(name)
-        })
+        try {
+          await ops!.run(() => git!.switchTo(name))
+        } catch (e) {
+          if (!/overwritten|commit your changes|stash them/i.test(errorMessage(e))) throw e
+          // While the question is open, nothing has changed yet.
+          setSwitching(id, null)
+          // Asked outside the queue: an open dialog mustn't stop everything else in this folder.
+          const ok = await confirm({
+            title: `Stash your changes and switch to ${name}?`,
+            content: 'Your uncommitted changes conflict with that branch. They’ll be saved as a stash, and you can restore them from Stashed Changes.',
+            confirmButtonContent: 'Stash and switch',
+          })
+          if (!ok) return
+          setSwitching(id, name)
+          await ops!.run(async () => {
+            await git!.stash()
+            await git!.switchTo(name)
+          })
+        }
+        await showSwitched(name)
+        // The new branch's upstream and how far it is from it come with this read.
+        await qc.refetchQueries({ queryKey: ['local-status', id], exact: true })
+      } finally {
+        setSwitching(id, null)
       }
     })
 

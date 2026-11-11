@@ -1,9 +1,10 @@
-import { Fragment, useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react'
 import { Button, IconButton, Tooltip } from '@primer/react'
 import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from '@primer/octicons-react'
 import { hunkIndexOf, lineOn, parsePatch, rangeContains, selectLines, type DiffLine, type DiffSide, type LineRange, type LineSelection } from '../lib/diff'
 import { highlightLine, languageFor } from '../lib/highlight'
 import { DiffStat, CopyButton } from './Bits'
+import { getDrawAll, registerCopySource, registerFindSource, subscribeDrawAll } from '../lib/find'
 
 export type { DiffSide }
 
@@ -143,8 +144,8 @@ export function DiffView({ path, lines, split, wrap = true, renderAfterLine, onA
               if (row.hunk) {
                 return (
                   <tr key={i} className="diff-line hunk">
-                    <td className="diff-num" />
-                    <td className="diff-code" colSpan={3}>
+                    <td className="diff-num" data-find-skip="" />
+                    <td className="diff-code" colSpan={3} data-find-unit="">
                       {row.hunk.content}
                     </td>
                   </tr>
@@ -159,22 +160,24 @@ export function DiffView({ path, lines, split, wrap = true, renderAfterLine, onA
               return (
                 <Fragment key={i}>
                   <tr className="diff-line">
-                    <td className={`diff-num diff-num-cell ${cls(left)} ${leftSel && `${leftSel} selected-line-left`}`} data-sel-side={leftNo !== null ? 'LEFT' : undefined} data-sel-line={leftNo ?? undefined} {...numProps('LEFT', leftNo)}>
+                    <td data-find-skip="" className={`diff-num diff-num-cell ${cls(left)} ${leftSel && `${leftSel} selected-line-left`}`} data-sel-side={leftNo !== null ? 'LEFT' : undefined} data-sel-line={leftNo ?? undefined} {...numProps('LEFT', leftNo)}>
                       {left?.oldNo ?? ''}
                       {addButton('LEFT', leftNo)}
                     </td>
                     <td
                       className={`diff-code ${cls(left)} ${leftSel && `${leftSel} selected-line-right`}`}
+                      data-find-unit=""
                       data-sel-side={leftNo !== null ? 'LEFT' : undefined}
                       data-sel-line={leftNo ?? undefined}
                       dangerouslySetInnerHTML={{ __html: left ? `${MARKER[left.type] ?? ''}${html[indexOf.get(left)!]}` : '' }}
                     />
-                    <td className={`diff-num diff-num-cell ${cls(right)} ${rightSel && `${rightSel} selected-line-left`}`} data-sel-side={rightNo !== null ? 'RIGHT' : undefined} data-sel-line={rightNo ?? undefined} {...numProps('RIGHT', rightNo)}>
+                    <td data-find-skip="" className={`diff-num diff-num-cell ${cls(right)} ${rightSel && `${rightSel} selected-line-left`}`} data-sel-side={rightNo !== null ? 'RIGHT' : undefined} data-sel-line={rightNo ?? undefined} {...numProps('RIGHT', rightNo)}>
                       {right?.newNo ?? ''}
                       {addButton('RIGHT', rightNo)}
                     </td>
                     <td
                       className={`diff-code ${cls(right)} ${rightSel && `${rightSel} selected-line-right`}`}
+                      data-find-unit=""
                       data-sel-side={rightNo !== null ? 'RIGHT' : undefined}
                       data-sel-line={rightNo ?? undefined}
                       dangerouslySetInnerHTML={{ __html: right ? `${MARKER[right.type] ?? ''}${html[indexOf.get(right)!]}` : '' }}
@@ -199,8 +202,8 @@ export function DiffView({ path, lines, split, wrap = true, renderAfterLine, onA
             if (line.type === 'hunk') {
               return (
                 <tr key={i} className="diff-line hunk">
-                  <td className="diff-num" colSpan={2} />
-                  <td className="diff-code" colSpan={2}>
+                  <td className="diff-num" colSpan={2} data-find-skip="" />
+                  <td className="diff-code" colSpan={2} data-find-unit="">
                     {line.content}
                   </td>
                 </tr>
@@ -217,15 +220,15 @@ export function DiffView({ path, lines, split, wrap = true, renderAfterLine, onA
                   data-sel-side={anchor?.side}
                   data-sel-line={anchor?.line}
                 >
-                  <td className={`diff-num ${rowSel}`} {...numProps(anchor?.side ?? 'RIGHT', anchor?.line ?? null)}>
+                  <td data-find-skip="" className={`diff-num ${rowSel}`} {...numProps(anchor?.side ?? 'RIGHT', anchor?.line ?? null)}>
                     {line.oldNo ?? ''}
                   </td>
-                  <td className={`diff-num diff-num-cell ${rowSel}`} {...numProps(anchor?.side ?? 'RIGHT', anchor?.line ?? null)}>
+                  <td data-find-skip="" className={`diff-num diff-num-cell ${rowSel}`} {...numProps(anchor?.side ?? 'RIGHT', anchor?.line ?? null)}>
                     {line.newNo ?? ''}
                     {anchor && addButton(anchor.side, anchor.line)}
                   </td>
-                  <td className={`diff-marker ${rowSel}`}>{MARKER[line.type] ?? ''}</td>
-                  <td className={`diff-code ${rowSel}`} dangerouslySetInnerHTML={{ __html: html[i] }} />
+                  <td data-find-skip="" className={`diff-marker ${rowSel}`}>{MARKER[line.type] ?? ''}</td>
+                  <td data-find-unit="" className={`diff-code ${rowSel}`} dangerouslySetInnerHTML={{ __html: html[i] }} />
                 </tr>
                 {after(line, 4)}
               </Fragment>
@@ -271,6 +274,36 @@ function buildSplitRows(lines: DiffLine[]): SplitRow[] {
   return rows
 }
 
+/** The text of each code cell DiffView draws for these lines, in order: what a search sees once the diff is drawn. */
+export function findUnits(lines: DiffLine[], split = false): string[] {
+  if (!split) return lines.map((l) => l.content)
+  const out: string[] = []
+  for (const row of buildSplitRows(lines)) {
+    if (row.hunk) out.push(row.hunk.content)
+    else {
+      if (row.left) out.push(`${MARKER[row.left.type] ?? ''}${row.left.content}`)
+      if (row.right) out.push(`${MARKER[row.right.type] ?? ''}${row.right.content}`)
+    }
+  }
+  return out
+}
+
+/** A file's change as `git diff` would print it: what copying it gives when it isn't drawn. */
+export function patchText(file: FileDiffInput): string {
+  const from = file.previousPath || file.path
+  const out = [`diff --git a/${from} b/${file.path}`]
+  if (from !== file.path) out.push(`rename from ${from}`, `rename to ${file.path}`)
+  if (file.patch) {
+    out.push(file.status === 'added' ? '--- /dev/null' : `--- a/${from}`, file.status === 'removed' ? '+++ /dev/null' : `+++ b/${file.path}`)
+    out.push(file.patch.replace(/\n$/, ''))
+  } else {
+    const note = missingPatchNote(file)
+    if (note === 'Binary file not shown.') out.push(`Binary files a/${from} and b/${file.path} differ`)
+    else if (note === null) out.push('(GitHub didn’t send this file’s diff: it’s too large.)')
+  }
+  return out.join('\n')
+}
+
 function escape(s: string) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
@@ -288,32 +321,41 @@ export interface FileDiffInput {
 
 // How far ahead of the screen a diff starts drawing, so scrolling at a normal speed never reaches an empty one.
 const DRAW_AHEAD = '1500px'
+// How far from the screen a drawn diff goes back to a stand-in. Well past DRAW_AHEAD, so a diff near the edge doesn't flicker.
+const UNDRAW_BEYOND = '6000px'
 const ROW_HEIGHT = 20
 
-const nearScreenCallbacks = new WeakMap<Element, () => void>()
-let nearScreen: IntersectionObserver | null = null
+/** One observer per margin for every diff. scrollMargin because diffs scroll inside their panes, and rootMargin only reaches the window's edge. */
+function screenWatcher(margin: string) {
+  const callbacks = new WeakMap<Element, (inside: boolean) => void>()
+  let observer: IntersectionObserver | null = null
+  return (el: Element, onChange: (inside: boolean) => void) => {
+    if (typeof IntersectionObserver === 'undefined') {
+      onChange(true)
+      return () => {}
+    }
+    observer ??= new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) callbacks.get(entry.target)?.(entry.isIntersecting)
+      },
+      { rootMargin: margin, scrollMargin: margin },
+    )
+    callbacks.set(el, onChange)
+    observer.observe(el)
+    return () => {
+      callbacks.delete(el)
+      observer?.unobserve(el)
+    }
+  }
+}
+const watchNear = screenWatcher(DRAW_AHEAD)
+const watchFar = screenWatcher(UNDRAW_BEYOND)
 
-/** One observer for every diff. scrollMargin because diffs scroll inside their panes, and rootMargin only reaches the window's edge. */
-function watchNearScreen(el: Element, onNear: () => void) {
-  if (typeof IntersectionObserver === 'undefined') {
-    onNear()
-    return () => {}
-  }
-  nearScreen ??= new IntersectionObserver(
-    (entries) => {
-      for (const entry of entries) {
-        if (!entry.isIntersecting) continue
-        nearScreenCallbacks.get(entry.target)?.()
-      }
-    },
-    { rootMargin: DRAW_AHEAD, scrollMargin: DRAW_AHEAD },
-  )
-  nearScreenCallbacks.set(el, onNear)
-  nearScreen.observe(el)
-  return () => {
-    nearScreenCallbacks.delete(el)
-    nearScreen?.unobserve(el)
-  }
+/** Whether a drawn diff can go back to a stand-in without losing something: focus, a form, a text selection. */
+function canUndraw(box: Element) {
+  if (box.contains(document.activeElement) || box.querySelector('textarea, input, [contenteditable="true"]')) return false
+  const sel = document.getSelection()
+  return !(sel && !sel.isCollapsed && sel.rangeCount && sel.getRangeAt(0).intersectsNode(box))
 }
 
 function countLines(patch: string | null | undefined) {
@@ -352,16 +394,76 @@ const LARGE_DIFF_LINES = 1200
 
 export function FileDiffBox({ file, actions, collapsed, onToggle, id, eager = false, ...rest }: FileDiffBoxProps) {
   const lineCount = useMemo(() => countLines(file.patch), [file.patch])
-  // Once drawn it stays drawn: a comment being written in it has to survive scrolling away.
-  const [near, setNear] = useState(eager)
-  const watch = useCallback((el: HTMLDivElement | null) => {
-    if (el) return watchNearScreen(el, () => setNear(true))
-  }, [])
-  const lines = useMemo(() => (near ? parsePatch(file.patch) : []), [near, file.patch])
+  const box = useRef<HTMLDivElement>(null)
+  const body = useRef<HTMLDivElement>(null)
+  const drawAll = useSyncExternalStore(subscribeDrawAll, getDrawAll)
+  // Drawn near the screen and back to a stand-in of the same height far from it, unless that would lose something (canUndraw).
+  const [drawn, setDrawn] = useState(eager)
+  const [standInHeight, setStandInHeight] = useState<number | null>(null)
+  const lines = useMemo(() => (drawn ? parsePatch(file.patch) : []), [drawn, file.patch])
   const [forceLoad, setForceLoad] = useState(false)
   const tooLarge = lineCount > LARGE_DIFF_LINES && !forceLoad
+  const split = !!rest.split
+  const keep = drawAll || !!rest.selection || !!rest.commenting
+
+  useEffect(() => {
+    if (drawAll) setDrawn(true)
+  }, [drawAll])
+  // The stand-in's height was measured for one layout; another one draws differently.
+  useEffect(() => setStandInHeight(null), [split, file.patch])
+
+  const keepRef = useRef(keep)
+  keepRef.current = keep
+  useEffect(() => {
+    const el = box.current
+    if (!el) return
+    const stopNear = watchNear(el, (inside) => inside && setDrawn(true))
+    const stopFar = watchFar(el, (inside) => {
+      if (inside || keepRef.current || !body.current || !canUndraw(el)) return
+      setStandInHeight(body.current.offsetHeight)
+      setDrawn(false)
+    })
+    return () => {
+      stopNear()
+      stopFar()
+    }
+  }, [])
+
+  // What find and copy use for this file while its diff isn't on the page (src/lib/find.ts).
+  const latest = useRef({ collapsed, onToggle, tooLarge, drawn, file })
+  latest.current = { collapsed, onToggle, tooLarge, drawn, file }
+  const units = useMemo(() => {
+    let cached: string[] | null = null
+    return () => (cached ??= findUnits(parsePatch(file.patch), split))
+  }, [file.patch, split])
+  const standIn = useCallback(
+    (el: HTMLDivElement | null) => {
+      // React sets a child's ref before its parent's, so the box is found through the DOM rather than its ref.
+      const owner = el?.closest('[data-find-owner]')
+      if (!el || !owner) return
+      return registerFindSource(el, {
+        owner,
+        units,
+        reveal: () => {
+          if (latest.current.collapsed) latest.current.onToggle?.()
+          if (latest.current.tooLarge) setForceLoad(true)
+          setDrawn(true)
+        },
+      })
+    },
+    [units],
+  )
+  useEffect(() => {
+    if (!box.current) return
+    return registerCopySource(box.current, {
+      drawn: () => !latest.current.file.patch || (latest.current.drawn && !latest.current.collapsed && !latest.current.tooLarge),
+      text: () => patchText(latest.current.file),
+    })
+  }, [])
+
+  const hasPatch = !!file.patch
   return (
-    <div className={`Box file-diff ${collapsed ? 'collapsed' : ''}`} id={id}>
+    <div className={`Box file-diff ${collapsed ? 'collapsed' : ''}`} id={id} ref={box} data-find-owner="">
       <div className="file-diff-header">
         <IconButton size="small" variant="invisible" icon={collapsed ? ChevronRightIcon : ChevronDownIcon} aria-label={collapsed ? 'Expand file' : 'Collapse file'} onClick={onToggle} />
         <DiffStat additions={file.additions} deletions={file.deletions} />
@@ -377,28 +479,31 @@ export function FileDiffBox({ file, actions, collapsed, onToggle, id, eager = fa
         <CopyButton text={file.path} label="Copy file path" />
         <span className="ml-auto flex-center gap-2">{actions}</span>
       </div>
-      {!collapsed &&
-        (!file.patch && missingPatchNote(file) === null ? (
-          // The API leaves out the patch of a diff that is too big (lockfiles, or every file past its limits in a huge PR).
-          <div className="diff-hidden-note">
-            <p className="diff-hidden-note-text">Large diffs are not rendered by default.</p>
-          </div>
-        ) : !file.patch ? (
-          <div className="diff-empty-note">{missingPatchNote(file)}</div>
-        ) : tooLarge ? (
-          <div className="diff-hidden-note">
-            <Tooltip text={`${lineCount.toLocaleString()} lines`}>
-              <Button variant="invisible" onClick={() => setForceLoad(true)}>
-                <span className="diff-load-label">Load diff</span>
-              </Button>
-            </Tooltip>
-            <p className="diff-hidden-note-text">Large diffs are not rendered by default.</p>
-          </div>
-        ) : near ? (
+      {collapsed ? (
+        hasPatch && <div ref={standIn} hidden />
+      ) : !hasPatch && missingPatchNote(file) === null ? (
+        // The API leaves out the patch of a diff that is too big (lockfiles, or every file past its limits in a huge PR).
+        <div className="diff-hidden-note">
+          <p className="diff-hidden-note-text">Large diffs are not rendered by default.</p>
+        </div>
+      ) : !hasPatch ? (
+        <div className="diff-empty-note">{missingPatchNote(file)}</div>
+      ) : tooLarge ? (
+        <div className="diff-hidden-note" ref={standIn}>
+          <Tooltip text={`${lineCount.toLocaleString()} lines`}>
+            <Button variant="invisible" onClick={() => setForceLoad(true)}>
+              <span className="diff-load-label">Load diff</span>
+            </Button>
+          </Tooltip>
+          <p className="diff-hidden-note-text">Large diffs are not rendered by default.</p>
+        </div>
+      ) : drawn ? (
+        <div ref={body}>
           <DiffView path={file.path} lines={lines} {...rest} />
-        ) : (
-          <div ref={watch} style={{ height: lineCount * ROW_HEIGHT }} />
-        ))}
+        </div>
+      ) : (
+        <div ref={standIn} style={{ height: standInHeight ?? lineCount * ROW_HEIGHT }} />
+      )}
     </div>
   )
 }
