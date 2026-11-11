@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Link, Route, Routes, useLocation, useParams } from 'react-router-dom'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { ActionList, ActionMenu, Button, IconButton, TextInput, UnderlineNav } from '@primer/react'
 import { CommentDiscussionIcon, GitCommitIcon, ChecklistIcon, FileDiffIcon, SparkleFillIcon, TriangleDownIcon, LinkExternalIcon, PencilIcon, LinkIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage } from '../../lib/github'
-import { useRepo } from '../../lib/repo'
+import { encodePath, useRepo } from '../../lib/repo'
 import { AgentOnly, useAgent, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import { webUrl } from '../../lib/links'
 import { isNative, openExternal } from '../../lib/platform'
@@ -19,6 +19,42 @@ import { ChecksTab } from './pull/Checks'
 import { SplitPane } from '../../components/SplitPane'
 import { PullCommitsPane, PullStatusBar } from '../workspace/PullsWorkspace'
 import { CheckoutMenu, PullStatusLine } from './pull/PullHeaderActions'
+
+/**
+ * A base or head branch that opens its code, the way github.com links them. A closed pull request's head branch is
+ * often deleted after the merge: that one is struck through instead, since there's nothing left to open.
+ */
+function BranchPill({ repo, branch, label, checkDeleted }: { repo: string | undefined; branch: string; label: string; checkDeleted?: boolean }) {
+  const { octokit, key } = useGitHub()
+  const exists = useQuery({
+    queryKey: [key, 'branch-exists', repo, branch],
+    enabled: !!repo && !!checkDeleted,
+    staleTime: 60_000,
+    retry: false,
+    queryFn: async () => {
+      const [o, r] = repo!.split('/')
+      try {
+        await octokit.rest.repos.getBranch({ owner: o, repo: r, branch })
+        return true
+      } catch (e) {
+        if ((e as { status?: number }).status === 404) return false
+        throw e
+      }
+    },
+  })
+  // No repository means the fork it came from is gone.
+  if (!repo || exists.data === false)
+    return (
+      <span className="branch-pill is-deleted" title={repo ? `${label} has been deleted` : `The repository ${label} came from has been deleted`}>
+        {label}
+      </span>
+    )
+  return (
+    <Link to={`/${repo}/tree/${encodePath(branch)}`} className="branch-pill" title={label}>
+      {label}
+    </Link>
+  )
+}
 
 /** Keyed per PR so every tab's local state (drafts, pending reviews, merge box) starts fresh. */
 export function PullRequestPage() {
@@ -170,16 +206,8 @@ function PullRequestView() {
           {!isNative && <PullStateLabel pull={pr} />}
           <span className="fg-muted">
             <UserLink login={pr.user?.login} type={pr.user?.type} className="text-bold fg-default" />{' '}
-            {pr.merged ? (
-              <>
-                merged {plural(pr.commits, 'commit')} into <span className="branch-pill">{baseLabel}</span> from{' '}
-              </>
-            ) : (
-              <>
-                wants to merge {plural(pr.commits, 'commit')} into <span className="branch-pill">{baseLabel}</span> from{' '}
-              </>
-            )}
-            <span className="branch-pill">{pr.head.repo && pr.head.repo.owner.login !== owner ? `${pr.head.repo.owner.login}:${pr.head.ref}` : pr.head.ref}</span>
+            {pr.merged ? 'merged' : 'wants to merge'} {plural(pr.commits, 'commit')} into <BranchPill repo={pr.base.repo.full_name} branch={pr.base.ref} label={baseLabel} /> from{' '}
+            <BranchPill repo={pr.head.repo?.full_name} branch={pr.head.ref} label={pr.head.repo && pr.head.repo.owner.login !== owner ? `${pr.head.repo.owner.login}:${pr.head.ref}` : pr.head.ref} checkDeleted={pr.state === 'closed'} />
           </span>
           <CopyButton text={pr.head.ref} label="Copy head branch name" />
         </div>
