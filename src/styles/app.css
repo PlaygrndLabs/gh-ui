@@ -915,6 +915,8 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
   white-space: nowrap;
   vertical-align: middle;
 }
+a.branch-pill:hover { text-decoration: underline; }
+.branch-pill.is-deleted { color: var(--fgColor-muted); background: var(--bgColor-neutral-muted); text-decoration: line-through; }
 .tabnav-sticky { position: sticky; top: 0; z-index: 10; background: var(--bgColor-default); }
 .error-box { padding: 16px; border: 1px solid var(--borderColor-danger-muted); background: var(--bgColor-danger-muted); border-radius: 6px; color: var(--fgColor-default); }
 .suggestion-block { border: 1px solid var(--borderColor-default); border-radius: 6px; overflow: hidden; margin: 8px 0; }
