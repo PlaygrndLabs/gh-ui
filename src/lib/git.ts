@@ -134,6 +134,29 @@ export function parseBranches(out: string, remote = 'origin'): BranchState[] {
   return [...local.values(), ...remoteOnly.values()].sort((a, b) => Number(b.current) - Number(a.current) || b.date.localeCompare(a.date) || a.name.localeCompare(b.name))
 }
 
+/** A stash, newest first in a list. `ref` is its place now (stash@{n}), which moves as others come and go; `sha` doesn't. */
+export interface StashEntry {
+  ref: string
+  sha: string
+  /** The branch it was made on, or null for a detached HEAD. */
+  branch: string | null
+  message: string
+}
+
+/** Parses `git stash list` in STASH_FORMAT. git names the branch in the subject: "WIP on x: …" or, with a message, "On x: …". */
+export function parseStashList(out: string): StashEntry[] {
+  return out
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [ref = '', sha = '', message = ''] = line.split('\x1f')
+      const name = /^(?:WIP on|On) (.+?): /.exec(message)?.[1] ?? null
+      return { ref, sha, branch: name === '(no branch)' ? null : name, message }
+    })
+}
+
+const STASH_FORMAT = '--format=%gd%x1f%H%x1f%gs'
+
 export interface Worktree {
   path: string
   name: string
@@ -229,6 +252,12 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
   const log = async (revisions: string[], limit = 200): Promise<LogEntry[]> => {
     const res = await run(['log', '-n', String(limit), LOG_FORMAT, ...revisions, '--'], false)
     return res.code === 0 ? parseCommitLog(res.stdout) : []
+  }
+  /** Where a stash is in the list right now: other stashes made since push it down. */
+  const stashRef = async (sha: string) => {
+    const found = parseStashList(await git(['stash', 'list', STASH_FORMAT])).find((s) => s.sha === sha)
+    if (!found) throw new Error('That stash is no longer there.')
+    return found.ref
   }
   const remotes = async () => parseRemotes(await git(['remote', '-v']))
   const remoteName = async () => primaryRemote(await remotes().catch(() => []))?.name ?? 'origin'
@@ -360,8 +389,12 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
     tagsAt: async (sha: string) => (await git(['tag', '--points-at', sha])).split('\n').filter(Boolean),
     /** Saves every change, new files too, and leaves the working tree clean. */
     stash: () => git(['stash', 'push', '-u']),
-    stashPop: () => git(['stash', 'pop']),
-    stashList: async () => (await git(['stash', 'list', '--format=%s'])).split('\n').filter(Boolean),
+    stashes: async () => parseStashList(await git(['stash', 'list', STASH_FORMAT])),
+    /** What a stash holds, new files included, as diffs against the commit it was made on. */
+    stashFiles: async (sha: string) => parseUnifiedDiff(await git(['stash', 'show', '-p', '--include-untracked', '--no-color', sha])),
+    /** Puts a stash's changes back and drops it; if they conflict, git keeps the stash. */
+    restoreStash: async (sha: string) => git(['stash', 'pop', await stashRef(sha)]),
+    dropStash: async (sha: string) => git(['stash', 'drop', await stashRef(sha)]),
     stage: (...entries: StatusEntry[]) => git(['add', '--', ...entries.flatMap(changePaths)]),
     // With paths, reset leaves MERGE_HEAD / CHERRY_PICK_HEAD alone, and unlike restore it works before the first commit.
     unstage: (...entries: StatusEntry[]) => git(['reset', '-q', '--', ...entries.flatMap(changePaths)]),

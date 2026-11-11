@@ -5,12 +5,23 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { changePaths, createGitClient, isStaged, isUnmerged, moveCommit, parseBranches, parseCommitLog, parseStatus, parseWorktrees, reorderableCommits, type GitClient, type HistoryRow } from './git'
+import { changePaths, createGitClient, isStaged, isUnmerged, moveCommit, parseBranches, parseCommitLog, parseStashList, parseStatus, parseWorktrees, reorderableCommits, type GitClient, type HistoryRow } from './git'
 
 const exec = promisify(execFile)
 const require = createRequire(import.meta.url)
 type RunGit = (args: string[], env: Record<string, string>) => Promise<{ code: number; stdout: string; stderr: string }>
 const { validateGitArgs, gitCommandEnv, reorderCommits } = require('../../electron/git-policy.cjs') as { validateGitArgs(args: string[]): void; gitCommandEnv(sub: string): Record<string, string>; reorderCommits(git: RunGit, order: string[]): ReturnType<RunGit> }
+
+describe('parseStashList', () => {
+  it('reads each stash’s place, commit and branch', () => {
+    const out = ['stash@{0}\x1fa1\x1fWIP on feat/x: 1234567 fix it', 'stash@{1}\x1fb2\x1fOn playbook-share: !!GitHub_Desktop<playbook-share>', 'stash@{2}\x1fc3\x1fWIP on (no branch): 1234567 x'].join('\n')
+    expect(parseStashList(out)).toEqual([
+      { ref: 'stash@{0}', sha: 'a1', branch: 'feat/x', message: 'WIP on feat/x: 1234567 fix it' },
+      { ref: 'stash@{1}', sha: 'b2', branch: 'playbook-share', message: 'On playbook-share: !!GitHub_Desktop<playbook-share>' },
+      { ref: 'stash@{2}', sha: 'c3', branch: null, message: 'WIP on (no branch): 1234567 x' },
+    ])
+  })
+})
 
 describe('parseStatus', () => {
   it('reads the branch, its upstream and the counts', () => {
@@ -637,15 +648,26 @@ describe('createGitClient against a real repository', () => {
     await client.switchTo('spike')
   })
 
-  it('stashes changes and restores them', async () => {
+  it('stashes changes, shows them, and restores or drops one by its commit', async () => {
     await writeFile(join(work, 'wip.txt'), 'wip\n')
     await client.stash()
     expect((await client.status()).entries).toEqual([])
-    expect(await client.stashList()).toHaveLength(1)
-    await client.stashPop()
+    await writeFile(join(work, 'other.txt'), 'other\n')
+    await client.stash()
+    const [newest, older] = await client.stashes()
+    expect(newest).toMatchObject({ ref: 'stash@{0}', branch: 'spike' })
+    expect(older).toMatchObject({ ref: 'stash@{1}', branch: 'spike' })
+    expect((await client.stashFiles(older.sha)).map((f) => f.newPath)).toEqual(['wip.txt'])
+
+    // The older one, though it's no longer on top.
+    await client.restoreStash(older.sha)
     expect((await client.status()).entries).toMatchObject([{ path: 'wip.txt' }])
+    expect((await client.stashes()).map((s) => s.sha)).toEqual([newest.sha])
     await client.discard((await client.status()).entries[0])
-    expect(await client.stashList()).toEqual([])
+
+    await client.dropStash(newest.sha)
+    expect(await client.stashes()).toEqual([])
+    await expect(client.dropStash(newest.sha)).rejects.toThrow('no longer there')
   })
 
   it('switches and creates branches, and says when there is no remote', async () => {
