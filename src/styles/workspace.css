@@ -187,11 +187,23 @@ ul:is([role='menu'], [role='listbox']) { padding-block: 0; }
 .ws-history-filter:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: 1px; }
 .ws-history-filter[aria-pressed='true'] { color: var(--fgColor-accent); background: var(--ws-selected); border-color: var(--ws-accent); }
 .ws-history-end { margin-left: auto; }
+/* Comparing with another branch: which side's commits are listed, and the row for everything that side changed. */
+/* The filters keep their labels on one line; the compare button gives way first, shortening the branch name. */
+.ws-history-filter { flex: none; white-space: nowrap; }
+.ws-compare-anchor { flex: 0 1 auto; min-width: 0; }
+.ws-compare-side { flex: 0 1 auto; min-width: 0; padding: 0 8px; }
+.ws-compare-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-compare-bar { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 6px 12px; border-bottom: 1px solid var(--ws-line); }
+.ws-compare-row { min-height: 36px; font-weight: 500; border-bottom: 1px solid var(--ws-line); }
+.ws-compare-row .ws-row-main { flex: none; }
+.ws-compare-row .ws-row-sub { flex: 1 1 auto; min-width: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
+.ws-compare-icon { flex: none; color: var(--ws-muted); }
 .ws-note { margin: 0 0 6px; color: var(--ws-muted); }
 .ws-row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 4px 12px; font: inherit; color: var(--ws-text); text-align: left; background: none; border: 0; }
 button.ws-row, a.ws-row { cursor: pointer; }
 button.ws-row:hover, a.ws-row:hover, .ws-row-file:hover { color: var(--ws-text); text-decoration: none; background: var(--ws-hover); }
-.ws-row.is-selected, button.ws-row.is-selected:hover, .ws-row-file.is-selected:hover { background: var(--ws-selected); box-shadow: inset 2px 0 0 var(--ws-accent); }
+/* The last selector outranks Primer's reset, which takes the box-shadow off a button clicked with the mouse while it keeps focus. */
+.ws-row.is-selected, button.ws-row.is-selected:hover, .ws-row-file.is-selected:hover, .ws-row.is-selected:focus:not(:focus-visible):not(.focus-visible) { background: var(--ws-selected); box-shadow: inset 2px 0 0 var(--ws-accent); }
 .ws-row:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
 .ws-row-main { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .ws-row-sub { flex: none; max-width: 100%; font-size: 12px; color: var(--ws-muted); }
@@ -215,7 +227,7 @@ button.ws-row:hover, a.ws-row:hover, .ws-row-file:hover { color: var(--ws-text);
 .ws-file-name { flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .ws-commit-row { gap: 10px; min-height: 52px; padding: 8px 12px; border-bottom: 1px solid var(--ws-line); border-radius: 0; user-select: none; }
 .ws-reorder-hint { font-size: 12px; font-weight: 500; }
-.ws-commit-row.is-moving { cursor: grab; touch-action: none; background: var(--ws-selected); outline: 1px solid var(--ws-accent); outline-offset: -1px; }
+.ws-commit-row.is-moving, .ws-commit-row.is-moving:focus:not(:focus-visible):not(.focus-visible) { cursor: grab; touch-action: none; background: var(--ws-selected); outline: 1px solid var(--ws-accent); outline-offset: -1px; }
 .ws-commit-row.is-moving:active { cursor: grabbing; }
 .ws-commit-row.is-fixed { opacity: .5; }
 .ws-commit-row.is-drop-above { box-shadow: inset 0 2px 0 var(--ws-accent); }
@@ -227,6 +239,8 @@ button.ws-row:hover, a.ws-row:hover, .ws-row-file:hover { color: var(--ws-text);
 .ws-sync-count.is-unpushed { color: var(--fgColor-accent); background: var(--ws-selected); }
 .ws-commit-mark { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; color: var(--ws-muted); background: var(--ws-hover); border-radius: 50%; }
 .ws-commit-mark.is-unpushed { color: var(--fgColor-accent); background: var(--ws-selected); }
+/* To push, but brought in from another branch the remote already has, such as main. */
+.ws-commit-mark.is-unpushed.is-elsewhere { color: var(--fgColor-done); background: var(--bgColor-done-muted); }
 .ws-commit-message { margin: 0 0 12px; font-family: inherit; white-space: pre-wrap; }
 .ws-empty { display: flex; flex: 1; align-items: center; justify-content: center; padding: 32px; color: var(--ws-muted); text-align: center; }
 .ws-empty-body { display: flex; flex-direction: column; align-items: center; gap: 12px; }
@@ -242,7 +256,7 @@ button.ws-row:hover, a.ws-row:hover, .ws-row-file:hover { color: var(--ws-text);
 .ws-filter:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
 a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; padding: 9px 12px; color: var(--ws-text); border-bottom: 1px solid var(--ws-line); }
 .ws-list-row:hover { color: var(--ws-text); text-decoration: none; background: var(--ws-hover); }
-.ws-list-row.is-selected { background: var(--ws-selected); box-shadow: inset 2px 0 0 var(--ws-accent); }
+.ws-list-row.is-selected, .ws-list-row.is-selected:focus:not(:focus-visible):not(.focus-visible) { background: var(--ws-selected); box-shadow: inset 2px 0 0 var(--ws-accent); }
 .ws-list-row:focus-visible { outline: 2px solid var(--ws-accent); outline-offset: -2px; }
 .ws-list-text { display: flex; flex: 1; flex-direction: column; min-width: 0; }
 .ws-list-title { font-weight: 500; overflow-wrap: anywhere; }

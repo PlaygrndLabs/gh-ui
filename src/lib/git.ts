@@ -207,14 +207,17 @@ export type IdentityKey = 'user.name' | 'user.email'
 
 export type GitClient = ReturnType<typeof createGitClient>
 
-/** A commit in a branch's history, marked when it's still to push (↑) or to pull (↓). */
-export type HistoryRow = LogEntry & { mark?: '↑' | '↓' }
+/**
+ * A commit in a branch's history, marked when it's still to push (↑) or to pull (↓). `elsewhere` marks a commit to
+ * push that the remote already has on another branch: main's commits, after merging main in.
+ */
+export type HistoryRow = LogEntry & { mark?: '↑' | '↓'; elsewhere?: boolean }
 
 const unmarked = (c: LogEntry): HistoryRow => c
 
-/** What a drag in History can rearrange: the newest commits to push, as far back as history is a straight line. */
+/** What a drag in History can rearrange: the newest commits only this clone has, as far back as history is a straight line. */
 export function reorderableCommits(rows: HistoryRow[]) {
-  const end = rows.findIndex((r) => r.mark !== '↑' || r.parents.length > 1)
+  const end = rows.findIndex((r) => r.mark !== '↑' || r.elsewhere || r.parents.length > 1)
   return (end < 0 ? rows : rows.slice(0, end)).map((r) => r.sha)
 }
 
@@ -232,6 +235,9 @@ const OPERATION_HEADS: Array<[string, RepoOperation]> = [['MERGE_HEAD', 'merge']
 
 /** What git diffs against for a commit with no parent. */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
+
+/** How many commits a side of a branch comparison lists; past that it says "N+". */
+export const COMPARE_LIMIT = 500
 
 /** Another program (an editor, a terminal) holds the index for a moment. Git changes nothing when it says this, so trying again is safe. */
 const INDEX_LOCKED = /index\.lock|another git process/i
@@ -304,8 +310,9 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
     /** The newest commits of `ref`, or of the checked-out branch. Empty before the first commit. */
     log: (ref?: string, limit = 200) => log(ref ? [ref] : [], limit),
     /**
-     * A branch's commits by where they are, and in `history` as a timeline. Not pushed means no branch on the remote has it
-     * yet: after merging main in, main's commits are already there, so only the merge itself is new.
+     * A branch's commits by where they are, and in `history` as a timeline. Not pushed means its upstream doesn't have it
+     * yet, as GitHub Desktop counts: after merging main in, main's commits go up with the push too. Those the remote
+     * already has on another branch are marked `elsewhere`, and `notOnRemote` lists only the ones no branch there has.
      */
     async branchCommits(branch: BranchState, limit = 100) {
       const remote = await remoteName()
@@ -315,14 +322,15 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
       const all = await log([ref], limit + ahead)
       if (branch.location === 'remote') return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote: all, notOnRemote: [] as string[], history: all.map(unmarked) }
       const notOnAnyRemote = await log([ref, '--not', `--remotes=${remote}`], limit + ahead)
-      // The upstream as well, for a branch that tracks another local branch rather than the remote.
-      const local = branch.upstream && !branch.gone ? await log([ref, '--not', branch.upstream, `--remotes=${remote}`], limit + ahead) : notOnAnyRemote
+      // Without an upstream to push to, what's new is what no branch on the remote has.
+      const local = branch.upstream && !branch.gone ? await log([ref, '--not', branch.upstream], limit + ahead) : notOnAnyRemote
       const toPush = new Set(local.map((c) => c.sha))
+      const onlyHere = new Set(notOnAnyRemote.map((c) => c.sha))
       const incoming = branch.upstream && branch.behind ? await log([`${ref}..${branch.upstream}`], limit) : []
       // In log order, with what's not pulled after the run of newest commits to push.
       const firstPushed = all.findIndex((c) => !toPush.has(c.sha))
       const split = firstPushed < 0 ? all.length : firstPushed
-      const row = (c: LogEntry): HistoryRow => ({ ...c, mark: toPush.has(c.sha) ? '↑' : undefined })
+      const row = (c: LogEntry): HistoryRow => (toPush.has(c.sha) ? { ...c, mark: '↑', ...(onlyHere.has(c.sha) ? {} : { elsewhere: true }) } : c)
       const history = [...all.slice(0, split).map(row), ...incoming.map((c): HistoryRow => ({ ...c, mark: '↓' })), ...all.slice(split).map(row)]
       return { local, incoming, remote: all.filter((c) => !toPush.has(c.sha)), notOnRemote: notOnAnyRemote.map((c) => c.sha), history }
     },
@@ -347,6 +355,21 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
       const asked = new Set(shas)
       return { related: true, others: span.filter((c) => !asked.has(c.sha)).length, files: parseUnifiedDiff(await git(['diff', base ?? EMPTY_TREE, newest])) }
     },
+    /**
+     * The revision for a branch in a comparison. `preferRemote` takes the remote's copy of a branch that's in both
+     * places, as the one to compare against: a local main nobody has pulled into for weeks would say nothing changed.
+     */
+    async compareRef(branch: BranchState, preferRemote = false) {
+      if (branch.location === 'local' || (branch.location === 'both' && !preferRemote)) return branch.name
+      return `${await remoteName()}/${branch.name}`
+    },
+    /** The commits only `ref` has (ahead) and only `base` has (behind), newest first, up to `limit` each. */
+    async compareCommits(ref: string, base: string, limit = COMPARE_LIMIT) {
+      const [ahead, behind] = await Promise.all([log([ref, '--not', base], limit), log([base, '--not', ref], limit)])
+      return { ahead, behind }
+    },
+    /** What `ref` changed since it split from `base`, as a pull request from `ref` into `base` shows it. */
+    compareDiff: async (base: string, ref: string) => parseUnifiedDiff(await git(['diff', `${base}...${ref}`])),
     addOrigin: (url: string) => git(['remote', 'add', 'origin', url]),
     publishBranch: async () => git(['push', '-u', await remoteName(), 'HEAD'], true),
     pull: () => git(['pull', '--ff-only'], true),

@@ -55,7 +55,8 @@ export function useCommitMenu({ local, github, isCurrent, rows, notOnRemote, und
     // What's still to pull is listed too, but it isn't on this branch yet.
     const isHead = sha === rows.find((r) => r.mark !== '↓')?.sha
     const canChange = isCurrent && !!git && !local.operation.data
-    const unpushed = commit.mark === '↑'
+    // Rewriting is for commits only this clone has, not main's commits merged in, which the remote has on main.
+    const unpushed = commit.mark === '↑' && !commit.elsewhere
     // A rebase refuses uncommitted changes to tracked files, so say so before the drag rather than after it.
     const canReorder = canChange && movable.length > 1 && movable.includes(sha) && !local.status.data?.entries.some((e) => e.index !== '?')
     const tags = git ? await git.tagsAt(sha).catch(() => [] as string[]) : []

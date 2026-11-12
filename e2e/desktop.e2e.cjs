@@ -877,6 +877,39 @@ exports.steps = [
     waitMs: 300,
   },
   {
+    name: 'history: after merging trunk in, its commit is to push too, in its own color',
+    screenshot: 'history-merged-in',
+    js: `${helpers}
+      const repoId = (await g.repos.list()).find((r) => r.path === ${j(LOCAL ?? '')}).id
+      const branchTab = (name) => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.includes(name))
+      const rowOf = (text) => [...main().querySelectorAll('.ws-commit-row')].find((c) => c.textContent.includes(text))
+      const markOf = (text) => { const m = rowOf(text)?.querySelector('.ws-commit-mark'); return m ? m.className.replace('ws-commit-mark', '').trim() : 'none' }
+      const shownBranch = () => [...document.querySelectorAll('.ws-seg-branch .ws-seg-value')].find((v) => v.getClientRects().length)?.textContent
+      const refresh = () => [...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      const switched = await g.git(repoId, ['switch', 'synced'])
+      refresh()
+      const onSynced = await until(() => shownBranch() === 'synced', 15000)
+      if (!onSynced) throw new Error('Still on ' + shownBranch() + ': ' + switched.code + ' ' + switched.stderr)
+      branchTab('History').click()
+      await until(() => rowOf('From trunk')?.querySelector('.ws-commit-mark'), 8000)
+      const r = { merge: markOf('Merge branch'), trunk: markOf('From trunk'), pushed: markOf('Synced work'), tabCount: branchTab('History').querySelector('.ws-sync-count.is-unpushed')?.textContent }
+      r.undo = !!byText('.ws-section-head button', 'Undo last commit')
+      r.fail = !(r.merge === 'is-unpushed' && r.trunk === 'is-unpushed is-elsewhere' && r.pushed === 'none' && r.tabCount === '2' && r.undo)
+      return r
+    `,
+  },
+  {
+    name: 'history: back on main after looking at the merged-in branch',
+    js: `${helpers}
+      const repoId = (await g.repos.list()).find((r) => r.path === ${j(LOCAL ?? '')}).id
+      const shownBranch = () => [...document.querySelectorAll('.ws-seg-branch .ws-seg-value')].find((v) => v.getClientRects().length)?.textContent
+      await g.git(repoId, ['switch', 'main'])
+      ;[...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length).click()
+      const back = await until(() => shownBranch() === 'main', 15000)
+      return { back: !!back, fail: !back }
+    `,
+  },
+  {
     name: 'repository settings: removing the remote brings Publish back',
     js: `${helpers}
       const seg = () => [...document.querySelectorAll('.ws-seg-where')].find((x) => x.getClientRects().length)
@@ -1455,7 +1488,7 @@ exports.steps = [
       const opened = main().querySelector('.ws-branch-tabs [aria-selected=true]')?.textContent
       tab('History').click()
       const rows = await until(() => main().querySelectorAll('.ws-section[aria-label="History"] .ws-row').length, 3000)
-      const noPushTalk = !main().querySelector('.ws-commit-mark') && !main().querySelector('.ws-history-filter')
+      const noPushTalk = !main().querySelector('.ws-commit-mark') && !main().querySelector('.ws-history-filter:not(.ws-compare-anchor)')
       const sections = main().querySelectorAll('.ws-section').length
       const title = await until(() => activeTab().textContent.trim() === 'e2e-local - main', 3000)
       const clone = [...document.querySelectorAll('.ws-tool')].some((t) => t.getClientRects().length && t.textContent.includes('Clone'))
@@ -1722,6 +1755,45 @@ exports.steps = [
       return r
     `,
     screenshot: 'reorder-conflict',
+  },
+  {
+    name: 'compare: History lists what only each branch has, with everything that side changed',
+    js: `${helpers}${mergeHelpers}${reorderHelpers}
+      const r = {}
+      if (!await openBranch('rebase-base', 'Add other')) throw new Error('No commits: ' + main()?.innerText.slice(0, 300))
+      main().querySelector('.ws-compare-anchor').click()
+      const option = await until(() => [...document.querySelectorAll('[role=option]')].find((o) => o.textContent.trim().startsWith('main')), 5000)
+      option.click()
+      const files = () => [...main().querySelectorAll('.ws-file-row')].map((f) => f.textContent.trim())
+      const sides = () => [...main().querySelectorAll('.ws-compare-side')]
+      await until(() => main().querySelector('.ws-compare-row.is-selected') && files().length, 8000)
+      r.sides = sides().map((s) => s.textContent.trim())
+      r.ahead = rows().map((c) => c.querySelector('.ws-commit-subject').textContent)
+      r.aheadFiles = files()
+      sides()[1].click()
+      await until(() => rows()[0]?.textContent.includes('Add main') && files()[0]?.startsWith('main.txt'), 8000)
+      r.behind = rows().map((c) => c.querySelector('.ws-commit-subject').textContent)
+      r.behindFiles = files()
+      r.head = main().querySelector('.ws-details-head')?.textContent
+      // A row clicked with the mouse keeps focus, and Primer's focus reset must not take its selection line away.
+      const picked = rows()[0]
+      picked.focus()
+      picked.click()
+      await until(() => picked.classList.contains('is-selected'), 3000)
+      r.focusLine = getComputedStyle(picked).boxShadow.includes('inset')
+      r.fail = !(r.focusLine && r.sides.join() === 'rebase-base1,main1' && r.ahead.join() === 'Add other' && r.aheadFiles.join() === 'other.txtA' && r.behind.join() === 'Add main' && r.behindFiles.join() === 'main.txtA')
+      return r
+    `,
+    screenshot: 'compare',
+  },
+  {
+    name: 'compare: stopping shows the branch’s whole history again',
+    js: `${helpers}${mergeHelpers}${reorderHelpers}
+      main().querySelector('.ws-compare-stop').click()
+      const back = await until(() => !main().querySelector('.ws-compare-bar') && rows().length === 2, 5000)
+      await g.git(repoId, ['switch', 'main'])
+      return { back: !!back, rows: rows().length, fail: !back }
+    `,
   },
   {
     name: 'cleanup: forget repos and account in the test profile',
