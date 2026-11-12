@@ -15,6 +15,20 @@ git -C "$WORK/e2e-local" config user.name "gh-ui e2e"
 git -C "$WORK/e2e-local" config user.email "e2e@example.invalid"
 echo "# Notes" > "$WORK/e2e-local/notes.md"
 echo "hello from scratch" > "$WORK/e2e-local/scratch.txt"
+# After merging the remote's trunk in: synced tracks lab/synced, which a later step adds as a remote, and trunk's
+# commit goes up with the push although lab already has it. Refs for a remote not added yet change nothing before then.
+L="$WORK/e2e-local"
+git -C "$L" switch -q -c trunk
+git -C "$L" commit -q --allow-empty -m "From trunk"
+git -C "$L" update-ref refs/remotes/lab/trunk HEAD
+git -C "$L" switch -q -c synced main
+git -C "$L" commit -q --allow-empty -m "Synced work"
+git -C "$L" update-ref refs/remotes/lab/synced HEAD
+git -C "$L" config branch.synced.remote lab
+git -C "$L" config branch.synced.merge refs/heads/synced
+git -C "$L" merge -q --no-ff --no-edit trunk
+git -C "$L" switch -q main
+git -C "$L" branch -q -D trunk
 # A worktree whose folder has gone, as one made from a VM looks from the host.
 git -C "$WORK/e2e-local" worktree add -q -b stranded "$WORK/stranded"
 rm -rf "$WORK/stranded"

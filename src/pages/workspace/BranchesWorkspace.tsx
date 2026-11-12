@@ -2,10 +2,10 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExterna
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
-import { ArrowDownIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, StackIcon, UndoIcon, XIcon } from '@primer/octicons-react'
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, FileDiffIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, StackIcon, UndoIcon, XIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import type { FileDiff } from '../../lib/diff'
-import { changePaths, isStaged, isUnmerged, reorderableCommits, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
+import { changePaths, COMPARE_LIMIT, isStaged, isUnmerged, reorderableCommits, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
 import { errorMessage, useGitHub } from '../../lib/github'
 import { webUrl } from '../../lib/links'
 import { native, openExternal } from '../../lib/platform'
@@ -21,8 +21,9 @@ import { PublishDialog } from '../../components/WorkspaceHeader'
 import { useTabBranch } from '../../lib/TabsProvider'
 import { useCommitMenu } from './CommitMenu'
 import { useCommitReorder, type GrabRow } from './CommitReorder'
+import { ComparePicker } from './ComparePicker'
 
-type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | { kind: 'range'; anchor: string; focus: string } | { kind: 'stash' } | null
+type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | { kind: 'range'; anchor: string; focus: string } | { kind: 'stash' } | { kind: 'compare' } | null
 
 function ChangeBadge({ e }: { e: StatusEntry }) {
   const code = isUnmerged(e) ? '!' : e.index === '?' ? 'U' : e.index !== ' ' ? e.index : e.worktree
@@ -182,7 +183,7 @@ const ignoreMenu = () => {}
 /** A row while a commit is being reordered: the one picked up, one it can land among, or one that has to stay put. */
 type ReorderRole = 'moving' | 'movable' | 'fixed'
 
-const CommitRow = memo(function CommitRow({ commit, selected, mark, role, dropLine, onSelect, onMenu, onGrab }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; role?: ReorderRole; dropLine?: 'above' | 'below'; onSelect(sha: string, extend: boolean): void; onMenu(sha: string): void; onGrab: GrabRow }) {
+const CommitRow = memo(function CommitRow({ commit, selected, mark, elsewhere, role, dropLine, onSelect, onMenu, onGrab }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; elsewhere?: boolean; role?: ReorderRole; dropLine?: 'above' | 'below'; onSelect(sha: string, extend: boolean): void; onMenu(sha: string): void; onGrab: GrabRow }) {
   return (
     <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''} ${role ? `is-${role}` : ''} ${dropLine ? `is-drop-${dropLine}` : ''}`} aria-pressed={selected} data-reorder={role && role !== 'fixed' ? '' : undefined} onPointerDown={role === 'moving' ? onGrab : undefined} onClick={(e) => onSelect(commit.sha, e.shiftKey || e.metaKey || e.ctrlKey)}
       onContextMenu={(e) => {
@@ -204,7 +205,7 @@ const CommitRow = memo(function CommitRow({ commit, selected, mark, role, dropLi
         </span>
       </span>
       {mark && (
-        <span className={`ws-commit-mark ${mark === '↑' ? 'is-unpushed' : ''}`} title={mark === '↑' ? 'Not pushed yet' : 'Not pulled yet'}>
+        <span className={`ws-commit-mark ${mark === '↑' ? 'is-unpushed' : ''} ${mark === '↑' && elsewhere ? 'is-elsewhere' : ''}`} title={mark === '↓' ? 'Not pulled yet' : elsewhere ? 'Not pushed to this branch yet. It came from another branch, such as main, that the remote already has.' : 'Not pushed yet'}>
           {mark === '↑' ? <ArrowUpIcon size={12} /> : <ArrowDownIcon size={12} />}
         </span>
       )}
@@ -225,6 +226,9 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   // The tab you chose, kept as you switch branches so the view doesn't jump.
   const [chosenTab, setChosenTab] = useState<BranchTab | null>(null)
   const [notPushedOn, setNotPushedOn] = useState<string | null>(null)
+  // The branch History compares with, kept as you switch branches, and which side of the difference is listed.
+  const [compareWith, setCompareWith] = useState<string | null>(null)
+  const [compareSide, setCompareSide] = useState<'ahead' | 'behind'>('ahead')
   const stageError = useStageError(local.ops)
   const split = readPref('diffSplit', false)
   const selectFile = useCallback((path: string) => setSelection({ kind: 'file', path }), [])
@@ -283,6 +287,31 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     queryFn: () => local.git!.stashes(),
   })
 
+  const mainBranch = useQuery({
+    queryKey: ['local-main-branch', repo.local?.id ?? ''],
+    enabled: !!local.git,
+    staleTime: 300_000,
+    queryFn: () => local.git!.mainBranch(),
+  })
+  const defaultBranch = info.data?.default_branch ?? mainBranch.data ?? null
+  const base = (compareWith !== branch?.name && branches.find((b) => b.name === compareWith)) || null
+  const compared = useQuery({
+    queryKey: repo.local ? ['local-compare', repo.local.id, branch?.name, branch?.sha, base?.name, base?.sha] : [key, 'workspace-compare', github?.owner, github?.repo, branch?.name, base?.name],
+    enabled: !!branch && !!base,
+    queryFn: async () => {
+      if (local.git) {
+        const [ref, baseRef] = await Promise.all([local.git.compareRef(branch!), local.git.compareRef(base!, true)])
+        const { ahead, behind } = await local.git.compareCommits(ref, baseRef)
+        return { ref, baseRef, ahead, behind, aheadBy: ahead.length, behindBy: behind.length, files: null }
+      }
+      const compare = async (from: string, to: string) => (await octokit.rest.repos.compareCommitsWithBasehead({ owner: github!.owner, repo: github!.repo, basehead: `${from}...${to}` })).data
+      const [a, b] = await Promise.all([compare(base!.name, branch!.name), compare(branch!.name, base!.name)])
+      // GitHub lists them oldest first.
+      const commitsOf = (c: typeof a) => c.commits.map((x): LogEntry => ({ sha: x.sha, author: x.commit.author?.name ?? x.author?.login ?? '', date: x.commit.author?.date ?? '', subject: x.commit.message, parents: x.parents.map((p) => p.sha) })).reverse()
+      return { ref: branch!.name, baseRef: base!.name, ahead: commitsOf(a), behind: commitsOf(b), aheadBy: a.ahead_by, behindBy: a.behind_by, files: { ahead: (a.files ?? []).map(toFileDiff), behind: (b.files ?? []).map(toFileDiff) } }
+    },
+  })
+
   const entries = isCurrent ? (status?.entries ?? []) : []
   // As in GitHub Desktop, a stash belongs to the branch it was made on, and shows only there: the newest one.
   const branchStash = (isCurrent && stashes.data?.find((s) => s.branch === branch?.name)) || null
@@ -297,8 +326,17 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const canPush = !!(github || repo.remote)
   const unpushed = canPush ? (data?.local ?? []) : []
   // Pushing the last one empties the filter, so it lets go by itself.
-  const onlyNotPushed = notPushedOn === branch?.name && unpushed.length > 0
-  const tabCommits = tab === 'history' && onlyNotPushed ? unpushed : commitTab ? shown : []
+  const comparing = tab === 'history' && !!base
+  const onlyNotPushed = !comparing && notPushedOn === branch?.name && unpushed.length > 0
+  // In a comparison the commits keep their push marks on this branch's side; the other side's aren't this branch's to push or pull.
+  const marks = useMemo(() => new Map(shown.map((c) => [c.sha, c])), [shown])
+  const marked = useCallback((c: LogEntry): HistoryRow => ({ ...c, mark: marks.get(c.sha)?.mark, elsewhere: marks.get(c.sha)?.elsewhere }), [marks])
+  const compareRows = useMemo((): HistoryRow[] => (compareSide === 'ahead' ? (compared.data?.ahead ?? []).map(marked) : (compared.data?.behind ?? [])), [compared.data, compareSide, marked])
+  // Undo takes back your own newest commit, not one of main's that a fast-forward put on top.
+  const undoable = isCurrent && !!data?.local.length && !!data.notOnRemote.includes(data.local[0].sha)
+  const tabCommits = comparing ? compareRows : tab === 'history' && onlyNotPushed ? unpushed : commitTab ? shown : []
+  const listRows = comparing ? compareRows : shown.filter((c) => !onlyNotPushed || c.mark === '↑')
+  const showCompare = comparing && (selection === null || selection.kind === 'compare')
   const showStash = tab === 'changes' && selection?.kind === 'stash' && !!branchStash
   const entry = tab === 'changes' && !showStash ? (entries.find((e) => selection?.kind === 'file' && e.path === selection.path) ?? entries[0] ?? null) : null
   newestShown.current = tabCommits[0]?.sha
@@ -309,7 +347,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const newest = inRange?.[0]
   const oldest = inRange?.[inRange.length - 1]
   const onlyCommit = selection?.kind === 'commit' ? selection.sha : selection?.kind === 'range' ? selection.focus : null
-  const commit = entry || inRange || showStash ? null : (tabCommits.find((c) => c.sha === onlyCommit) ?? tabCommits[0] ?? null)
+  const commit = entry || inRange || showStash || showCompare ? null : (tabCommits.find((c) => c.sha === onlyCommit) ?? tabCommits[0] ?? null)
 
   const diff = useQuery({
     // The path alone: staging a file doesn't change what it differs by, so a click has no reason to reload this.
@@ -351,6 +389,16 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     },
   })
 
+  const compareFiles = useQuery({
+    queryKey: ['local-compare-diff', repo.local?.id ?? github?.repo, compared.data?.ref, compared.data?.baseRef, compareSide, compared.dataUpdatedAt],
+    enabled: showCompare && !!compared.data,
+    queryFn: async (): Promise<FileDiff[]> => {
+      const { ref, baseRef, files } = compared.data!
+      if (files) return files[compareSide]
+      return compareSide === 'ahead' ? local.git!.compareDiff(baseRef, ref) : local.git!.compareDiff(ref, baseRef)
+    },
+  })
+
   useAgentPageContext({
     tabTitle: repo.name,
     label: `the branches of ${github ? `${github.owner}/${github.repo}` : repo.name}${repo.local ? ` with a local folder at ${repo.local.path}` : ''}`,
@@ -374,12 +422,14 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     })
 
   // A detached HEAD has no branch to rewrite. Empty off the History tab, which ends a reorder on the way out.
-  const movable = useMemo(() => (isCurrent && branch?.name !== 'HEAD' && tab === 'history' && !local.operation.data ? reorderableCommits(shown) : []), [isCurrent, branch?.name, tab, local.operation.data, shown])
+  const movable = useMemo(() => (isCurrent && branch?.name !== 'HEAD' && tab === 'history' && !comparing && !local.operation.data ? reorderableCommits(shown) : []), [isCurrent, branch?.name, tab, comparing, local.operation.data, shown])
   const reorder = useCommitReorder(movable, (order) => {
     setSelection(null)
     local.op.mutate(() => local.git!.reorderCommits(order))
   })
-  const { openMenu: openCommitMenu, dialogs: commitDialogs } = useCommitMenu({ local, github, isCurrent, rows: shown, notOnRemote: data?.notOnRemote ?? [], undo, movable, reorder: reorder.start })
+  // The other branch's commits aren't on this one, so the menu treats them as it does commits still to pull.
+  const menuRows = useMemo(() => (comparing ? [...(compared.data?.ahead ?? []).map(marked), ...(compared.data?.behind ?? []).map((c): HistoryRow => ({ ...c, mark: '↓' }))] : shown), [comparing, compared.data, shown, marked])
+  const { openMenu: openCommitMenu, dialogs: commitDialogs } = useCommitMenu({ local, github, isCurrent, rows: menuRows, notOnRemote: data?.notOnRemote ?? [], undo, movable, reorder: reorder.start })
 
   const notPulled = data?.incoming.length ?? 0
   const tabs: Array<{ id: BranchTab; label: string; count?: number; show: boolean }> = [
@@ -470,9 +520,9 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
                     Cancel
                   </Button>
                 </>
-              ) : unpushed.length > 0 || (isCurrent && !!data?.local.length) ? (
+              ) : unpushed.length > 0 || undoable || branches.length > 1 ? (
                 <>
-                  {unpushed.length > 0 && (
+                  {unpushed.length > 0 && !comparing && (
                     <button
                       type="button"
                       className="ws-history-filter"
@@ -487,22 +537,89 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
                       <span className="ws-pill">{unpushed.length}</span>
                     </button>
                   )}
-                  {isCurrent && !!data?.local.length && (
-                    <Button size="small" variant="invisible" leadingVisual={UndoIcon} className="ws-history-end" onClick={() => undo(data.local[0].subject)}>
-                      Undo last commit
-                    </Button>
+                  {branches.length > 1 && (
+                    <ComparePicker
+                      branches={branches.filter((b) => b.name !== branch.name)}
+                      value={base?.name ?? null}
+                      defaultBranch={defaultBranch}
+                      onChange={(name) => {
+                        setCompareWith(name)
+                        setCompareSide('ahead')
+                        setSelection(null)
+                      }}
+                    />
                   )}
+                  {comparing && (
+                    <IconButton
+                      size="small"
+                      variant="invisible"
+                      icon={XIcon}
+                      className="ws-compare-stop"
+                      aria-label="Stop comparing"
+                      onClick={() => {
+                        setCompareWith(null)
+                        setSelection(null)
+                      }}
+                    />
+                  )}
+                  {/* While comparing, the branch name needs the room, so Undo keeps only its icon. */}
+                  {undoable &&
+                    (comparing ? (
+                      <IconButton size="small" variant="invisible" icon={UndoIcon} className="ws-history-end" aria-label="Undo last commit" onClick={() => undo(data.local[0].subject)} />
+                    ) : (
+                      <Button size="small" variant="invisible" leadingVisual={UndoIcon} className="ws-history-end" onClick={() => undo(data.local[0].subject)}>
+                        Undo last commit
+                      </Button>
+                    ))}
                 </>
               ) : undefined
             }
           >
-            {shown
-              .filter((c) => !onlyNotPushed || c.mark === '↑')
-              .map((c, i) => (
-                <CommitRow key={c.sha} commit={c} mark={c.mark === '↑' && !canPush ? undefined : c.mark} selected={inRange ? rangeShas.has(c.sha) : commit?.sha === c.sha} role={!reorder.moving ? undefined : c.sha === reorder.moving ? 'moving' : i < movable.length ? 'movable' : 'fixed'} dropLine={i >= movable.length ? undefined : reorder.dropGap === i ? 'above' : reorder.dropGap === i + 1 && i === movable.length - 1 ? 'below' : undefined} onSelect={selectCommit} onMenu={reorder.moving ? ignoreMenu : openCommitMenu} onGrab={reorder.grab} />
-              ))}
-            {data && !shown.length && <p className="ws-note">No commits on this branch yet.</p>}
-            {canPush && branch.location === 'local' && <p className="ws-note">This branch isn’t on {host} yet.</p>}
+            {comparing && base && (
+              <>
+                <div className="ws-compare-bar" role="group" aria-label={`Compare ${branch.name} with ${base.name}`}>
+                  {(['ahead', 'behind'] as const).map((side) => {
+                    const name = side === 'ahead' ? branch.name : base.name
+                    const count = compared.data ? (side === 'ahead' ? compared.data.aheadBy : compared.data.behindBy) : null
+                    const capped = count !== null && !compared.data?.files && count >= COMPARE_LIMIT
+                    return (
+                      <button
+                        key={side}
+                        type="button"
+                        className="ws-history-filter ws-compare-side"
+                        aria-pressed={compareSide === side}
+                        title={`${count === null ? 'Commits' : `${plural(count, 'commit')}${capped ? ' or more' : ''}`} on ${name} that ${side === 'ahead' ? base.name : branch.name} doesn’t have`}
+                        aria-label={`Only on ${name}`}
+                        onClick={() => {
+                          setCompareSide(side)
+                          setSelection(null)
+                        }}
+                      >
+                        {side === 'ahead' ? <ArrowUpIcon size={12} /> : <ArrowDownIcon size={12} />}
+                        <span className="ws-compare-name">{name}</span>
+                        {count !== null && <span className="ws-pill">{capped ? `${count}+` : count}</span>}
+                      </button>
+                    )
+                  })}
+                </div>
+                {compared.isLoading && <Loading />}
+                {compared.error ? <div className="error-box ws-section-pad">{errorMessage(compared.error)}</div> : null}
+                {compared.data && !!compareRows.length && (
+                  <button type="button" className={`ws-row ws-compare-row ${showCompare ? 'is-selected' : ''}`} aria-pressed={showCompare} onClick={() => setSelection({ kind: 'compare' })}>
+                    <FileDiffIcon className="ws-compare-icon" />
+                    <span className="ws-row-main">All changes</span>
+                    <span className="ws-row-sub">{compareSide === 'ahead' ? `${branch.name} since it left ${base.name}` : `${base.name} since ${branch.name} left it`}</span>
+                  </button>
+                )}
+                {compared.data && !compareRows.length && <p className="ws-note">{compareSide === 'ahead' ? `${branch.name} has no commits that ${base.name} doesn’t have.` : `${branch.name} is up to date with ${base.name}.`}</p>}
+              </>
+            )}
+            {listRows.map((c, i) => (
+              <CommitRow key={c.sha} commit={c} mark={c.mark === '↑' && !canPush ? undefined : c.mark} elsewhere={c.elsewhere} selected={inRange ? rangeShas.has(c.sha) : commit?.sha === c.sha} role={!reorder.moving ? undefined : c.sha === reorder.moving ? 'moving' : i < movable.length ? 'movable' : 'fixed'} dropLine={i >= movable.length ? undefined : reorder.dropGap === i ? 'above' : reorder.dropGap === i + 1 && i === movable.length - 1 ? 'below' : undefined} onSelect={selectCommit} onMenu={reorder.moving ? ignoreMenu : openCommitMenu} onGrab={reorder.grab} />
+            ))}
+            {comparing && compared.data && compareRows.length < (compareSide === 'ahead' ? compared.data.aheadBy : compared.data.behindBy) && <p className="ws-note">Showing the newest {compareRows.length}.</p>}
+            {!comparing && data && !shown.length && <p className="ws-note">No commits on this branch yet.</p>}
+            {!comparing && canPush && branch.location === 'local' && <p className="ws-note">This branch isn’t on {host} yet.</p>}
           </Section>
         )}
 
@@ -592,6 +709,35 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
         </Button>
       </div>
       <div className="ws-scroll ws-diff">{diff.isLoading ? <Loading /> : diff.data ? <LocalFileDiff file={diff.data} split={split} eager /> : <p className="ws-note">No textual changes to show.</p>}</div>
+    </div>
+  ) : showCompare && base && branch ? (
+    <div className="ws-details">
+      <div className="ws-details-head">
+        <div className="ws-details-title">
+          <div className="text-bold">{compareSide === 'ahead' ? `What ${branch.name} changes` : `What ${base.name} changed`}</div>
+          <div className="ws-row-sub">
+            {compareSide === 'ahead' ? `Since it left ${base.name}, as a pull request into ${base.name} shows it` : `Since ${branch.name} left it`}
+            {compared.data && (
+              <>
+                {' · '}
+                <span className="text-mono">{compareSide === 'ahead' ? `${compared.data.baseRef}...${compared.data.ref}` : `${compared.data.ref}...${compared.data.baseRef}`}</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+      {compared.isLoading || compareFiles.isLoading ? (
+        <div className="ws-scroll ws-diff">
+          <Loading />
+        </div>
+      ) : compareFiles.data?.length ? (
+        <CommitFiles key={`compare-${base.name}-${compareSide}`} files={compareFiles.data} split={split} message="" />
+      ) : (
+        <div className="ws-scroll ws-diff">
+          {compareFiles.data && <p className="ws-note">No file changes.</p>}
+          {compareFiles.error ? <div className="error-box">{errorMessage(compareFiles.error)}</div> : null}
+        </div>
+      )}
     </div>
   ) : inRange ? (
     <div className="ws-details">

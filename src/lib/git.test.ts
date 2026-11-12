@@ -89,6 +89,7 @@ describe('reorderableCommits', () => {
   it('stops at what is still to pull', () => expect(reorderableCommits([row('a', '↑'), row('b', '↓')])).toEqual(['a']))
   it('stops at a merge', () => expect(reorderableCommits([row('a', '↑'), row('m', '↑', ['x', 'y']), row('c', '↑')])).toEqual(['a']))
   it('includes a first commit, which has no parent', () => expect(reorderableCommits([row('a', '↑'), row('b', '↑', [])])).toEqual(['a', 'b']))
+  it('stops at a commit the remote has on another branch', () => expect(reorderableCommits([row('a', '↑'), { ...row('b', '↑'), elsewhere: true }, row('c', '↑')])).toEqual(['a']))
 })
 
 describe('parseBranches', () => {
@@ -248,6 +249,33 @@ describe('createGitClient against a real repository', () => {
     } finally {
       await raw(work, 'worktree', 'remove', '--force', tree)
       await raw(work, 'branch', '-D', 'range', 'range-side').catch(() => '')
+    }
+  })
+
+  it('compares a branch with another: the commits only each side has, and what each side changed since they split', async () => {
+    const tree = join(root, 'compare')
+    await raw(work, 'worktree', 'add', '-b', 'cmp', tree)
+    const paths = (files: Array<{ newPath: string }>) => files.map((f) => f.newPath)
+    const subjects = (commits: Array<{ subject: string }>) => commits.map((c) => c.subject)
+    try {
+      await commitFile(tree, 'm.txt', 'mine')
+      const by = Object.fromEntries((await client.branches()).map((b) => [b.name, b]))
+      expect(await client.compareRef(by.cmp)).toBe('cmp')
+      expect(await client.compareRef(by.main)).toBe('main')
+      // The remote's main has the commit this clone's main hasn't pulled.
+      expect(await client.compareRef(by.main, true)).toBe('origin/main')
+      expect(await client.compareRef(by.release)).toBe('origin/release')
+
+      const { ahead, behind } = await client.compareCommits('cmp', 'origin/main')
+      expect(subjects(ahead)).toEqual(['mine'])
+      expect(subjects(behind)).toEqual(['theirs'])
+      expect((await client.compareCommits('cmp', 'main')).behind).toEqual([])
+
+      expect(paths(await client.compareDiff('origin/main', 'cmp'))).toEqual(['m.txt'])
+      expect(paths(await client.compareDiff('cmp', 'origin/main'))).toEqual(['b.txt'])
+    } finally {
+      await raw(work, 'worktree', 'remove', '--force', tree)
+      await raw(work, 'branch', '-D', 'cmp').catch(() => '')
     }
   })
 
@@ -577,19 +605,22 @@ describe('createGitClient against a real repository', () => {
     await raw(work, 'branch', '-D', 'base-a', 'base-b')
   })
 
-  it('leaves commits merged in from the remote out of what is not pushed, and keeps log order', async () => {
+  it('counts commits merged in from another branch as not pushed, as git does, and marks them apart', async () => {
     await raw(work, 'switch', '-c', 'tracked', '--track', 'origin/main')
     await commitFile(work, 'tracked.txt', 'mine')
     await raw(work, 'merge', '--no-edit', 'origin/release')
     const tracked = (await client.branches()).find((b) => b.name === 'tracked')!
     const commits = await client.branchCommits(tracked)
-    // Git's own count still has release's commit: a push moves the branch past it.
+    // The push moves the branch past release's commit too, so it's one of the three, as in GitHub Desktop.
     expect(tracked.ahead).toBe(3)
-    expect(commits.local.map((c) => c.subject)).toEqual([expect.stringMatching(/^Merge/), 'mine'])
+    expect(commits.local.map((c) => c.subject)).toEqual([expect.stringMatching(/^Merge/), 'mine', 'release'])
     const merged = commits.history.find((c) => c.subject === 'release')!
-    expect(merged.mark).toBeUndefined()
+    expect(merged).toMatchObject({ mark: '↑', elsewhere: true })
     expect(commits.notOnRemote).not.toContain(merged.sha)
     expect(commits.history.filter((c) => c.mark === '↑').map((c) => c.sha)).toEqual(commits.local.map((c) => c.sha))
+    expect(commits.history.filter((c) => c.mark === '↑' && !c.elsewhere).map((c) => c.subject)).toEqual([expect.stringMatching(/^Merge/), 'mine'])
+    // Only this clone's own commits can be dragged, and a merge ends the run anyway.
+    expect(reorderableCommits(commits.history)).toEqual([])
     // A merge without conflicts shows what it brought in, not an empty combined diff.
     expect((await client.show(commits.local[0].sha)).files.map((f) => f.newPath)).toEqual(['c.txt'])
     await raw(work, 'switch', 'spike')
