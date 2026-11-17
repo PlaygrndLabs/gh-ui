@@ -17,8 +17,9 @@ import { FilesChanged } from './pull/Files'
 import { PullCommits } from './pull/Commits'
 import { ChecksTab } from './pull/Checks'
 import { SplitPane } from '../../components/SplitPane'
-import { PullCommitsPane, PullStatusBar } from '../workspace/PullsWorkspace'
-import { CheckoutMenu, PullStatusLine } from './pull/PullHeaderActions'
+import { PullCommitsPane } from '../workspace/PullsWorkspace'
+import { CheckoutMenu, PullStateActions } from './pull/PullHeaderActions'
+import { MergeReadiness } from './pull/MergeBox'
 
 /**
  * A base or head branch that opens its code, the way github.com links them. A closed pull request's head branch is
@@ -78,7 +79,6 @@ function PullRequestView() {
   const invalidate = useInvalidatePull(owner, repo, number)
   const [editingTitle, setEditingTitle] = useState(false)
   const [title, setTitle] = useState('')
-  const [chatOnly, setChatOnly] = useState(false)
 
   const saveTitle = useMutation({
     mutationFn: async () => octokit.rest.pulls.update({ owner, repo, pull_number: number, title }),
@@ -172,6 +172,7 @@ function PullRequestView() {
                 </>
               )}
               <span style={{ width: 4 }} />
+              <PullStateActions pr={pr} owner={owner} repo={repo} />
               <CheckoutMenu pr={pr} owner={owner} repo={repo} />
               <AgentOnly><ActionMenu>
                 <ActionMenu.Anchor>
@@ -203,7 +204,7 @@ function PullRequestView() {
         )}
         {saveTitle.error && <div className="error-box mt-2">{errorMessage(saveTitle.error)}</div>}
         <div className="flex-center gap-2 wrap mt-2">
-          {!isNative && <PullStateLabel pull={pr} />}
+          <PullStateLabel pull={pr} />
           <span className="fg-muted">
             <UserLink login={pr.user?.login} type={pr.user?.type} className="text-bold fg-default" />{' '}
             {pr.merged ? 'merged' : 'wants to merge'} {plural(pr.commits, 'commit')} into <BranchPill repo={pr.base.repo.full_name} branch={pr.base.ref} label={baseLabel} /> from{' '}
@@ -211,8 +212,9 @@ function PullRequestView() {
           </span>
           <CopyButton text={pr.head.ref} label="Copy head branch name" />
         </div>
-        <div style={{ marginTop: 8, paddingBottom: 16, borderBottom: '1px solid var(--borderColor-muted)' }}>
-          {!isNative && pr.state === 'open' && <PullStatusLine pr={pr} owner={owner} repo={repo} canAct={!!pr.base.repo.permissions?.push} />}
+        {/* Pinned at the top, as github.com's new overview page has it, on every tab: can this merge, and if not, why. */}
+        <div className="pr-ready-slot">
+          <MergeReadiness pr={pr} />
         </div>
       </div>
   )
@@ -224,7 +226,6 @@ function PullRequestView() {
     return (
       <div className="ws-pr">
         <div className="ws-pr-head">{header}</div>
-        <PullStatusBar pr={pr} />
         <div className="ws-branch-body">
           <SplitPane
             id="pull-chat"
@@ -234,12 +235,9 @@ function PullRequestView() {
             min={300}
             max={900}
             first={
-              <div className={`ws-pr-chat ${chatOnly ? 'is-comments-only' : ''}`}>
+              <div className="ws-pr-chat">
                 <nav className="ws-subtabs" aria-label="Chat">
-                  <Link className="ws-tab" to={showChecks ? (showCommits ? `${base}/commits` : base) : pathname} aria-current={!showChecks && !chatOnly ? 'page' : undefined} onClick={() => setChatOnly(false)}>
-                    All
-                  </Link>
-                  <Link className="ws-tab" to={showChecks ? base : pathname} aria-current={!showChecks && chatOnly ? 'page' : undefined} onClick={() => setChatOnly(true)}>
+                  <Link className="ws-tab" to={showChecks ? (showCommits ? `${base}/commits` : base) : pathname} aria-current={!showChecks ? 'page' : undefined}>
                     Conversation
                   </Link>
                   <Link className="ws-tab" to={`${base}/checks`} aria-current={showChecks ? 'page' : undefined}>

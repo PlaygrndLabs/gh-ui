@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Banner, Button, Label, RelativeTime } from '@primer/react'
-import { GitCommitIcon, SparkleFillIcon } from '@primer/octicons-react'
+import { useSearchParams } from 'react-router-dom'
+import { ActionList, ActionMenu, Banner, Button, Label, RelativeTime, SegmentedControl } from '@primer/react'
+import { GitCommitIcon, SortAscIcon, SortDescIcon, SparkleFillIcon } from '@primer/octicons-react'
 import { useGitHub, setThreadResolved, addPendingReply, updatePendingComment, deletePendingComment, type PendingReviewComment, type PullRequest } from '../../../lib/github'
 import { useRepo } from '../../../lib/repo'
 import { AgentOnly, useAgent } from '../../../lib/agent/AgentProvider'
@@ -11,12 +12,13 @@ import { CommentCard, EventRow, PendingComment, PendingThread, ReviewThread, Rev
 import { SuggestionProvider } from '../../../components/Suggestions'
 import { IssueSidebar, usePullExtra } from '../../../components/IssueSidebar'
 import { useTimeline, useReviewComments, useReviewThreads, usePullFiles, usePullReviewState, useInvalidatePull, botThreadsSummary, diffLineMap, prPrompts } from './data'
-import { MergeBox } from './MergeBox'
 
 export function threadPrompt(owner: string, repo: string, pr: PullRequest, t: ThreadModel) {
   const who = t.root.user?.login ?? 'a reviewer'
   return `Address the review thread on ${owner}/${repo}#${pr.number} started by ${who} on ${t.root.path}${t.root.line ? `:${t.root.line}` : ''} (comment id ${t.root.id}${t.info ? `, thread id ${t.info.id}` : ''}). Verify the concern against the code at head ${pr.head.sha} on branch ${pr.head.ref}. If it is valid, fix it with commit_files (expected_head_sha ${pr.head.sha}), reply in the thread with what changed and the commit SHA, and resolve the thread. If it is not valid, reply with a short explanation and leave it open.`
 }
+
+type CommentFilter = 'all' | 'unresolved' | 'mine'
 
 export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } }) {
   const { owner, repo, fullName } = useRepo()
@@ -35,8 +37,31 @@ export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } 
   const [busy, setBusy] = useState<'comment' | 'state' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // All, Unresolved or Mine, and oldest or newest first, as github.com's new overview page offers. In the address, so
+  // the readiness summary's "unresolved" link can open the conversation that way.
+  const [params, setParams] = useSearchParams()
+  const filter: CommentFilter = params.get('comments') === 'unresolved' ? 'unresolved' : params.get('comments') === 'mine' ? 'mine' : 'all'
+  const newestFirst = params.get('sort') === 'newest'
+  const setParam = (key: string, value: string | null) =>
+    setParams(
+      (p) => {
+        const next = new URLSearchParams(p)
+        if (value) next.set(key, value)
+        else next.delete(key)
+        return next
+      },
+      { replace: true },
+    )
+
   const threads = useMemo(() => buildThreads(comments.data ?? [], threadInfo.data), [comments.data, threadInfo.data])
-  const events = useMemo(() => rollupEvents(timeline.data ?? [], { pull: true }), [timeline.data])
+  const allEvents = useMemo(() => rollupEvents(timeline.data ?? [], { pull: true }), [timeline.data])
+  const isMine = useCallback((t: ThreadModel) => [t.root, ...t.replies].some((c) => c.user?.login === account.login), [account.login])
+  const unresolvedCount = threads.filter((t) => !t.info?.isResolved).length
+  /** The threads of one review this filter keeps. */
+  const keptThreads = useCallback(
+    (list: ThreadModel[]) => (filter === 'unresolved' ? list.filter((t) => !t.info?.isResolved) : filter === 'mine' ? list.filter(isMine) : list),
+    [filter, isMine],
+  )
   const threadsByReview = useMemo(() => {
     const m = new Map<number, ThreadModel[]>()
     for (const t of threads) {
@@ -45,6 +70,19 @@ export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } 
     }
     return m
   }, [threads])
+  const events = useMemo(() => {
+    const byWho = (e: LooseEvent) => (e.user?.login ?? e.actor?.login) === account.login
+    const kept =
+      filter === 'all'
+        ? allEvents
+        : allEvents.filter((e) => {
+            if (e.event === 'commented') return filter === 'mine' && byWho(e)
+            if (e.event === 'reviewed' && e.state?.toUpperCase() === 'PENDING') return filter === 'mine'
+            if (e.event === 'reviewed') return keptThreads(threadsByReview.get(e.id ?? -1) ?? []).length > 0 || (filter === 'mine' && byWho(e) && !!e.body)
+            return false
+          })
+    return newestFirst ? [...kept].reverse() : kept
+  }, [allEvents, filter, newestFirst, keptThreads, threadsByReview, account.login])
   const diffLines = useMemo(() => diffLineMap(files.data), [files.data])
   const currentLine = useCallback((path: string, n: number) => diffLines.get(`${path}|RIGHT:${n}`), [diffLines])
   const serverReview = reviewState.data?.pending ?? null
@@ -105,7 +143,7 @@ export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } 
     onDeleteComment: (id: number) => run('comment', () => octokit.rest.pulls.deleteReviewComment({ owner, repo, comment_id: id })),
   })
 
-  const renderEvent = (e: LooseEvent, i: number) => {
+  const renderEvent = (e: LooseEvent, i: number, list: LooseEvent[]) => {
     if (e.event === 'commented') {
       const bot = isBot(e.user?.login ?? e.actor?.login, e.user?.type)
       return (
@@ -165,8 +203,10 @@ export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } 
       )
     }
     if (e.event === 'reviewed') {
-      const reviewThreads = threadsByReview.get(e.id ?? -1) ?? []
-      if (!e.body && reviewThreads.length === 0 && (e.state === 'COMMENTED' || e.state === 'commented')) return null
+      const reviewThreads = keptThreads(threadsByReview.get(e.id ?? -1) ?? [])
+      // A filter shows a review's threads, not what its review said overall, unless it's your own review under Mine.
+      const showBody = !!e.body && (filter === 'all' || (filter === 'mine' && (e.user?.login ?? e.actor?.login) === account.login))
+      if (!showBody && reviewThreads.length === 0) return null
       const state = (e.state ?? '').toUpperCase()
       return (
         <div key={`r${e.id}`} className="mb-3">
@@ -182,9 +222,9 @@ export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } 
               )}
             </span>
           </div>
-          {(e.body || reviewThreads.length > 0) && (
+          {(showBody || reviewThreads.length > 0) && (
             <div className="review-block">
-              {e.body && (
+              {showBody && (
                 <div style={{ padding: 16, borderBottom: reviewThreads.length ? '1px solid var(--borderColor-muted)' : 0 }}>
                   <Markdown html={e.body_html} text={e.body_html ? undefined : e.body} context={fullName} />
                   {isBot(e.user?.login, e.user?.type) && (
@@ -206,10 +246,10 @@ export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } 
     }
     const simple = <SimpleEvent key={`e${e.id ?? e.node_id ?? e.sha ?? i}`} e={e} owner={owner} repo={repo} />
     // github.com heads each run of two or more pushed commits with "<author> [and others] added N commits".
-    if (e.event === 'committed' && events[i - 1]?.event !== 'committed' && events[i + 1]?.event === 'committed') {
+    if (e.event === 'committed' && list[i - 1]?.event !== 'committed' && list[i + 1]?.event === 'committed') {
       let n = 1
-      while (events[i + n]?.event === 'committed') n++
-      const authors = new Set(events.slice(i, i + n).map((c) => c.author?.name).filter(Boolean))
+      while (list[i + n]?.event === 'committed') n++
+      const authors = new Set(list.slice(i, i + n).map((c) => c.author?.name).filter(Boolean))
       const first = e.author?.name ?? 'Someone'
       return (
         <div key={`g${e.sha ?? i}`}>
@@ -267,11 +307,44 @@ export function Conversation({ pr }: { pr: PullRequest & { body_html?: string } 
             agentPrompt={prompts.summary}
             onEdit={(body) => runStrict(() => octokit.rest.pulls.update({ owner, repo, pull_number: pr.number, body }))}
           />
-          {timeline.isLoading ? <Loading /> : timeline.error ? <ErrorBox error={timeline.error} /> : events.map(renderEvent)}
-          <div className="timeline-spacer" />
-          <div id="pr-merge">
-            <MergeBox pr={pr} />
+          <div className="pr-comment-filters" role="toolbar" aria-label="Show comments">
+            <SegmentedControl aria-label="Which comments" size="small">
+              <SegmentedControl.Button selected={filter === 'all'} onClick={() => setParam('comments', null)}>
+                All
+              </SegmentedControl.Button>
+              <SegmentedControl.Button selected={filter === 'unresolved'} onClick={() => setParam('comments', 'unresolved')}>
+                {`Unresolved${unresolvedCount ? ` ${unresolvedCount}` : ''}`}
+              </SegmentedControl.Button>
+              <SegmentedControl.Button selected={filter === 'mine'} onClick={() => setParam('comments', 'mine')}>
+                Mine
+              </SegmentedControl.Button>
+            </SegmentedControl>
+            <ActionMenu>
+              <ActionMenu.Button size="small" variant="invisible" leadingVisual={newestFirst ? SortDescIcon : SortAscIcon}>
+                {newestFirst ? 'Newest first' : 'Oldest first'}
+              </ActionMenu.Button>
+              <ActionMenu.Overlay width="small" align="end">
+                <ActionList selectionVariant="single">
+                  <ActionList.Item selected={!newestFirst} onSelect={() => setParam('sort', null)}>
+                    Oldest first
+                  </ActionList.Item>
+                  <ActionList.Item selected={newestFirst} onSelect={() => setParam('sort', 'newest')}>
+                    Newest first
+                  </ActionList.Item>
+                </ActionList>
+              </ActionMenu.Overlay>
+            </ActionMenu>
           </div>
+          {timeline.isLoading ? (
+            <Loading />
+          ) : timeline.error ? (
+            <ErrorBox error={timeline.error} />
+          ) : events.length ? (
+            events.map(renderEvent)
+          ) : (
+            <p className="pr-comment-filters-empty">{filter === 'unresolved' ? 'No unresolved threads.' : filter === 'mine' ? 'You haven’t commented on this pull request.' : 'Nothing has happened here yet.'}</p>
+          )}
+          <div className="timeline-spacer" />
           {error && <div className="error-box mb-3">{error}</div>}
           <div className="timeline-comment-group mt-3">
             <div className="avatar-col">

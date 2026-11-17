@@ -6,16 +6,10 @@ import { GitPullRequestIcon } from '@primer/octicons-react'
 import { useGitHub, type PullRequest } from '../../lib/github'
 import { isNative } from '../../lib/platform'
 import { useRepo } from '../../lib/repo'
-import { useSharedPref } from '../../lib/storage'
-import { buildThreads } from '../../components/Timeline'
-import { PullStateLabel } from '../../components/Status'
 import { ErrorBox, Loading } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
 import { githubSource } from '../../lib/filePreview'
 import { firstLine, shortSha } from '../../lib/format'
-import { contentElementById } from '../../lib/scroll'
-import { usePullFiles, useReviewComments, useReviewThreads } from '../repo/pull/data'
-import { PullStatusLine } from '../repo/pull/PullHeaderActions'
 import { PullsPage } from '../repo/Pulls'
 import { useCheckedOutBranch } from './ActionsWorkspace'
 
@@ -109,39 +103,6 @@ export function PullsHome() {
             </Button>
           </div>
         </div>
-      )}
-    </div>
-  )
-}
-
-/** Everything that decides whether this can merge, always in view. */
-export function PullStatusBar({ pr }: { pr: PullRequest }) {
-  const { owner, repo } = useRepo()
-  const comments = useReviewComments(owner, repo, pr.number)
-  const threadInfo = useReviewThreads(owner, repo, pr.number)
-  const files = usePullFiles(owner, repo, pr.number)
-  const [viewed] = useSharedPref<Record<string, string>>(`viewed:${owner}/${repo}#${pr.number}`, {})
-  const live = pr.state === 'open' && !pr.merged
-  const unresolved = buildThreads(comments.data ?? [], threadInfo.data).filter((t) => !t.info?.isResolved).length
-  const viewedCount = (files.data ?? []).filter((f) => viewed[f.filename] === f.sha).length
-  const toMerge = () => contentElementById('pr-merge')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-
-  return (
-    <div className="ws-status-bar">
-      <PullStateLabel pull={pr} />
-      {live && <PullStatusLine pr={pr} owner={owner} repo={repo} canAct={!!pr.base.repo.permissions?.push} />}
-      <span className="ws-status-item">
-        {unresolved} open thread{unresolved === 1 ? '' : 's'}
-      </span>
-      <span className="ws-status-item">
-        {viewedCount} of {pr.changed_files} files viewed
-      </span>
-      {live && (
-        <span className="ws-status-end">
-          <Button size="small" variant={!pr.draft && ['clean', 'unstable', 'has_hooks'].includes(pr.mergeable_state ?? '') ? 'primary' : 'default'} onClick={toMerge}>
-            {pr.draft ? 'Ready for review' : 'Merge'}
-          </Button>
-        </span>
       )}
     </div>
   )

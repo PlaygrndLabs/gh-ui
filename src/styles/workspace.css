@@ -268,10 +268,10 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .ws-pr-head { flex: none; padding: 10px 16px 0; }
 .ws-pr-head .page-title { font-size: 18px; }
 .ws-pr-head > .mb-3 { margin-bottom: 0 !important; }
-.ws-pr-head .flex-center.wrap { padding-bottom: 8px !important; border-bottom: 0 !important; margin-top: 4px !important; }
-.ws-status-bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 6px 16px; background: var(--ws-panel); border-block: 1px solid var(--ws-line); }
-.ws-status-item { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.ws-status-end { margin-left: auto; }
+.ws-pr-head .flex-center.wrap { margin-top: 4px !important; }
+/* The readiness card spans the window under the title, the one place both panes share. */
+.ws-pr-head { container-type: inline-size; }
+.ws-pr-head .pr-ready-slot { margin: 10px 0 12px; }
 .ws-pr-code { container: ws-pr-code / inline-size; }
 .ws-pr-chat, .ws-pr-code, .ws-branch-timeline { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
 .ws-subtabs { flex: none; display: flex; align-items: stretch; min-height: 36px; padding: 0 6px; border-bottom: 1px solid var(--ws-line); }
@@ -306,10 +306,6 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .ws-pr-thread .timeline-comment::before, .ws-pr-thread .timeline-comment::after { display: none; }
 .ws-pr-thread .timeline-event { margin-left: 0; font-size: 12px; }
 .ws-pr-thread .timeline-spacer { display: none; }
-.ws-pr-thread .merge-box { margin-left: 0; }
-.ws-pr-thread .merge-box .merge-icon { display: none; }
-.ws-pr-thread #pr-merge { margin-top: 12px; }
-.is-comments-only .timeline-event:not(.has-below) { display: none; }
 
 /* ---------- Tabs, the way Chrome draws them: the active one is part of the toolbar under it ---------- */
 .tabbed > .tab-strip { align-items: flex-end; gap: 0; padding-top: 8px; padding-right: 8px; color: var(--ws-chrome-muted); background: var(--ws-chrome-bg-deep); border-bottom: 0; }

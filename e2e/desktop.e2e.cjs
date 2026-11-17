@@ -193,11 +193,13 @@ exports.steps = [
         sideList: m.querySelectorAll('.ws-list').length,
         seg: pick()?.innerText.replace(/\\s+/g, ' '),
         chat: !!m.querySelector('.ws-pr-thread .timeline-comment'),
-        merge: !!m.querySelector('#pr-merge .merge-box'),
+        // Merge readiness sits under the title, above both panes, as on github.com's new overview page.
+        merge: !!m.querySelector('.ws-pr-head #pr-merge.pr-ready .pr-ready-title'),
         files: !!m.querySelector('.ws-pr-files .file-diff'),
         tree: !!m.querySelector('.ws-pr-files .files-tree'),
         reviewButton: !!byText('button', 'Review changes') || !!byText('button', 'Finish your review'),
-        status: m.querySelector('.ws-status-bar')?.innerText.replace(/\\s+/g, ' '),
+        status: m.querySelector('.pr-ready')?.innerText.replace(/\\s+/g, ' '),
+        filters: !!m.querySelector('.ws-pr-thread .pr-comment-filters'),
         // The tab row links to the pull request; the page doesn't repeat it.
         pageLink: m.innerHTML.includes('Copy pull request link'),
       }
@@ -213,7 +215,7 @@ exports.steps = [
       ;[...nav.querySelectorAll('a.ws-tab')].find((a) => a.textContent.includes('Pull requests')).click()
       await new Promise((res) => setTimeout(res, 1500))
       r.stayed = pick()?.innerText === shown && !!main()?.querySelector('.ws-pr-thread')
-      r.fail = !(r.pulls > 1 && r.moved && r.menuClosed && r.sideList === 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /files viewed/.test(r.status) && !r.pageLink && r.tabLink && r.stayed)
+      r.fail = !(r.pulls > 1 && r.moved && r.menuClosed && r.sideList === 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /viewed/.test(r.status) && r.filters && !r.pageLink && r.tabLink && r.stayed)
       return r
     `,
   },
