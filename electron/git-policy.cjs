@@ -49,6 +49,7 @@ const RULES = {
   tag: { flags: ['--points-at'], args: 'any' },
   'rev-parse': { flags: ['--abbrev-ref', '-q', '--verify'], args: 'any' },
   'ls-tree': { flags: ['-r', '--name-only'], args: 'any' },
+  'merge-base': { args: 'any' },
   // The first bare argument names a configured remote, never a URL or folder, which could connect anywhere or run its hooks.
   push: { flags: ['-u'], args: 'remote' },
   pull: { flags: ['--ff-only'], args: 'remote' },
@@ -157,6 +158,20 @@ function validateGitArgs(args) {
 }
 
 // ---------------------------------------------------------------------------
+// Reading one file's bytes for a preview: `git cat-file blob <rev>:<path>`, or the file in the folder when rev is null.
+
+// A revision: a name or id with ^ ~ and @{n} suffixes, which branch names like feat/a#b can be. No ":" (it would start
+// the path), no leading "-" (an option) and no whitespace.
+const BLOB_REV = /^[^\s:\\-][^\s:\\]*$/
+const BLOB_MAX_BYTES = 25 * 1024 * 1024
+
+/** Throws unless rev (or null for the folder) and path name one file inside the repository. */
+function validateBlobRequest(rev, file) {
+  if (rev !== null && (typeof rev !== 'string' || !BLOB_REV.test(rev))) throw new Error('Invalid revision')
+  if (typeof file !== 'string' || !file || file.includes('\0') || path.isAbsolute(file) || /^[\\/]/.test(file) || file.split(/[\\/]/).includes('..')) throw new Error('Invalid file path')
+}
+
+// ---------------------------------------------------------------------------
 // Reordering commits. An interactive rebase needs a sequence editor, and a command the renderer could name is a
 // command it could run, so `rebase -i` stays off the allow-list above. The renderer says only what order it wants.
 
@@ -205,4 +220,4 @@ function worktreeFolder(repoName, branch) {
   return `${repoName}-${branch.replace(/[^\w.-]+/g, '-')}`
 }
 
-module.exports = { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, gitCommandEnv, reorderCommits, GIT_BASE_ENV }
+module.exports = { HOST_RE, gitAuthEnv, validateGitArgs, validateBlobRequest, BLOB_MAX_BYTES, worktreeFolder, gitCommandEnv, reorderCommits, GIT_BASE_ENV }

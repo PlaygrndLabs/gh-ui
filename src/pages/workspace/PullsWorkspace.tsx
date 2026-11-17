@@ -11,6 +11,7 @@ import { buildThreads } from '../../components/Timeline'
 import { PullStateLabel } from '../../components/Status'
 import { ErrorBox, Loading } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
+import { githubSource } from '../../lib/filePreview'
 import { firstLine, shortSha } from '../../lib/format'
 import { contentElementById } from '../../lib/scroll'
 import { usePullFiles, useReviewComments, useReviewThreads } from '../repo/pull/data'
@@ -180,7 +181,12 @@ export function PullCommitsPane({ pr }: { pr: PullRequest }) {
           <>
             <div className="text-bold mb-2">{firstLine(commit.data?.commit.message ?? '')}</div>
             {commit.data?.files?.map((f, i) => (
-              <FileDiffBox key={f.filename} eager={i < 3} file={{ path: f.filename, previousPath: f.previous_filename ?? null, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch ?? null }} />
+              <FileDiffBox
+                key={f.filename}
+                eager={i < 3}
+                file={{ path: f.filename, previousPath: f.previous_filename ?? null, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch ?? null }}
+                source={githubSource(octokit, owner, repo, { before: commit.data!.parents[0]?.sha ?? null, after: commit.data!.sha })}
+              />
             ))}
           </>
         )}

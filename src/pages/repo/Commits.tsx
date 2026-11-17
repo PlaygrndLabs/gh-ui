@@ -13,6 +13,7 @@ import { readPref, writePref } from '../../lib/storage'
 import { BranchPicker } from '../../components/BranchPicker'
 import { Blankslate, CommitHeadline, CopyButton, DiffStat, ErrorBox, Loading, UserAvatar, titleParts } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
+import { githubSource } from '../../lib/filePreview'
 import { scrollContentToTop } from '../../lib/scroll'
 
 const PER_PAGE = 35
@@ -416,6 +417,7 @@ export function CommitPage() {
   const c = commit.data
   const files = c.files ?? []
   const body = restLines(c.commit.message)
+  const source = githubSource(octokit, owner, repo, { before: c.parents[0]?.sha ?? null, after: c.sha })
   return (
     <div className="container-xl">
       <div className="commit-header">
@@ -506,6 +508,7 @@ export function CommitPage() {
           key={`${i}-${f.filename}`}
           eager={i < 3}
           file={{ path: f.filename, previousPath: f.previous_filename, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch, sha: f.sha }}
+          source={source}
           split={split}
           collapsed={collapsed[i]}
           onToggle={() => setCollapsed((s) => ({ ...s, [i]: !s[i] }))}

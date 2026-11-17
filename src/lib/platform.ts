@@ -72,6 +72,8 @@ export interface NativeBridge {
   }
   /** Runs an allow-listed git subcommand inside a registered local repository. */
   git(repoId: string, args: string[], auth?: GitAuth): Promise<GitResult>
+  /** A file's bytes at a revision, or in the folder when rev is null. Null when it isn't there or is too large to preview. */
+  readFile(repoId: string, rev: string | null, path: string): Promise<Uint8Array | null>
   revealInFinder(repoId: string): Promise<void>
   openInEditor(repoId: string): Promise<void>
   openInTerminal(repoId: string): Promise<void>

@@ -960,6 +960,38 @@ a.branch-pill:hover { text-decoration: underline; }
 .diff-load-label { font-size: 16px; font-weight: 600; color: var(--fgColor-accent); }
 .diff-empty-note { padding: 4px 8px; font-size: 14px; color: var(--fgColor-muted); }
 
+/* A changed image or Markdown file shown as itself: images before and after, side by side, on a checkerboard so
+   transparency shows; github.com's "2-up" view. */
+.file-preview { display: grid; gap: 16px; padding: 16px; }
+.file-preview-two { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.file-preview-side { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; margin: 0; }
+.file-preview-label { font-size: 12px; font-weight: 600; color: var(--fgColor-muted); }
+.file-preview-before .file-preview-label { color: var(--fgColor-danger); }
+.file-preview-after .file-preview-label { color: var(--fgColor-success); }
+.file-preview-canvas {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120px;
+  min-height: 96px;
+  max-width: 100%;
+  padding: 8px;
+  border: 1px solid var(--borderColor-default);
+  border-radius: 6px;
+  background-color: var(--bgColor-default);
+  background-image:
+    linear-gradient(45deg, var(--bgColor-muted) 25%, transparent 25%, transparent 75%, var(--bgColor-muted) 75%),
+    linear-gradient(45deg, var(--bgColor-muted) 25%, transparent 25%, transparent 75%, var(--bgColor-muted) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 8px 8px;
+}
+.file-preview-before .file-preview-canvas { border-color: var(--borderColor-danger-emphasis); }
+.file-preview-after .file-preview-canvas { border-color: var(--borderColor-success-emphasis); }
+.file-preview-canvas img { display: block; max-width: 100%; max-height: 480px; object-fit: contain; image-rendering: auto; }
+.file-preview-meta { display: flex; gap: 12px; font-size: 12px; color: var(--fgColor-muted); font-variant-numeric: tabular-nums; }
+.file-preview-note { font-size: 12px; color: var(--fgColor-muted); }
+.file-preview-markdown { padding: 16px 24px; }
+
 /* Checks: head commit bar, check suites sidebar, annotations above the output. */
 .checks-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px 0 16px; min-width: 0; }
 .checks-commit-title { margin: 0; font-size: 14px; font-weight: 600; color: var(--fgColor-muted); min-width: 0; }

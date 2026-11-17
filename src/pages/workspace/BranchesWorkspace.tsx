@@ -16,6 +16,7 @@ import { useRepoQuery } from '../../lib/repo'
 import { hostName, useRemoteBranches, type WorkspaceRepo } from '../../lib/workspace'
 import { CopyButton, Loading } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
+import { githubSource, localSource, WORKING_TREE, type FileSource, type Rev } from '../../lib/filePreview'
 import { SplitPane } from '../../components/SplitPane'
 import { PublishDialog } from '../../components/WorkspaceHeader'
 import { useTabBranch } from '../../lib/TabsProvider'
@@ -302,13 +303,13 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       if (local.git) {
         const [ref, baseRef] = await Promise.all([local.git.compareRef(branch!), local.git.compareRef(base!, true)])
         const { ahead, behind } = await local.git.compareCommits(ref, baseRef)
-        return { ref, baseRef, ahead, behind, aheadBy: ahead.length, behindBy: behind.length, files: null }
+        return { ref, baseRef, mergeBase: null as string | null, ahead, behind, aheadBy: ahead.length, behindBy: behind.length, files: null }
       }
       const compare = async (from: string, to: string) => (await octokit.rest.repos.compareCommitsWithBasehead({ owner: github!.owner, repo: github!.repo, basehead: `${from}...${to}` })).data
       const [a, b] = await Promise.all([compare(base!.name, branch!.name), compare(branch!.name, base!.name)])
       // GitHub lists them oldest first.
       const commitsOf = (c: typeof a) => c.commits.map((x): LogEntry => ({ sha: x.sha, author: x.commit.author?.name ?? x.author?.login ?? '', date: x.commit.author?.date ?? '', subject: x.commit.message, parents: x.parents.map((p) => p.sha) })).reverse()
-      return { ref: branch!.name, baseRef: base!.name, ahead: commitsOf(a), behind: commitsOf(b), aheadBy: a.ahead_by, behindBy: a.behind_by, files: { ahead: (a.files ?? []).map(toFileDiff), behind: (b.files ?? []).map(toFileDiff) } }
+      return { ref: branch!.name, baseRef: base!.name, mergeBase: a.merge_base_commit.sha as string | null, ahead: commitsOf(a), behind: commitsOf(b), aheadBy: a.ahead_by, behindBy: a.behind_by, files: { ahead: (a.files ?? []).map(toFileDiff), behind: (b.files ?? []).map(toFileDiff) } }
     },
   })
 
@@ -398,6 +399,26 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       return compareSide === 'ahead' ? local.git!.compareDiff(baseRef, ref) : local.git!.compareDiff(ref, baseRef)
     },
   })
+
+  // Where each view's files can be read in full, for image and Markdown previews: before and after its change.
+  const localId = repo.local?.id ?? null
+  const fileSource = useCallback(
+    (before: Rev | null, after: string | null): FileSource | null =>
+      localId ? localSource(localId, { before, after }) : github ? githubSource(octokit, github.owner, github.repo, { before, after }) : null,
+    [localId, github?.owner, github?.repo, octokit], // eslint-disable-line react-hooks/exhaustive-deps
+  )
+  const worktreeSource = useMemo(() => (localId ? localSource(localId, { before: 'HEAD', after: WORKING_TREE }) : null), [localId])
+  // A stash keeps the files it added in its third parent.
+  const stashSource = useMemo(() => (localId && branchStash ? localSource(localId, { before: `${branchStash.sha}^1`, after: [branchStash.sha, `${branchStash.sha}^3`] }) : null), [localId, branchStash?.sha]) // eslint-disable-line react-hooks/exhaustive-deps
+  const commitSource = useMemo(() => (commit ? fileSource(commit.parents[0] ?? null, commit.sha) : null), [fileSource, commit?.sha]) // eslint-disable-line react-hooks/exhaustive-deps
+  const combinedSource = useMemo(() => (oldest && newest ? fileSource(oldest.parents[0] ?? null, newest.sha) : null), [fileSource, oldest?.sha, newest?.sha]) // eslint-disable-line react-hooks/exhaustive-deps
+  const compareSource = useMemo(() => {
+    if (!compared.data) return null
+    const { ref, baseRef, mergeBase } = compared.data
+    const git = local.git
+    const before: Rev | null = mergeBase ?? (git ? () => git.mergeBase(ref, baseRef) : null)
+    return fileSource(before, compareSide === 'ahead' ? ref : baseRef)
+  }, [fileSource, compared.data, compareSide, local.git])
 
   useAgentPageContext({
     tabTitle: repo.name,
@@ -691,7 +712,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           <Loading />
         </div>
       ) : stashFiles.data?.length ? (
-        <CommitFiles key={branchStash.sha} files={stashFiles.data} split={split} message="" />
+        <CommitFiles key={branchStash.sha} files={stashFiles.data} split={split} message="" source={stashSource} />
       ) : (
         <div className="ws-scroll ws-diff">
           {stashFiles.data && <p className="ws-note">This stash has no file changes.</p>}
@@ -708,7 +729,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           Discard
         </Button>
       </div>
-      <div className="ws-scroll ws-diff">{diff.isLoading ? <Loading /> : diff.data ? <LocalFileDiff file={diff.data} split={split} eager /> : <p className="ws-note">No textual changes to show.</p>}</div>
+      <div className="ws-scroll ws-diff">{diff.isLoading ? <Loading /> : diff.data ? <LocalFileDiff file={diff.data} split={split} eager source={worktreeSource} /> : <p className="ws-note">No textual changes to show.</p>}</div>
     </div>
   ) : showCompare && base && branch ? (
     <div className="ws-details">
@@ -731,7 +752,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           <Loading />
         </div>
       ) : compareFiles.data?.length ? (
-        <CommitFiles key={`compare-${base.name}-${compareSide}`} files={compareFiles.data} split={split} message="" />
+        <CommitFiles key={`compare-${base.name}-${compareSide}`} files={compareFiles.data} split={split} message="" source={compareSource} />
       ) : (
         <div className="ws-scroll ws-diff">
           {compareFiles.data && <p className="ws-note">No file changes.</p>}
@@ -755,7 +776,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           <Loading />
         </div>
       ) : combined.data?.files.length ? (
-        <CommitFiles key={`${oldest!.sha}-${newest!.sha}`} files={combined.data.files} split={split} message="" />
+        <CommitFiles key={`${oldest!.sha}-${newest!.sha}`} files={combined.data.files} split={split} message="" source={combinedSource} />
       ) : (
         <div className="ws-scroll ws-diff">
           {combined.data && <p className="ws-note">{combined.data.related ? 'These commits add up to no change.' : 'These commits aren’t on one line of history, so they have no combined change. Select commits from one side only.'}</p>}
@@ -791,7 +812,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           <Loading />
         </div>
       ) : shownCommit.data?.files.length ? (
-        <CommitFiles key={commit.sha} files={shownCommit.data.files} split={split} message={shownCommit.data.message} />
+        <CommitFiles key={commit.sha} files={shownCommit.data.files} split={split} message={shownCommit.data.message} source={commitSource} />
       ) : (
         <div className="ws-scroll ws-diff">
           {shownCommit.data && shownCommit.data.message.includes('\n') && <pre className="ws-commit-message">{shownCommit.data.message.split('\n').slice(1).join('\n').trim()}</pre>}
@@ -858,10 +879,11 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
 }
 
 // A diff can be thousands of table rows. It only redraws when the diff itself changes.
-const LocalFileDiff = memo(function LocalFileDiff({ file, split, eager }: { file: FileDiff; split: boolean; eager?: boolean }) {
+const LocalFileDiff = memo(function LocalFileDiff({ file, split, eager, source }: { file: FileDiff; split: boolean; eager?: boolean; source?: FileSource | null }) {
   return (
     <FileDiffBox
       eager={eager}
+      source={source}
       file={{ path: file.newPath, previousPath: file.oldPath !== file.newPath ? file.oldPath : null, status: file.status, additions: file.additions, deletions: file.deletions, patch: file.binary ? null : file.patch }}
       split={split}
     />
@@ -879,7 +901,7 @@ const STATUS_MARK: Partial<Record<FileDiff['status'], { code: string; color: str
 }
 
 /** A commit's changed files beside all of their diffs, as in GitHub Desktop: picking a file scrolls to it, and scrolling marks the file in view. */
-function CommitFiles({ files, split, message }: { files: FileDiff[]; split: boolean; message: string }) {
+function CommitFiles({ files, split, message, source }: { files: FileDiff[]; split: boolean; message: string; source?: FileSource | null }) {
   const scroller = useRef<HTMLDivElement>(null)
   const [current, setCurrent] = useState(0)
   // Where a click scrolled to: until you scroll away from it, the clicked file stays marked, even one too short to reach the top.
@@ -952,12 +974,12 @@ function CommitFiles({ files, split, message }: { files: FileDiff[]; split: bool
         {body && <pre className="ws-commit-message">{body}</pre>}
         {files.map((f, i) => (
           <div key={f.newPath} data-file-index={i}>
-            <LocalFileDiff file={f} split={split} eager={i < EAGER_FILES} />
+            <LocalFileDiff file={f} split={split} eager={i < EAGER_FILES} source={source} />
           </div>
         ))}
       </div>
     ),
-    [files, split, body],
+    [files, split, body, source],
   )
 
   return <SplitPane id="commit-files" firstLabel="Changed files" secondLabel="Diff" defaultWidth={260} min={160} max={520} first={list} second={diffs} />

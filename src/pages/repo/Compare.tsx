@@ -12,6 +12,7 @@ import { BranchPicker } from '../../components/BranchPicker'
 import { Composer } from '../../components/Composer'
 import { Blankslate, DiffStat, ErrorBox, Loading, UserAvatar } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
+import { githubSource } from '../../lib/filePreview'
 import { PullStateIcon } from '../../components/Status'
 import { openExternal } from '../../lib/platform'
 import { contentElementById } from '../../lib/scroll'
@@ -190,6 +191,8 @@ function CompareForm() {
 
   const c = compare.data
   const files = c?.files ?? []
+  // A fork's head ("user:branch") isn't a ref in this repository, but its newest commit is.
+  const source = c ? githubSource(octokit, owner, repo, { before: c.merge_base_commit.sha, after: head.includes(':') ? (c.commits.at(-1)?.sha ?? null) : head }) : null
   const additions = files.reduce((n, f) => n + f.additions, 0)
   const deletions = files.reduce((n, f) => n + f.deletions, 0)
   const contributors = new Set((c?.commits ?? []).map((cm) => cm.author?.login ?? cm.commit.author?.email ?? cm.commit.author?.name)).size
@@ -367,6 +370,7 @@ function CompareForm() {
               eager={i < 3}
               id={`diff-${i}`}
               file={{ path: f.filename, previousPath: f.previous_filename, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch, sha: f.sha }}
+              source={source}
               split={split}
               collapsed={collapsed[i]}
               onToggle={() => setCollapsed((s) => ({ ...s, [i]: !s[i] }))}

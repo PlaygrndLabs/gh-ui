@@ -128,7 +128,7 @@ function run(cmd, args, opts = {}) {
   })
 }
 
-const { HOST_RE, gitAuthEnv, validateGitArgs, worktreeFolder, gitCommandEnv, reorderCommits, GIT_BASE_ENV } = require('./git-policy.cjs')
+const { HOST_RE, gitAuthEnv, validateGitArgs, validateBlobRequest, BLOB_MAX_BYTES, worktreeFolder, gitCommandEnv, reorderCommits, GIT_BASE_ENV } = require('./git-policy.cjs')
 
 // ---------------------------------------------------------------------------
 // Local repository registry
@@ -361,6 +361,25 @@ function registerIpc() {
     validateGitArgs(args)
     const network = ['push', 'pull', 'fetch'].includes(args[0])
     return run('git', args, { cwd: repo.path, env: { ...gitCommandEnv(args[0]), ...(network ? gitAuthEnv(auth) : {}) } })
+  })
+
+  // A file's bytes at a revision, or in the folder when rev is null, for image previews. Null when it isn't there or is too big.
+  handle('repo:readFile', async (_e, repoId, rev, file) => {
+    const repo = await repoById(repoId)
+    validateBlobRequest(rev, file)
+    if (rev === null) {
+      const root = await fsp.realpath(repo.path)
+      const full = await fsp.realpath(path.join(root, file)).catch(() => null)
+      if (!full || !full.startsWith(root + path.sep)) return null
+      const stat = await fsp.stat(full)
+      if (!stat.isFile() || stat.size > BLOB_MAX_BYTES) return null
+      return new Uint8Array(await fsp.readFile(full))
+    }
+    return new Promise((resolve) => {
+      execFile('git', ['cat-file', 'blob', `${rev}:${file}`], { encoding: 'buffer', maxBuffer: BLOB_MAX_BYTES, timeout: 60_000, cwd: repo.path, env: { ...process.env, PATH: ENV_PATH, ...GIT_BASE_ENV } }, (err, stdout) =>
+        resolve(err ? null : new Uint8Array(stdout)),
+      )
+    })
   })
 
   // Its own channel: an interactive rebase needs an editor command, so the renderer sends only the order it wants.

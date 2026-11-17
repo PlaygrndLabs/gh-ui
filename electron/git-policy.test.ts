@@ -3,7 +3,8 @@ import { createRequire } from 'node:module'
 import { checkoutPlan } from '../src/lib/checkout'
 
 const require = createRequire(import.meta.url)
-const { validateGitArgs, worktreeFolder, gitAuthEnv, reorderCommits } = require('./git-policy.cjs') as {
+const { validateGitArgs, validateBlobRequest, worktreeFolder, gitAuthEnv, reorderCommits } = require('./git-policy.cjs') as {
+  validateBlobRequest(rev: unknown, file: unknown): void
   reorderCommits(git: (args: string[], env: Record<string, string>) => Promise<{ code: number; stdout: string; stderr: string }>, order: unknown): Promise<{ code: number }>
   validateGitArgs(args: string[]): void
   worktreeFolder(repoName: string, branch: string): string
@@ -27,6 +28,7 @@ describe('validateGitArgs', () => {
     [['push', '-u', 'origin', 'HEAD']],
     [['remote', 'get-url', 'origin']],
     [['ls-tree', '-r', '--name-only', 'HEAD']],
+    [['merge-base', 'main', 'feature/x']],
     [['worktree', 'list', '--porcelain']],
     [['switch', '--detach', 'abc123']],
     [['commit', '--amend', '-m', 'x']],
@@ -152,6 +154,28 @@ describe('validateGitArgs', () => {
     [['status', '--ignored']],
     [['-c', 'core.pager=evil', 'log']],
   ])('rejects %j', (args) => expect(() => validateGitArgs(args)).toThrow())
+})
+
+describe('validateBlobRequest', () => {
+  it.each([
+    [null, 'docs/logo.png'],
+    ['HEAD', 'a b/c.svg'],
+    ['0123abc^1', 'img.png'],
+    ['origin/main', 'x.png'],
+    ['stash@{0}^3', 'new.png'],
+    ['feat/a#b', 'x.png'],
+  ])('allows %j %j', (rev, file) => expect(() => validateBlobRequest(rev, file)).not.toThrow())
+  it.each([
+    ['-p', 'a.png'],
+    ['--output=/tmp/x', 'a.png'],
+    ['HEAD:other', 'a.png'],
+    [' HEAD', 'a.png'],
+    ['HEAD', '../outside.png'],
+    ['HEAD', '/etc/passwd'],
+    [null, 'a/../../b.png'],
+    ['HEAD', ''],
+    [42, 'a.png'],
+  ])('refuses %j %j', (rev, file) => expect(() => validateBlobRequest(rev, file)).toThrow())
 })
 
 describe('gitAuthEnv', () => {

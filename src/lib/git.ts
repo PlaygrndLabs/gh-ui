@@ -370,6 +370,8 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
     },
     /** What `ref` changed since it split from `base`, as a pull request from `ref` into `base` shows it. */
     compareDiff: async (base: string, ref: string) => parseUnifiedDiff(await git(['diff', `${base}...${ref}`])),
+    /** The newest commit both have: where `ref` split from `base`. */
+    mergeBase: async (base: string, ref: string) => (await git(['merge-base', base, ref])).trim() || null,
     addOrigin: (url: string) => git(['remote', 'add', 'origin', url]),
     publishBranch: async () => git(['push', '-u', await remoteName(), 'HEAD'], true),
     pull: () => git(['pull', '--ff-only'], true),
