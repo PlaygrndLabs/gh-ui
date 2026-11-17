@@ -76,7 +76,26 @@ function BranchMenu({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
   const { anchor, frame } = useToolbarPanel(open)
   const remote = useRemoteBranches(repo)
   const { picked, setPicked, showBranch, shownBranch } = useTabBranch()
-  const all = (repo.local ? local.branches.data : remote.data) ?? []
+  // Git only knows the branches its last fetch brought, and a clone set to fetch one branch never learns of the others,
+  // so the remote is asked for its list whenever the menu opens.
+  const heads = useQuery({
+    queryKey: ['local-remote-heads', repo.local?.id],
+    enabled: open && !!local.git && !!repo.remote,
+    queryFn: () => local.git!.remoteHeads(),
+    staleTime: 30_000,
+    retry: false,
+  })
+  const known = repo.local ? local.branches.data : remote.data
+  // Branches the remote has that git here hasn't heard of yet: picking one fetches it first.
+  const unfetched = useMemo(() => {
+    const names = new Set(known?.map((b) => b.name))
+    return [...(heads.data?.keys() ?? [])].filter((n) => !names.has(n)).sort((a, b) => a.localeCompare(b))
+  }, [known, heads.data])
+  const all = useMemo(
+    () => [...(known ?? []), ...unfetched.map((name): BranchState => ({ name, current: false, location: 'remote', upstream: null, ahead: 0, behind: 0, gone: false, sha: heads.data!.get(name)!, date: '', worktree: null }))],
+    [known, unfetched, heads.data],
+  )
+  const isUnfetched = (name: string) => unfetched.includes(name)
   const isPicked = (name: string | null): name is string => !!name && all.some((b) => b.name === name)
   // A folder's menu says what's checked out. Without a folder, picking a branch is all there is to do with it.
   // A switch shows from the click: only the sync button waits for git.
@@ -90,10 +109,11 @@ function BranchMenu({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
   // A checked-out commit is listed as HEAD, which isn't a branch to pick.
   const matches = useMemo(() => all.filter((b) => b.name !== 'HEAD' && b.name.toLowerCase().includes(filter.toLowerCase())), [all, filter])
   const branches = matches.slice(0, MAX_BRANCHES_SHOWN)
-  const exists = local.branches.data?.some((b) => b.name === name)
+  const exists = all.some((b) => b.name === name)
 
   const branchOptions = async (b: BranchState) => {
-    const git = local.git
+    // Until it's fetched, git has nothing of it to merge, rebase onto or check out elsewhere.
+    const git = isUnfetched(b.name) ? null : local.git
     const here = !!git && b.location !== 'remote'
     const isDefault = b.name === (git ? await git.defaultBranch() : info.data?.default_branch)
     const action = await native!.contextMenu(
@@ -157,7 +177,7 @@ function BranchMenu({ repo, errorSlot }: { repo: WorkspaceRepo; errorSlot: HTMLE
                     // What's checked out is what the page should show from here on.
                     setPicked(repo.local ? null : b.name)
                     if (repo.local && b.worktree) actions.openWorktree(b.worktree)
-                    else if (repo.local && !b.current) local.switchBranch(b.name)
+                    else if (repo.local && !b.current) local.switchBranch(b.name, isUnfetched(b.name))
                     setFilter('')
                     actions.showBranchTab()
                   }}

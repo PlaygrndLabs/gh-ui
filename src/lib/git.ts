@@ -134,6 +134,16 @@ export function parseBranches(out: string, remote = 'origin'): BranchState[] {
   return [...local.values(), ...remoteOnly.values()].sort((a, b) => Number(b.current) - Number(a.current) || b.date.localeCompare(a.date) || a.name.localeCompare(b.name))
 }
 
+/** `git ls-remote --heads` as branch name → commit. */
+export function parseRemoteHeads(out: string): Map<string, string> {
+  const heads = new Map<string, string>()
+  for (const line of out.split('\n')) {
+    const [sha, ref] = line.trim().split('\t')
+    if (sha && ref?.startsWith('refs/heads/')) heads.set(ref.slice('refs/heads/'.length), sha)
+  }
+  return heads
+}
+
 /** A stash, newest first in a list. `ref` is its place now (stash@{n}), which moves as others come and go; `sha` doesn't. */
 export interface StashEntry {
   ref: string
@@ -232,6 +242,14 @@ export function moveCommit(order: string[], from: number, gap: number) {
 export type RepoOperation = 'merge' | 'rebase' | 'revert' | 'cherry-pick'
 
 const OPERATION_HEADS: Array<[string, RepoOperation]> = [['MERGE_HEAD', 'merge'], ['REBASE_HEAD', 'rebase'], ['REVERT_HEAD', 'revert'], ['CHERRY_PICK_HEAD', 'cherry-pick']]
+
+/**
+ * What merging a branch into the checked-out one would do, as GitHub Desktop says it before you merge. `fast-forward`
+ * moves the branch without a merge commit; `files` is the change the merge brings, conflict markers included.
+ */
+export type MergePreview =
+  | { kind: 'up-to-date' }
+  | { kind: 'fast-forward' | 'clean' | 'conflicts'; commits: LogEntry[]; conflicts: string[]; files: FileDiff[] }
 
 /** What git diffs against for a commit with no parent. */
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904'
@@ -378,6 +396,18 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
     push: () => git(['push'], true),
     fetch: async () => git(['fetch', '--prune', await remoteName()], true),
     switchTo: (branch: string) => git(['switch', branch]),
+    /** The remote's branches right now, which can include some a fetch hasn't brought here yet. */
+    remoteHeads: async () => parseRemoteHeads(await git(['ls-remote', '--heads', await remoteName()], true)),
+    /**
+     * Switches to a branch only the remote has, fetching it first. Named in full, so it arrives even when this clone's
+     * fetch settings leave it out (a single-branch or shallow clone) or it was pushed after the last fetch.
+     */
+    switchToRemote: async (branch: string) => {
+      const remote = await remoteName()
+      await git(['fetch', remote, `refs/heads/${branch}:refs/remotes/${remote}/${branch}`], true)
+      if ((await branchNames()).includes(branch)) return git(['switch', branch])
+      return git(['switch', '-c', branch, `${remote}/${branch}`])
+    },
     renameBranch: (from: string, to: string) => git(['branch', '-m', '--', from, to]),
     /** Forced, as GitHub Desktop's is: the app asks first, and a branch that was never merged is what people delete. */
     deleteBranch: (branch: string) => git(['branch', '-D', '--', branch]),
@@ -388,6 +418,18 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
       if (known) return known
       const names = await branchNames()
       return names.find((n) => n === 'main' || n === 'master') ?? null
+    },
+    /** Works the merge out in git's object store (`merge-tree`, git 2.38+), so nothing in the folder or the index changes. */
+    async mergePreview(ref: string): Promise<MergePreview> {
+      const commits = await log([ref, '--not', 'HEAD'], COMPARE_LIMIT)
+      if (!commits.length) return { kind: 'up-to-date' }
+      // Exits 1 when there are conflicts: the tree is still written, with markers in the conflicted files.
+      const res = await run(['merge-tree', '--write-tree', '--name-only', '--no-messages', '-z', 'HEAD', ref], false)
+      if (res.code !== 0 && res.code !== 1) throw new Error((res.stderr || res.stdout || 'git merge-tree failed').trim())
+      const [tree, ...conflicts] = res.stdout.split('\0').filter(Boolean)
+      const fastForward = !(await log(['HEAD', '--not', ref], 1)).length
+      const files = parseUnifiedDiff(await git(['diff', 'HEAD', tree]))
+      return { kind: res.code === 1 ? 'conflicts' : fastForward ? 'fast-forward' : 'clean', commits, conflicts: [...new Set(conflicts)], files }
     },
     merge: (ref: string, options: { squash?: boolean } = {}) => stopsOnConflicts(['merge', options.squash ? '--squash' : '--no-edit', ref]),
     rebase: (ref: string) => stopsOnConflicts(['rebase', ref]),

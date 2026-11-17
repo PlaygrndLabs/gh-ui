@@ -122,13 +122,17 @@ export function useLocalRepo(repo: LocalRepo | null) {
     qc.setQueryData<BranchState[]>(['local-branch-states', id], (list) => list?.map((b) => (b.current === (b.name === name) ? b : { ...b, current: b.name === name })))
   }
 
-  /** Git refuses a switch that would overwrite uncommitted changes, so that one offers to stash them first. */
-  const switchBranch = (name: string) =>
+  /**
+   * Git refuses a switch that would overwrite uncommitted changes, so that one offers to stash them first. `unfetched`
+   * marks a branch only the remote has so far, which is fetched before the switch.
+   */
+  const switchBranch = (name: string, unfetched = false) =>
     unqueued.mutate(async () => {
+      const switchTo = () => (unfetched ? git!.switchToRemote(name) : git!.switchTo(name))
       setSwitching(id, name)
       try {
         try {
-          await ops!.run(() => git!.switchTo(name))
+          await ops!.run(switchTo)
         } catch (e) {
           if (!/overwritten|commit your changes|stash them/i.test(errorMessage(e))) throw e
           // While the question is open, nothing has changed yet.
@@ -143,7 +147,7 @@ export function useLocalRepo(repo: LocalRepo | null) {
           setSwitching(id, name)
           await ops!.run(async () => {
             await git!.stash()
-            await git!.switchTo(name)
+            await switchTo()
           })
         }
         await showSwitched(name)

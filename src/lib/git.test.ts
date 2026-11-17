@@ -592,6 +592,30 @@ describe('createGitClient against a real repository', () => {
     await raw(work, 'branch', '-D', 'side-a', 'side-b')
   })
 
+  it('previews a merge without touching the folder: up to date, fast-forward, clean or with conflicts', async () => {
+    await raw(work, 'switch', '-c', 'pv-base')
+    await raw(work, 'switch', '-c', 'pv-ahead')
+    await commitFile(work, 'pv-new.txt', 'ahead')
+    await raw(work, 'switch', 'pv-base')
+    expect(await client.mergePreview('pv-base')).toEqual({ kind: 'up-to-date' })
+    const ff = await client.mergePreview('pv-ahead')
+    expect(ff).toMatchObject({ kind: 'fast-forward', conflicts: [] })
+    expect(ff.kind !== 'up-to-date' && ff.commits.map((c) => c.subject)).toEqual(['ahead'])
+    expect(ff.kind !== 'up-to-date' && ff.files.map((f) => f.newPath)).toEqual(['pv-new.txt'])
+    await commitFile(work, 'pv-other.txt', 'base only')
+    expect(await client.mergePreview('pv-ahead')).toMatchObject({ kind: 'clean', conflicts: [] })
+    await raw(work, 'switch', 'pv-ahead')
+    await commitFile(work, 'pv clash.txt', 'mine')
+    await raw(work, 'switch', 'pv-base')
+    await commitFile(work, 'pv clash.txt', 'theirs')
+    const before = await raw(work, 'status', '--porcelain')
+    expect(await client.mergePreview('pv-ahead')).toMatchObject({ kind: 'conflicts', conflicts: ['pv clash.txt'] })
+    expect(await raw(work, 'status', '--porcelain')).toBe(before)
+    expect(await client.operation()).toBeNull()
+    await raw(work, 'switch', 'spike')
+    await raw(work, 'branch', '-D', 'pv-base', 'pv-ahead')
+  })
+
   it('rebases, and backs out of a conflict', async () => {
     await raw(work, 'switch', '-c', 'base-a')
     await commitFile(work, 'rebased.txt', 'a')
@@ -754,5 +778,55 @@ describe('createGitClient against a real repository', () => {
 
   it('throws git’s own message when a command fails', async () => {
     await expect(client.switchTo('no-such-branch')).rejects.toThrow(/no-such-branch/)
+  })
+})
+
+// A clone that fetches one branch never hears of the others, so the branch menu asks the remote and fetches by name.
+describe('branches only the remote knows about', () => {
+  let root: string
+  let work: string
+  let client: GitClient
+  const env = { ...process.env, GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@example.com', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_SYSTEM: '/dev/null' }
+  const raw = async (cwd: string, ...args: string[]) => (await exec('git', args, { cwd, env })).stdout
+
+  beforeAll(async () => {
+    root = await mkdtemp(join(tmpdir(), 'gh-ui-heads-'))
+    const origin = join(root, 'origin.git')
+    const other = join(root, 'other')
+    work = join(root, 'work')
+    await mkdir(origin)
+    await raw(origin, 'init', '--bare', '-b', 'main')
+    await raw(root, 'clone', origin, other)
+    await raw(other, 'switch', '-c', 'main').catch(() => '')
+    await writeFile(join(other, 'a.txt'), 'a\n')
+    await raw(other, 'add', 'a.txt')
+    await raw(other, 'commit', '-m', 'first')
+    await raw(other, 'push', '-u', 'origin', 'main')
+    await raw(root, 'clone', '--single-branch', '--branch', 'main', origin, work)
+    await raw(other, 'switch', '-c', 'files-refresh')
+    await writeFile(join(other, 'b.txt'), 'b\n')
+    await raw(other, 'add', 'b.txt')
+    await raw(other, 'commit', '-m', 'refresh')
+    await raw(other, 'push', 'origin', 'files-refresh')
+    await raw(work, 'fetch', '--prune', 'origin')
+    client = createGitClient(async (args) => {
+      validateGitArgs(args)
+      try {
+        const { stdout, stderr } = await exec('git', args, { cwd: work, env: { ...env, ...gitCommandEnv(args[0]) } })
+        return { code: 0, stdout, stderr }
+      } catch (e) {
+        const err = e as { code?: number; stdout?: string; stderr?: string }
+        return { code: err.code ?? 1, stdout: err.stdout ?? '', stderr: err.stderr ?? '' }
+      }
+    })
+  })
+  afterAll(() => rm(root, { recursive: true, force: true }))
+
+  it('lists them, and fetches one to switch to it', async () => {
+    expect((await client.branches()).map((b) => b.name)).not.toContain('files-refresh')
+    expect([...(await client.remoteHeads()).keys()].sort()).toEqual(['files-refresh', 'main'])
+    await client.switchToRemote('files-refresh')
+    expect((await client.status()).branch).toBe('files-refresh')
+    expect((await client.branches()).find((b) => b.name === 'files-refresh')).toMatchObject({ current: true, location: 'both' })
   })
 })

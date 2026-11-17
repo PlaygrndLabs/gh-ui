@@ -359,7 +359,7 @@ function registerIpc() {
   handle('git', async (_e, repoId, args, auth) => {
     const repo = await repoById(repoId)
     validateGitArgs(args)
-    const network = ['push', 'pull', 'fetch'].includes(args[0])
+    const network = ['push', 'pull', 'fetch', 'ls-remote'].includes(args[0])
     return run('git', args, { cwd: repo.path, env: { ...gitCommandEnv(args[0]), ...(network ? gitAuthEnv(auth) : {}) } })
   })
 
