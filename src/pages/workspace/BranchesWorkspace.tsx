@@ -14,7 +14,8 @@ import { readPref } from '../../lib/storage'
 import { useLocalRepo, useStageError, useStageIntents, useSwitchingTo } from '../../lib/useLocalRepo'
 import { useRepoQuery } from '../../lib/repo'
 import { hostName, useRemoteBranches, type WorkspaceRepo } from '../../lib/workspace'
-import { CopyButton, Loading } from '../../components/Bits'
+import { CopyButton, Loading, UserAvatar } from '../../components/Bits'
+import { UserCard } from '../../components/UserCard'
 import { FileDiffBox } from '../../components/DiffView'
 import { githubSource, localSource, WORKING_TREE, type FileSource, type Rev } from '../../lib/filePreview'
 import { SplitPane } from '../../components/SplitPane'
@@ -184,6 +185,16 @@ const ignoreMenu = () => {}
 /** A row while a commit is being reordered: the one picked up, one it can land among, or one that has to stay put. */
 type ReorderRole = 'moving' | 'movable' | 'fixed'
 
+/** The author of a history row: their picture and name, with their card on hover. */
+function CommitAuthor({ commit }: { commit: LogEntry }) {
+  return (
+    <UserCard login={commit.login} name={commit.author} email={commit.email} className="ws-commit-author">
+      <UserAvatar login={commit.login} name={commit.author} email={commit.email} size={14} card={false} />
+      <span className="ws-commit-author-name">{commit.author}</span>
+    </UserCard>
+  )
+}
+
 const CommitRow = memo(function CommitRow({ commit, selected, mark, elsewhere, role, dropLine, onSelect, onMenu, onGrab }: { commit: LogEntry; selected: boolean; mark?: '↑' | '↓'; elsewhere?: boolean; role?: ReorderRole; dropLine?: 'above' | 'below'; onSelect(sha: string, extend: boolean): void; onMenu(sha: string): void; onGrab: GrabRow }) {
   return (
     <button type="button" className={`ws-row ws-commit-row ${selected ? 'is-selected' : ''} ${role ? `is-${role}` : ''} ${dropLine ? `is-drop-${dropLine}` : ''}`} aria-pressed={selected} data-reorder={role && role !== 'fixed' ? '' : undefined} onPointerDown={role === 'moving' ? onGrab : undefined} onClick={(e) => onSelect(commit.sha, e.shiftKey || e.metaKey || e.ctrlKey)}
@@ -196,7 +207,7 @@ const CommitRow = memo(function CommitRow({ commit, selected, mark, elsewhere, r
       <span className="ws-commit-text">
         <span className="ws-commit-subject">{firstLine(commit.subject)}</span>
         <span className="ws-row-sub">
-          {commit.author}
+          <CommitAuthor commit={commit} />
           {commit.date && (
             <>
               {' · '}
@@ -264,7 +275,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     queryFn: async () => {
       if (local.git) return local.git.branchCommits(branch!)
       const { data } = await octokit.rest.repos.listCommits({ owner: github!.owner, repo: github!.repo, sha: branch!.name, per_page: 100 })
-      const remote = data.map((c): LogEntry => ({ sha: c.sha, author: c.commit.author?.name ?? c.author?.login ?? '', date: c.commit.author?.date ?? '', subject: c.commit.message, parents: c.parents.map((p) => p.sha) }))
+      const remote = data.map((c): LogEntry => ({ sha: c.sha, author: c.commit.author?.name ?? c.author?.login ?? '', email: c.commit.author?.email, login: c.author?.login, date: c.commit.author?.date ?? '', subject: c.commit.message, parents: c.parents.map((p) => p.sha) }))
       return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote, notOnRemote: [] as string[], history: remote as HistoryRow[] }
     },
   })
@@ -308,7 +319,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       const compare = async (from: string, to: string) => (await octokit.rest.repos.compareCommitsWithBasehead({ owner: github!.owner, repo: github!.repo, basehead: `${from}...${to}` })).data
       const [a, b] = await Promise.all([compare(base!.name, branch!.name), compare(branch!.name, base!.name)])
       // GitHub lists them oldest first.
-      const commitsOf = (c: typeof a) => c.commits.map((x): LogEntry => ({ sha: x.sha, author: x.commit.author?.name ?? x.author?.login ?? '', date: x.commit.author?.date ?? '', subject: x.commit.message, parents: x.parents.map((p) => p.sha) })).reverse()
+      const commitsOf = (c: typeof a) => c.commits.map((x): LogEntry => ({ sha: x.sha, author: x.commit.author?.name ?? x.author?.login ?? '', email: x.commit.author?.email, login: x.author?.login, date: x.commit.author?.date ?? '', subject: x.commit.message, parents: x.parents.map((p) => p.sha) })).reverse()
       return { ref: branch!.name, baseRef: base!.name, mergeBase: a.merge_base_commit.sha as string | null, ahead: commitsOf(a), behind: commitsOf(b), aheadBy: a.ahead_by, behindBy: a.behind_by, files: { ahead: (a.files ?? []).map(toFileDiff), behind: (b.files ?? []).map(toFileDiff) } }
     },
   })
@@ -790,7 +801,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
         <div className="ws-details-title">
           <div className="text-bold">{firstLine(commit.subject)}</div>
           <div className="ws-row-sub">
-            <span className="text-mono">{shortSha(commit.sha)}</span> · {commit.author}
+            <span className="text-mono">{shortSha(commit.sha)}</span> · <CommitAuthor commit={commit} />
             {commit.date && (
               <>
                 {' · '}

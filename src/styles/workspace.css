@@ -369,3 +369,5 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .repo-remote-input { flex: 1; min-width: 0; }
 .repo-remote-name-input { flex: 0 0 120px; width: 120px; }
 .repo-identity { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+.ws-commit-author { gap: 5px; vertical-align: bottom; }
+.ws-commit-author-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

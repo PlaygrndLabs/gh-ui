@@ -5,6 +5,8 @@ import { CopyIcon, CheckIcon, AlertIcon, type Icon } from '@primer/octicons-reac
 import { useState } from 'react'
 import { copyText } from '../lib/format'
 import { errorMessage } from '../lib/github'
+import { avatarUrlFor, initials } from '../lib/people'
+import { UserCard } from './UserCard'
 
 export function isBot(login?: string | null, type?: string | null) {
   return type === 'Bot' || !!login?.endsWith('[bot]')
@@ -25,15 +27,34 @@ export function UserLink({ login, type, className = 'author-link' }: { login?: s
     )
   }
   return (
-    <Link to={`/${login}`} className={className}>
-      {login}
-    </Link>
+    <UserCard login={login}>
+      <Link to={`/${login}`} className={className}>
+        {login}
+      </Link>
+    </UserCard>
   )
 }
 
-export function UserAvatar({ login, src, size = 20, square }: { login?: string | null; src?: string | null; size?: number; square?: boolean }) {
-  const url = src || (login ? `https://avatars.githubusercontent.com/${botName(login)}?size=${size * 2}` : '')
-  return <Avatar src={url} size={size} alt={login ? `@${login}` : ''} square={square} />
+/**
+ * A person's picture, with their card on hover (`card={false}` leaves it out, as in pickers).
+ * A git author with no GitHub login passes `name` and `email`: the picture comes from the email,
+ * and with neither it shows their initials.
+ */
+export function UserAvatar({ login, name, email, src, size = 20, square, card = true }: { login?: string | null; name?: string | null; email?: string | null; src?: string | null; size?: number; square?: boolean; card?: boolean }) {
+  const url = src || avatarUrlFor({ login, email, size })
+  const img = url ? (
+    <Avatar src={url} size={size} alt={login ? `@${login}` : (name ?? '')} square={square} />
+  ) : (
+    <span className="avatar-initials" style={{ width: size, height: size, fontSize: Math.max(8, Math.round(size * 0.42)) }} aria-label={name ?? undefined} role={name ? 'img' : undefined}>
+      {initials(name)}
+    </span>
+  )
+  if (!card) return img
+  return (
+    <UserCard login={login} name={name} email={email} avatarUrl={src}>
+      {img}
+    </UserCard>
+  )
 }
 
 /** Issue label chip using the label's own hex color. */

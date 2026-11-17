@@ -259,7 +259,7 @@ function LatestCommit({ owner, repo, ref, path, standalone }: { owner: string; r
                   <UserAvatar login={login} src={c.author?.avatar_url} size={20} />
                 </Link>
               ) : (
-                <UserAvatar login={c.commit.author?.name} size={20} />
+                <UserAvatar name={c.commit.author?.name} email={c.commit.author?.email} size={20} />
               )}
               {login ? (
                 <Link to={`/${login}`} className="latest-commit-author">
@@ -1055,7 +1055,7 @@ type BlobView = 'preview' | 'code' | 'blame'
 interface BlameRange {
   startingLine: number
   endingLine: number
-  commit: { oid: string; messageHeadline: string; committedDate: string; author: { name: string | null; avatarUrl: string | null; user: { login: string } | null } | null }
+  commit: { oid: string; messageHeadline: string; committedDate: string; author: { name: string | null; email: string | null; avatarUrl: string | null; user: { login: string } | null } | null }
 }
 
 /** github.com's blame recency buckets: the commit's age as a share of the repository's age (capped at two years). */
@@ -1093,7 +1093,7 @@ function BlameView({ owner, repo, refName, path, lines }: { owner: string; repo:
     queryKey: [key, 'blame', owner, repo, refName, path],
     staleTime: 5 * 60_000,
     queryFn: async () => {
-      const fields = `blame(path:$path){ ranges{ startingLine endingLine commit{ oid messageHeadline committedDate author{ name avatarUrl user{ login } } } } }`
+      const fields = `blame(path:$path){ ranges{ startingLine endingLine commit{ oid messageHeadline committedDate author{ name email avatarUrl user{ login } } } } }`
       const res: { repository: { object: { blame?: { ranges: BlameRange[] }; target?: { blame?: { ranges: BlameRange[] } } } | null } } = await octokit.graphql(
         `query($owner:String!,$repo:String!,$expr:String!,$path:String!){ repository(owner:$owner,name:$repo){ object(expression:$expr){ ... on Commit { ${fields} } ... on Tag { target { ... on Commit { ${fields} } } } } } }`,
         { owner, repo, expr: refName, path },
@@ -1129,7 +1129,7 @@ function BlameView({ owner, repo, refName, path, lines }: { owner: string; repo:
                         <span className="blame-date">
                           <RelativeTime date={new Date(r.commit.committedDate)} />
                         </span>
-                        <UserAvatar login={login ?? r.commit.author?.name} src={r.commit.author?.avatarUrl} size={16} />
+                        <UserAvatar login={login} name={r.commit.author?.name} email={r.commit.author?.email} src={r.commit.author?.avatarUrl} size={16} />
                         <Link to={`/${owner}/${repo}/commit/${r.commit.oid}`} className="blame-msg" title={r.commit.messageHeadline}>
                           {r.commit.messageHeadline}
                         </Link>
