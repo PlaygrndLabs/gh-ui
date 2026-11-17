@@ -72,7 +72,9 @@ describe('when another program holds the index', () => {
 
 describe('parseCommitLog', () => {
   it('splits the fields, keeping separators out of the subject', () => {
-    expect(parseCommitLog('abc\x1fLena\x1f2026-01-01T00:00:00Z\x1ffix: a | b\x1fp1 p2\n')).toEqual([{ sha: 'abc', author: 'Lena', date: '2026-01-01T00:00:00Z', subject: 'fix: a | b', parents: ['p1', 'p2'] }])
+    expect(parseCommitLog('abc\x1fLena\x1f2026-01-01T00:00:00Z\x1ffix: a | b\x1fp1 p2\x1flena@example.com\n')).toEqual([{ sha: 'abc', author: 'Lena', email: 'lena@example.com', date: '2026-01-01T00:00:00Z', subject: 'fix: a | b', parents: ['p1', 'p2'] }])
+    // A root commit has no parents, and a commit may have no author email.
+    expect(parseCommitLog('def\x1fLena\x1f2026-01-01T00:00:00Z\x1finit\x1f\x1f\n')).toEqual([{ sha: 'def', author: 'Lena', date: '2026-01-01T00:00:00Z', subject: 'init', parents: [] }])
   })
 })
 

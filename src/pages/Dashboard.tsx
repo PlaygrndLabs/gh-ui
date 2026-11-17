@@ -6,7 +6,8 @@ import { PlayIcon, RepoIcon, SparkleFillIcon, EyeIcon, GitPullRequestIcon, Issue
 import { useGitHub } from '../lib/github'
 import { AgentOnly, useAgent, useAgentPageContext } from '../lib/agent/AgentProvider'
 import { CheckStatusIcon, CommitStatusMark, IssueStateIcon, PullStateIcon } from '../components/Status'
-import { Blankslate, Loading } from '../components/Bits'
+import { Blankslate, Loading, UserAvatar } from '../components/Bits'
+import { UserCard } from '../components/UserCard'
 import { useFeature } from '../lib/features'
 import { actionsQueue } from '../lib/actionsQueue'
 
@@ -285,12 +286,14 @@ function EventLine({ e }: { e: FeedEvent }) {
   }
   return (
     <div className="Box-row" style={{ alignItems: 'center' }}>
-      <Avatar src={e.actor.avatar_url} size={32} />
+      <UserAvatar login={e.actor.login} src={e.actor.avatar_url} size={32} />
       <span className="fg-muted">{icon}</span>
       <div className="flex-1">
-        <Link to={`/${e.actor.login}`} className="text-bold fg-default">
-          {e.actor.login}
-        </Link>{' '}
+        <UserCard login={e.actor.login}>
+          <Link to={`/${e.actor.login}`} className="text-bold fg-default">
+            {e.actor.login}
+          </Link>
+        </UserCard>{' '}
         {text}
       </div>
       {e.created_at && (

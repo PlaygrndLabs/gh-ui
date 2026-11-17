@@ -2059,3 +2059,21 @@ a.hook-url:hover { color: var(--fgColor-accent); }
 .find-bar-note { padding: 6px 4px 2px; font-size: 12px; color: var(--fgColor-muted); }
 ::highlight(gh-find) { background-color: var(--bgColor-attention-muted); }
 ::highlight(gh-find-current) { background-color: #ff9632; color: #1f2328; }
+
+/* A person's card on hovering their picture or name, as github.com's hovercards. */
+.user-card-trigger { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; }
+.user-card { position: fixed; z-index: 95; display: flex; flex-direction: column; gap: 10px; max-width: calc(100vw - 16px); padding: 14px 16px; font-size: 13px; line-height: 1.45; color: var(--fgColor-default); text-align: left; white-space: normal; cursor: auto; background: var(--overlay-bgColor, var(--bgColor-default)); border: 1px solid var(--borderColor-default); border-radius: 12px; box-shadow: var(--shadow-floating-small, 0 8px 24px rgba(0, 0, 0, 0.2)); animation: user-card-in 120ms ease-out; }
+@keyframes user-card-in { from { opacity: 0; transform: translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) { .user-card { animation: none; } }
+.user-card-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.user-card-names { flex: 1; min-width: 0; }
+.user-card-name { overflow: hidden; font-size: 15px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.user-card-login { overflow: hidden; color: var(--fgColor-muted); text-overflow: ellipsis; white-space: nowrap; }
+.user-card-initials, .avatar-initials { flex: none; display: inline-flex; align-items: center; justify-content: center; font-weight: 600; color: var(--fgColor-muted); background: var(--bgColor-neutral-muted); border-radius: 50%; box-shadow: 0 0 0 1px var(--avatar-borderColor, var(--borderColor-muted)); user-select: none; }
+.user-card-initials { width: 48px; height: 48px; font-size: 18px; }
+.user-card-bio { margin: 0; overflow-wrap: anywhere; }
+.user-card-facts { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; color: var(--fgColor-muted); list-style: none; }
+.user-card-facts li { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 24px; }
+.user-card-facts svg { flex: none; }
+.user-card-facts a { min-width: 0; color: var(--fgColor-accent); }
+.user-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
