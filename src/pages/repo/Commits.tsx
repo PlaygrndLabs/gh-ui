@@ -11,6 +11,7 @@ import { webUrl } from '../../lib/links'
 import { isNative, openExternal } from '../../lib/platform'
 import { readPref, writePref } from '../../lib/storage'
 import { BranchPicker } from '../../components/BranchPicker'
+import { UserCard } from '../../components/UserCard'
 import { Blankslate, CommitHeadline, CopyButton, DiffStat, ErrorBox, Loading, UserAvatar, titleParts } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
 import { githubSource } from '../../lib/filePreview'
@@ -147,7 +148,7 @@ function UserSelector({ owner, repo, value, onChange }: { owner: string; repo: s
         <Button {...anchorProps} trailingAction={TriangleDownIcon} aria-label={value ? `Commits by ${value}` : 'All users'}>
           <span className="flex-center">
             <span className="flex-center" style={{ marginRight: 8 }}>
-              {value ? <UserAvatar login={value} size={16} /> : <PeopleIcon className="fg-muted" />}
+              {value ? <UserAvatar login={value} size={16} card={false} /> : <PeopleIcon className="fg-muted" />}
             </span>
             <span className="text-truncate" style={{ maxWidth: 125 }}>
               {value ?? 'All users'}
@@ -174,7 +175,7 @@ function UserSelector({ owner, repo, value, onChange }: { owner: string; repo: s
               {users.map((u) => (
                 <ActionList.Item key={u.login} role="option" selected={u.login === value} onSelect={() => pick(u.login!)}>
                   <ActionList.LeadingVisual>
-                    <UserAvatar login={u.login} src={u.avatar_url} size={20} />
+                    <UserAvatar login={u.login} src={u.avatar_url} size={20} card={false} />
                   </ActionList.LeadingVisual>
                   {u.login}
                 </ActionList.Item>
@@ -201,8 +202,8 @@ export interface CommitLike {
   sha: string
   commit: {
     message: string
-    author: { name?: string; date?: string } | null
-    committer: { name?: string; date?: string } | null
+    author: { name?: string; email?: string; date?: string } | null
+    committer: { name?: string; email?: string; date?: string } | null
     verification?: { verified: boolean; reason: string } | null
   }
   author: CommitPerson | null
@@ -249,13 +250,18 @@ function committerShown(c: CommitLike) {
   return !!mn && mn !== an && mn !== 'GitHub'
 }
 
-function PersonLink({ owner, repo, login, name, strong }: { owner: string; repo: string; login?: string; name?: string; strong?: boolean }) {
+function PersonLink({ owner, repo, login, name, email, strong }: { owner: string; repo: string; login?: string; name?: string; email?: string; strong?: boolean }) {
   const cls = strong ? 'commit-author commit-author-strong' : 'commit-author'
-  if (!login) return <span className={cls}>{name ?? 'unknown'}</span>
   return (
-    <Link to={`/${owner}/${repo}/commits?author=${encodeURIComponent(login)}`} className={cls} aria-label={`commits by ${login}`}>
-      {login}
-    </Link>
+    <UserCard login={login} name={name} email={email}>
+      {login ? (
+        <Link to={`/${owner}/${repo}/commits?author=${encodeURIComponent(login)}`} className={cls} aria-label={`commits by ${login}`}>
+          {login}
+        </Link>
+      ) : (
+        <span className={cls}>{name ?? 'unknown'}</span>
+      )}
+    </UserCard>
   )
 }
 
@@ -268,8 +274,8 @@ function CommitAttribution({ owner, repo, c, size, strong }: { owner: string; re
   const showCommitter = committerShown(c)
   const webFlow = c.committer?.login === 'web-flow' || c.commit.committer?.name === 'GitHub'
   const selfCommitted = !showCommitter && !webFlow && !!(c.committer?.login || c.commit.committer?.name)
-  const avatar = (p: CommitPerson | null | undefined, name?: string) => {
-    const img = <UserAvatar login={p?.login ?? name} src={p?.avatar_url} size={size} />
+  const avatar = (p: CommitPerson | null | undefined, who: { name?: string; email?: string } | null | undefined) => {
+    const img = <UserAvatar login={p?.login} name={who?.name} email={who?.email} src={p?.avatar_url} size={size} />
     return p?.login && !p.login.endsWith('[bot]') ? (
       <Link to={`/${p.login}`} className="flex-center" aria-label={p.login}>
         {img}
@@ -282,14 +288,14 @@ function CommitAttribution({ owner, repo, c, size, strong }: { owner: string; re
   return (
     <span className="commit-attribution">
       <span className="commit-avatars">
-        {avatar(c.author, c.commit.author?.name)}
-        {showCommitter && avatar(c.committer, c.commit.committer?.name)}
+        {avatar(c.author, c.commit.author)}
+        {showCommitter && avatar(c.committer, c.commit.committer)}
       </span>
-      <PersonLink owner={owner} repo={repo} login={login} name={c.commit.author?.name} strong={strong} />
+      <PersonLink owner={owner} repo={repo} login={login} name={c.commit.author?.name} email={c.commit.author?.email} strong={strong} />
       <span>{showCommitter ? 'authored and' : selfCommitted ? 'committed' : 'authored'}</span>
       {showCommitter && (
         <>
-          <PersonLink owner={owner} repo={repo} login={c.committer?.login ?? undefined} name={c.commit.committer?.name} strong={strong} />
+          <PersonLink owner={owner} repo={repo} login={c.committer?.login ?? undefined} name={c.commit.committer?.name} email={c.commit.committer?.email} strong={strong} />
           <span>committed</span>
         </>
       )}

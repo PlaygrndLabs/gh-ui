@@ -12,6 +12,7 @@ import { githubSource } from '../../lib/filePreview'
 import { firstLine, shortSha } from '../../lib/format'
 import { PullsPage } from '../repo/Pulls'
 import { useCheckedOutBranch } from './ActionsWorkspace'
+import { UserCard } from '../../components/UserCard'
 
 export type PullFilter = 'all' | 'review' | 'mine'
 
@@ -165,7 +166,7 @@ export function PullCommitsPane({ pr }: { pr: PullRequest }) {
             <span className="ws-list-text">
               <span className="ws-list-title">{firstLine(c.commit.message)}</span>
               <span className="ws-row-sub">
-                {c.author?.login ?? c.commit.author?.name} · <span className="text-mono">{shortSha(c.sha)}</span>
+                <UserCard login={c.author?.login} name={c.commit.author?.name} email={c.commit.author?.email}>{c.author?.login ?? c.commit.author?.name}</UserCard> · <span className="text-mono">{shortSha(c.sha)}</span>
               </span>
             </span>
           </Link>
