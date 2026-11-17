@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useIsFetching, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionList, ActionMenu, Checkbox, Dialog, FormControl, IconButton, TextInput } from '@primer/react'
+import { ActionList, ActionMenu, Checkbox, Dialog, FormControl, TextInput } from '@primer/react'
 import { ArrowDownIcon, ArrowSwitchIcon, ArrowUpIcon, CloudIcon, DeviceDesktopIcon, GearIcon, GitBranchIcon, MarkGithubIcon, RepoCloneIcon, SearchIcon, SparkleFillIcon, SyncIcon, TriangleDownIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgent } from '../lib/agent/AgentProvider'
 import { useFeatures } from '../lib/features'
@@ -398,11 +398,21 @@ function Search({ repo }: { repo: WorkspaceRepo | null }) {
 }
 
 /** Refetches what the page shows, for when you don't want to wait for it to check again. */
+/** Labelled like the buttons beside it: an icon on its own, out at the edge, was easy to miss. */
 function RefreshButton() {
   const qc = useQueryClient()
   const fetching = useIsFetching() > 0
-  return <IconButton size="small" variant="invisible" icon={SyncIcon} className={fetching ? 'ws-refreshing' : undefined} aria-label="Refresh" onClick={() => void qc.invalidateQueries({ type: 'active' })} />
+  return (
+    <button type="button" className={`ws-tab${fetching ? ' ws-refreshing' : ''}`} title="Reload what this page shows" onClick={() => void qc.invalidateQueries({ type: 'active' })}>
+      <SyncIcon size={14} />
+      Refresh
+    </button>
+  )
 }
+
+// The pages about the folder's own files. Elsewhere (a pull request, a run, an issue) the folder isn't what's on screen,
+// so opening it in an editor or Finder isn't offered there.
+const FOLDER_SECTIONS = new Set(['', 'tree', 'blob', 'blame', 'commits', 'commit', 'branches', 'tags'])
 
 function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
   const { pathname } = useLocation()
@@ -489,7 +499,7 @@ function RepoTabs({ repo }: { repo: WorkspaceRepo }) {
       <div className="ws-tabs-end">
         {/* Copy link and Open in browser are in the tab's right-click menu. */}
         <RefreshButton />
-        {repo.local && (
+        {repo.local && FOLDER_SECTIONS.has(section) && (
           <>
             <button type="button" className="ws-tab" onClick={() => void native!.openInEditor(repo.local!.id)}>
               Open in editor
