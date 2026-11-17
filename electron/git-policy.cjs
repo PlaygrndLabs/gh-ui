@@ -50,10 +50,14 @@ const RULES = {
   'rev-parse': { flags: ['--abbrev-ref', '-q', '--verify'], args: 'any' },
   'ls-tree': { flags: ['-r', '--name-only'], args: 'any' },
   'merge-base': { args: 'any' },
+  // Only writes objects: the merge is worked out without touching the folder, the index or any branch.
+  'merge-tree': { flags: ['--write-tree', '--name-only', '--no-messages', '-z'], args: 'any' },
   // The first bare argument names a configured remote, never a URL or folder, which could connect anywhere or run its hooks.
   push: { flags: ['-u'], args: 'remote' },
   pull: { flags: ['--ff-only'], args: 'remote' },
   fetch: { flags: ['--prune'], args: 'remote' },
+  // The remote's branches as they are now, including ones this clone hasn't fetched.
+  'ls-remote': { flags: ['--heads'], args: 'remote' },
 }
 const ALLOWED_SUBCOMMANDS = new Set([...Object.keys(RULES), 'remote', 'config', 'stash', 'clean', 'worktree'])
 
