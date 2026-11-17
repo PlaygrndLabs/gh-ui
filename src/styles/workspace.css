@@ -371,3 +371,34 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .repo-identity { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
 .ws-commit-author { gap: 5px; vertical-align: bottom; }
 .ws-commit-author-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Merge dialog: branches on the left, what the merge will do on the right, as GitHub Desktop shows it before merging. */
+.ws-merge { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 16px; height: 100%; min-height: 0; }
+.ws-merge-branches { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.ws-merge-list { flex: 1; min-height: 160px; overflow: auto; border: 1px solid var(--ws-line); border-radius: 6px; }
+.ws-merge-list .ws-row { min-height: 28px; }
+.ws-merge-branch-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-merge-tag { padding: 0 6px; font-size: 11px; line-height: 18px; color: var(--ws-muted); border: 1px solid var(--ws-line); border-radius: 999px; }
+.ws-merge-tag.is-conflict { color: var(--fgColor-attention); border-color: var(--borderColor-attention-muted); background: var(--bgColor-attention-muted); }
+.ws-merge-review { display: flex; flex-direction: column; gap: 12px; min-width: 0; min-height: 0; overflow: auto; }
+.ws-merge-empty { margin: auto; color: var(--ws-muted); text-align: center; }
+.ws-merge-status { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--ws-line); border-radius: 6px; }
+.ws-merge-status-icon { display: inline-flex; padding-top: 2px; color: var(--ws-muted); }
+.ws-merge-status.is-ok { background: var(--bgColor-success-muted); border-color: var(--borderColor-success-muted); }
+.ws-merge-status.is-ok .ws-merge-status-icon { color: var(--fgColor-success); }
+.ws-merge-status.is-warn { background: var(--bgColor-attention-muted); border-color: var(--borderColor-attention-muted); }
+.ws-merge-status.is-warn .ws-merge-status-icon { color: var(--fgColor-attention); }
+.ws-merge-status.is-danger { background: var(--bgColor-danger-muted); border-color: var(--borderColor-danger-muted); }
+.ws-merge-status.is-danger .ws-merge-status-icon { color: var(--fgColor-danger); }
+.ws-merge-conflicts ul { margin: 0 0 8px; padding: 0; list-style: none; border: 1px solid var(--ws-line); border-radius: 6px; }
+.ws-merge-conflicts li { display: flex; align-items: center; gap: 8px; padding: 6px 12px; }
+.ws-merge-conflicts li + li { border-top: 1px solid var(--ws-line); }
+.ws-merge-path { font-family: var(--fontStack-monospace); font-size: 12px; overflow-wrap: anywhere; }
+.ws-merge-tabs { align-self: flex-start; }
+.ws-merge-files { display: flex; flex-direction: column; gap: 8px; }
+.ws-merge-files .file-diff { margin: 0; }
+.ws-merge-commits { margin: 0; padding: 0; list-style: none; border: 1px solid var(--ws-line); border-radius: 6px; }
+.ws-merge-commits li { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; }
+.ws-merge-commits li + li { border-top: 1px solid var(--ws-line); }
+.ws-merge-commit-subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-merge-commit-meta { font-size: 12px; color: var(--ws-muted); }

@@ -53,8 +53,18 @@ const mergeHelpers = `
   const subject = async () => (await g.git(repoId, ['log', '-n', '1', '--pretty=format:%s'])).stdout
   const midMerge = async () => (await g.git(repoId, ['rev-parse', '-q', '--verify', 'MERGE_HEAD'])).code === 0
   const pick = async (name) => {
-    const row = await until(() => byText('[role=dialog] li', name), 5000)
+    const row = await until(() => byText('[role=dialog] li', name) ?? byText('[role=dialog] [role=option]', name), 5000)
     ;(row.querySelector('button') ?? row).click()
+  }
+  // A merge is reviewed before it runs: the dialog says what it brings in, or which files will conflict.
+  const reviewMerge = async (name) => {
+    await pick(name)
+    const status = await until(() => visible('.ws-merge-status').find((s) => !s.textContent.includes('Checking')), 10000)
+    const conflicted = [...document.querySelectorAll('[aria-label="Conflicted files"] li')].map((li) => li.textContent.trim())
+    const review = { status: status?.textContent, conflicted, mergedEarly: await midMerge() }
+    const button = await until(() => [...document.querySelectorAll('[role=dialog] button')].find((b) => /merge commit|Fast-forward|Squash and merge/.test(b.textContent) && !b.disabled), 5000)
+    button?.click()
+    return review
   }
   const untilAsync = async (check, ms = 10000) => {
     const end = Date.now() + ms
@@ -1640,16 +1650,17 @@ exports.steps = [
     name: 'app menu: a merge with conflicts stops and can be aborted',
     accelerator: 'CmdOrCtrl+Shift+M',
     js: `${helpers}${mergeHelpers}
-      await pick('conflict')
+      const review = await reviewMerge('conflict')
       const bar = await until(() => visible('.ws-operation')[0], 8000)
-      const r = { bar: bar?.textContent, stopped: await midMerge(), finishOff: byText('.ws-operation button', 'Finish merge')?.disabled }
+      const r = { review, bar: bar?.textContent, stopped: await midMerge(), finishOff: byText('.ws-operation button', 'Finish merge')?.disabled }
+      r.reviewed = !!review.status?.includes('1 conflicted file') && review.conflicted.join() === 'shared.txt' && !review.mergedEarly
       await until(() => byText('.ws-operation', 'with conflicts'), 6000)
       r.conflicts = !!byText('.ws-operation', 'with conflicts')
       byText('.ws-operation button', 'Abort merge').click()
       ;(await until(() => byText('[role=alertdialog] button', 'Abort merge'), 5000)).click()
       r.aborted = !!(await untilAsync(async () => !(await midMerge())))
       r.barGone = !!(await until(() => !visible('.ws-operation').length, 8000))
-      r.fail = !(r.bar && r.stopped && r.conflicts && r.aborted && r.barGone)
+      r.fail = !(r.reviewed && r.bar && r.stopped && r.conflicts && r.aborted && r.barGone)
       return r
     `,
     waitMs: 500,
@@ -1658,7 +1669,7 @@ exports.steps = [
     name: 'app menu: a conflicted merge finishes once its files are resolved',
     accelerator: 'CmdOrCtrl+Shift+M',
     js: `${helpers}${mergeHelpers}
-      await pick('conflict')
+      await reviewMerge('conflict')
       await until(() => byText('.ws-operation', 'with conflicts'), 8000)
       await g.git(repoId, ['add', '--', 'shared.txt'])
       const ready = await until(() => { const b = byText('.ws-operation button', 'Finish merge'); return b && !b.disabled && b }, 10000)

@@ -13,6 +13,7 @@ import { useIsActiveTab } from '../lib/TabsProvider'
 import { useLocalRepo } from '../lib/useLocalRepo'
 import { hostName, workspacePath, type WorkspaceRepo } from '../lib/workspace'
 import { RepoSettingsDialog } from './RepoSettingsDialog'
+import { MergeDialog, type MergeHow } from './MergeDialog'
 import { encodePath } from '../lib/repo'
 
 type LocalRepoState = ReturnType<typeof useLocalRepo>
@@ -93,12 +94,20 @@ export function useBranchActions(repo: WorkspaceRepo, local: LocalRepoState) {
   const refFor = (b: BranchState) => (b.location === 'remote' ? `${repo.remote?.name ?? 'origin'}/${b.name}` : b.name)
 
   /** Conflicts aren't a failure: the repository stays mid-merge, and the bar under the toolbar takes it from there. */
-  const integrate = (b: BranchState, how: Integration) =>
+  const runIntegration = (b: BranchState, how: Integration) =>
     local.op.mutate(async () => {
       const git = local.git!
       await (how === 'rebase' ? git.rebase(refFor(b)) : git.merge(refFor(b), { squash: how === 'squash' }))
       showBranchTab()
     })
+  /** A merge is reviewed first, as in GitHub Desktop: what it brings in, or which files will conflict. With no branch, the dialog picks one. */
+  const [merging, setMerging] = useState<{ how: MergeHow; branch: BranchState | null } | null>(null)
+  const integrate = (b: BranchState | null, how: Integration) => {
+    if (how !== 'rebase') setMerging({ how, branch: b })
+    else if (b) runIntegration(b, how)
+  }
+  const status = local.status.data
+  const into = status?.branch && status.branch !== 'HEAD' ? status.branch : null
 
   const openFolder = async (folder: LocalRepo) => {
     await qc.invalidateQueries({ queryKey: ['local-repos'] })
@@ -138,16 +147,32 @@ export function useBranchActions(repo: WorkspaceRepo, local: LocalRepoState) {
     })
   }
 
-  const dialogs = renaming && (
-    <NameDialog
-      title={`Rename ${renaming.name}`}
-      action="Rename"
-      initial={renaming.name}
-      taken={all.map((b) => b.name)}
-      note={renaming.location === 'both' ? `This only renames it on this Mac. The branch on ${hostName(repo)} keeps its name.` : undefined}
-      onSubmit={(to) => local.op.mutate(() => local.git!.renameBranch(renaming.name, to))}
-      onClose={() => setRenaming(null)}
-    />
+  const dialogs = (
+    <>
+      {renaming && (
+        <NameDialog
+          title={`Rename ${renaming.name}`}
+          action="Rename"
+          initial={renaming.name}
+          taken={all.map((b) => b.name)}
+          note={renaming.location === 'both' ? `This only renames it on this Mac. The branch on ${hostName(repo)} keeps its name.` : undefined}
+          onSubmit={(to) => local.op.mutate(() => local.git!.renameBranch(renaming.name, to))}
+          onClose={() => setRenaming(null)}
+        />
+      )}
+      {merging && into && (
+        <MergeDialog
+          local={local}
+          how={merging.how}
+          into={into}
+          branches={all.filter((b) => b.name !== into)}
+          initial={merging.branch}
+          refFor={refFor}
+          onMerge={(b) => runIntegration(b, merging.how)}
+          onClose={() => setMerging(null)}
+        />
+      )}
+    </>
   )
   return { rename: setRenaming, copyName: (b: BranchState) => void copyText(b.name), worktree, openWorktree, remove, integrate, refFor, showBranchTab, dialogs }
 }
@@ -267,8 +292,8 @@ export function RepoCommands({ repo, errorSlot }: { repo: WorkspaceRepo; errorSl
           actions.showBranchTab()
         })
       },
-      merge: () => setPicking('merge'),
-      squash: () => setPicking('squash'),
+      merge: () => actions.integrate(null, 'merge'),
+      squash: () => actions.integrate(null, 'squash'),
       rebase: () => setPicking('rebase'),
       'compare-github': () => compare && web(compare),
       'view-branch': () => branch && web(`${github}/tree/${encodePath(branch)}`),
