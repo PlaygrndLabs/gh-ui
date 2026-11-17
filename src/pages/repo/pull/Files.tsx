@@ -42,6 +42,7 @@ import { currentIndex } from '../../../lib/scrollspy'
 import type { DiffLine, LineSelection } from '../../../lib/diff'
 import { parseSuggestions } from '../../../lib/suggestions'
 import { FileDiffBox, lineAnchor, anchorKey, type DiffSide } from '../../../components/DiffView'
+import { githubSource } from '../../../lib/filePreview'
 import { Composer } from '../../../components/Composer'
 import type { SuggestionContext } from '../../../components/Markdown'
 import { SuggestionActions, SuggestionProvider } from '../../../components/Suggestions'
@@ -92,6 +93,15 @@ export function FilesChanged({ pr, defaultTreeWidth = 296 }: { pr: PullRequest; 
   const reviewState = usePullReviewState(owner, repo, pr.number)
   const invalidate = useInvalidatePull(owner, repo, pr.number)
   const storeKey = `${owner}/${repo}#${pr.number}`
+  // Before is where the branch split from its base, which a compare finds: asked for only when an image needs it.
+  const source = useMemo(
+    () =>
+      githubSource(octokit, owner, repo, {
+        before: async () => (await octokit.rest.repos.compareCommitsWithBasehead({ owner, repo, basehead: `${pr.base.sha}...${pr.head.sha}`, per_page: 1 })).data.merge_base_commit.sha,
+        after: pr.head.sha,
+      }),
+    [octokit, owner, repo, pr.base.sha, pr.head.sha],
+  )
 
   const [split, setSplit] = useState(() => readPref('diffSplit', false))
   const [showTree, setShowTree] = useState(() => readPref('diffFileTree', true))
@@ -488,6 +498,7 @@ export function FilesChanged({ pr, defaultTreeWidth = 296 }: { pr: PullRequest; 
                 id={`diff-${cssId(f.filename)}`}
                 eager={index < 3}
                 file={{ path: f.filename, previousPath: f.previous_filename, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch, sha: f.sha }}
+                source={source}
                 split={split}
                 collapsed={collapsed[f.filename] ?? isViewed}
                 onToggle={() => setCollapsed((c) => ({ ...c, [f.filename]: !(c[f.filename] ?? isViewed) }))}

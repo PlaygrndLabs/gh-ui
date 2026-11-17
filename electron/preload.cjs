@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('ghUi', {
     reorderCommits: (repoId, order) => ipcRenderer.invoke('repos:reorderCommits', repoId, order),
   },
   git: (repoId, args, auth) => ipcRenderer.invoke('git', repoId, args, auth),
+  readFile: (repoId, rev, file) => ipcRenderer.invoke('repo:readFile', repoId, rev, file),
   revealInFinder: (repoId) => ipcRenderer.invoke('repo:reveal', repoId),
   openInEditor: (repoId) => ipcRenderer.invoke('repo:openEditor', repoId),
   openInTerminal: (repoId) => ipcRenderer.invoke('repo:openTerminal', repoId),

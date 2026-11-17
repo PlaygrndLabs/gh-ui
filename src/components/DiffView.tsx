@@ -1,10 +1,14 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react'
-import { Button, IconButton, Tooltip } from '@primer/react'
-import { ChevronDownIcon, ChevronRightIcon, PlusIcon } from '@primer/octicons-react'
+import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react'
+import { Button, IconButton, SegmentedControl, Tooltip } from '@primer/react'
+import { ChevronDownIcon, ChevronRightIcon, CodeIcon, FileMediaIcon, PlusIcon } from '@primer/octicons-react'
 import { hunkIndexOf, lineOn, parsePatch, rangeContains, selectLines, type DiffLine, type DiffSide, type LineRange, type LineSelection } from '../lib/diff'
 import { highlightLine, languageFor } from '../lib/highlight'
 import { DiffStat, CopyButton } from './Bits'
 import { getDrawAll, registerCopySource, registerFindSource, subscribeDrawAll } from '../lib/find'
+import { previewKind, type FileSource } from '../lib/filePreview'
+
+// Loaded when a file is first previewed: it brings the Markdown renderer, which a plain diff never needs.
+const FilePreview = lazy(() => import('./FilePreview').then((m) => ({ default: m.FilePreview })))
 
 export type { DiffSide }
 
@@ -388,11 +392,13 @@ interface FileDiffBoxProps extends Omit<DiffViewProps, 'path' | 'lines'> {
   id?: string
   /** Draws straight away. For what's on screen from the start; the rest wait until they're close to it. */
   eager?: boolean
+  /** Where the file can be read in full, which lets an image or Markdown file be shown as itself. */
+  source?: FileSource | null
 }
 
 const LARGE_DIFF_LINES = 1200
 
-export function FileDiffBox({ file, actions, collapsed, onToggle, id, eager = false, ...rest }: FileDiffBoxProps) {
+export function FileDiffBox({ file, actions, collapsed, onToggle, id, eager = false, source, ...rest }: FileDiffBoxProps) {
   const lineCount = useMemo(() => countLines(file.patch), [file.patch])
   const box = useRef<HTMLDivElement>(null)
   const body = useRef<HTMLDivElement>(null)
@@ -405,12 +411,18 @@ export function FileDiffBox({ file, actions, collapsed, onToggle, id, eager = fa
   const tooLarge = lineCount > LARGE_DIFF_LINES && !forceLoad
   const split = !!rest.split
   const keep = drawAll || !!rest.selection || !!rest.commenting
+  // An image opens as a picture, and has nothing else to show when it's binary; Markdown opens as its diff.
+  const kind = source ? previewKind(file.path) : null
+  const [chosenMode, setMode] = useState<'diff' | 'preview' | null>(null)
+  const canDiff = !!file.patch
+  const mode = !kind ? 'diff' : !canDiff ? 'preview' : (chosenMode ?? (kind === 'image' ? 'preview' : 'diff'))
+  const previewing = mode === 'preview' && !!source && !!kind
 
   useEffect(() => {
     if (drawAll) setDrawn(true)
   }, [drawAll])
   // The stand-in's height was measured for one layout; another one draws differently.
-  useEffect(() => setStandInHeight(null), [split, file.patch])
+  useEffect(() => setStandInHeight(null), [split, file.patch, mode])
 
   const keepRef = useRef(keep)
   keepRef.current = keep
@@ -430,8 +442,8 @@ export function FileDiffBox({ file, actions, collapsed, onToggle, id, eager = fa
   }, [])
 
   // What find and copy use for this file while its diff isn't on the page (src/lib/find.ts).
-  const latest = useRef({ collapsed, onToggle, tooLarge, drawn, file })
-  latest.current = { collapsed, onToggle, tooLarge, drawn, file }
+  const latest = useRef({ collapsed, onToggle, tooLarge, drawn, file, previewing })
+  latest.current = { collapsed, onToggle, tooLarge, drawn, file, previewing }
   const units = useMemo(() => {
     let cached: string[] | null = null
     return () => (cached ??= findUnits(parsePatch(file.patch), split))
@@ -456,7 +468,7 @@ export function FileDiffBox({ file, actions, collapsed, onToggle, id, eager = fa
   useEffect(() => {
     if (!box.current) return
     return registerCopySource(box.current, {
-      drawn: () => !latest.current.file.patch || (latest.current.drawn && !latest.current.collapsed && !latest.current.tooLarge),
+      drawn: () => !latest.current.file.patch || (latest.current.drawn && !latest.current.collapsed && !latest.current.tooLarge && !latest.current.previewing),
       text: () => patchText(latest.current.file),
     })
   }, [])
@@ -477,10 +489,28 @@ export function FileDiffBox({ file, actions, collapsed, onToggle, id, eager = fa
           )}
         </span>
         <CopyButton text={file.path} label="Copy file path" />
-        <span className="ml-auto flex-center gap-2">{actions}</span>
+        <span className="ml-auto flex-center gap-2">
+          {kind && canDiff && !collapsed && (
+            <SegmentedControl aria-label="Show this file as" size="small">
+              <SegmentedControl.IconButton icon={CodeIcon} aria-label="Display the source diff" selected={mode === 'diff'} onClick={() => setMode('diff')} />
+              <SegmentedControl.IconButton icon={FileMediaIcon} aria-label={kind === 'image' ? 'Display the image' : 'Display the rendered file'} selected={mode === 'preview'} onClick={() => setMode('preview')} />
+            </SegmentedControl>
+          )}
+          {actions}
+        </span>
       </div>
       {collapsed ? (
         hasPatch && <div ref={standIn} hidden />
+      ) : previewing ? (
+        drawn ? (
+          <div ref={body}>
+            <Suspense fallback={<div style={{ height: standInHeight ?? 240 }} />}>
+              <FilePreview file={file} source={source!} kind={kind!} />
+            </Suspense>
+          </div>
+        ) : (
+          <div style={{ height: standInHeight ?? 240 }} />
+        )
       ) : !hasPatch && missingPatchNote(file) === null ? (
         // The API leaves out the patch of a diff that is too big (lockfiles, or every file past its limits in a huge PR).
         <div className="diff-hidden-note">
