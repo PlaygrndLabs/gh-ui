@@ -158,11 +158,11 @@ function PullRequestView() {
             </Button>
           </form>
         ) : (
-          <div className="flex gap-2" style={{ alignItems: 'flex-start' }}>
+          <div className="pr-title-row flex gap-2" style={{ alignItems: 'flex-start' }}>
             <h1 className="page-title flex-1">
               <InlineTitle text={pr.title} /> <span className="num">#{pr.number}</span>
             </h1>
-            <span className="flex-center gap-1 shrink-0" style={{ marginTop: 6 }}>
+            <span className="pr-title-actions flex-center gap-1 shrink-0" style={{ marginTop: 6 }}>
               {canEdit && <IconButton size="small" variant="invisible" icon={PencilIcon} aria-label="Edit title" onClick={() => (setTitle(pr.title), setEditingTitle(true))} />}
               {/* The desktop app's tab row links to the page on show. */}
               {!isNative && (
@@ -203,7 +203,7 @@ function PullRequestView() {
           </div>
         )}
         {saveTitle.error && <div className="error-box mt-2">{errorMessage(saveTitle.error)}</div>}
-        <div className="flex-center gap-2 wrap mt-2">
+        <div className="pr-meta flex-center gap-2 wrap mt-2">
           <PullStateLabel pull={pr} />
           <span className="fg-muted">
             <UserLink login={pr.user?.login} type={pr.user?.type} className="text-bold fg-default" />{' '}
@@ -225,7 +225,6 @@ function PullRequestView() {
     const showChecks = rest.startsWith('/checks')
     return (
       <div className="ws-pr">
-        <div className="ws-pr-head">{header}</div>
         <div className="ws-branch-body">
           <SplitPane
             id="pull-chat"
@@ -236,6 +235,8 @@ function PullRequestView() {
             max={900}
             first={
               <div className="ws-pr-chat">
+                {/* The title, the branches and whether it can merge sit with the conversation; the other pane is all code. */}
+                <div className="ws-pr-head">{header}</div>
                 <nav className="ws-subtabs" aria-label="Chat">
                   <Link className="ws-tab" to={showChecks ? (showCommits ? `${base}/commits` : base) : pathname} aria-current={!showChecks ? 'page' : undefined}>
                     Conversation

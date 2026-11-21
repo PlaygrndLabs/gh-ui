@@ -265,12 +265,18 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 
 /* ---------- Pull request: chat beside code ---------- */
 .ws-pr { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
-.ws-pr-head { flex: none; padding: 10px 16px 0; }
-.ws-pr-head .page-title { font-size: 18px; }
+/* The title, the branches and the readiness card head the chat pane, leaving the other pane to the code. Capped, so an
+   opened check list or merge form scrolls here and the thread below keeps its room. */
+.ws-pr-head { flex: none; max-height: 60%; overflow-y: auto; padding: 10px 12px 0; border-bottom: 1px solid var(--ws-line); container-type: inline-size; }
+.ws-pr-head .page-title { font-size: 16px; line-height: 22px; overflow-wrap: anywhere; }
 .ws-pr-head > .mb-3 { margin-bottom: 0 !important; }
-.ws-pr-head .flex-center.wrap { margin-top: 4px !important; }
-/* The readiness card spans the window under the title, the one place both panes share. */
-.ws-pr-head { container-type: inline-size; }
+/* One run of text after the state label, so a long branch name wraps mid-sentence instead of taking its own line. */
+.ws-pr-head .pr-meta { display: block; margin-top: 6px !important; line-height: 24px; }
+.ws-pr-head .pr-meta > * { margin-right: 6px; vertical-align: middle; }
+/* A pane is too narrow for the title beside its buttons, so they drop under it until there is room. */
+.ws-pr-head .pr-title-row { flex-wrap: wrap; row-gap: 4px; }
+.ws-pr-head .pr-title-row .page-title { flex: 1 1 260px; }
+.ws-pr-head .pr-title-actions { flex-wrap: wrap; margin-top: 0 !important; }
 .ws-pr-head .pr-ready-slot { margin: 10px 0 12px; }
 .ws-pr-code { container: ws-pr-code / inline-size; }
 .ws-pr-chat, .ws-pr-code, .ws-branch-timeline { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
@@ -281,7 +287,7 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 /* The right side leaves room for the scrollbar, so it never sits against the content. */
 .ws-pr-thread { padding: 12px 20px 12px 12px; }
 /* No top padding: a sticky bar stops below a scroller's padding, and code would show through above it. */
-.ws-pr-files { padding: 0 20px 8px 12px; --gd-prtabs-h: 0px; --gd-header-h: 230px; }
+.ws-pr-files { padding: 0 20px 8px 12px; --gd-prtabs-h: 0px; }
 /* A pane is much narrower than the page these were laid out for. */
 .ws-pr-files .files-layout { grid-template-columns: min(var(--files-tree-width), 50%) minmax(0, 1fr); }
 .ws-pr-files .files-layout.no-tree { grid-template-columns: minmax(0, 1fr); }
@@ -369,8 +375,6 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .repo-remote-input { flex: 1; min-width: 0; }
 .repo-remote-name-input { flex: 0 0 120px; width: 120px; }
 .repo-identity { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
-.ws-commit-author { gap: 5px; vertical-align: bottom; }
-.ws-commit-author-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Merge dialog: branches on the left, what the merge will do on the right, as GitHub Desktop shows it before merging. */
 .ws-merge { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 16px; height: 100%; min-height: 0; }
@@ -402,3 +406,5 @@ a.ws-list-row, .ws-list-row { display: flex; align-items: flex-start; gap: 8px; 
 .ws-merge-commits li + li { border-top: 1px solid var(--ws-line); }
 .ws-merge-commit-subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-merge-commit-meta { font-size: 12px; color: var(--ws-muted); }
+.ws-commit-author { gap: 5px; vertical-align: bottom; }
+.ws-commit-author-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
