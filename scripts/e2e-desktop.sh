@@ -54,7 +54,35 @@ commit_file r1.txt one "Reorder one"; commit_file r2.txt two "Reorder two"; comm
 git -C "$M" switch -q -c reorder-clash reorder-demo~3; commit_file same.txt one "Clash one"; commit_file same.txt two "Clash two"
 git -C "$M" switch -q feature; commit_file shared.txt ours "Ours"
 
+# For fetching in the background: a folder whose remote has a GitLab address that git here reads from a bare repository
+# beside it, so nothing leaves the machine. "other" is a second clone, standing in for another machine: it has pushed
+# one branch the folder has never fetched, and holds another that a step pushes later.
+R="$WORK/e2e-fetch-remote.git"
+F="$WORK/e2e-fetch"
+O="$WORK/e2e-fetch-other"
+FETCH_URL=https://gitlab.com/gh-ui-e2e/fetch.git
+git init -q --bare -b main "$R"
+git init -q -b main "$F"
+git clone -q "$R" "$O" 2>/dev/null
+for D in "$F" "$O"; do
+  git -C "$D" config user.name "gh-ui e2e"
+  git -C "$D" config user.email "e2e@example.invalid"
+  git -C "$D" config "url.file://$R.insteadOf" "$FETCH_URL"
+done
+git -C "$F" remote add origin "$FETCH_URL"
+git -C "$O" remote set-url origin "$FETCH_URL"
+git -C "$F" commit -q --allow-empty -m "First"
+git -C "$F" push -q -u origin main
+git -C "$O" fetch -q origin
+git -C "$O" switch -q -c pushed-elsewhere origin/main
+git -C "$O" commit -q --allow-empty -m "From elsewhere"
+git -C "$O" push -q origin pushed-elsewhere
+git -C "$O" switch -q -c pushed-later
+git -C "$O" commit -q --allow-empty -m "Later"
+
 GH_UI_USER_DATA="$WORK/profile" \
+E2E_FETCH_REPO="$F" \
+E2E_FETCH_OTHER_REPO="$O" \
 E2E_MERGE_REPO="$M" \
 E2E_LOCAL_REPO="$WORK/e2e-local" \
 E2E_CLONE_PARENT="$WORK/clones" \
