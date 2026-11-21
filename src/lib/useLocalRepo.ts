@@ -74,7 +74,8 @@ export function useLocalRepo(repo: LocalRepo | null) {
   const status = useQuery({
     queryKey: ['local-status', id],
     enabled: !!git,
-    queryFn: () => git!.status(),
+    // Never halfway through a switch, pull or stash of our own: those would show up as changes for a moment.
+    queryFn: () => ops!.steady(() => git!.status()),
     // Coming back from an editor should show what just changed, not wait for the next check.
     staleTime: 0,
     refetchInterval: 4000,
@@ -90,7 +91,7 @@ export function useLocalRepo(repo: LocalRepo | null) {
   const operation = useQuery({
     queryKey: ['local-operation', id],
     enabled: !!git,
-    queryFn: () => git!.operation(),
+    queryFn: () => ops!.steady(() => git!.operation()),
     refetchInterval: 4000,
   })
 
