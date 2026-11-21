@@ -40,6 +40,7 @@ describe('validateGitArgs', () => {
     [['tag', '--points-at', 'abc123']],
     // Every other command the app sends.
     [['status', '--porcelain=v1', '-z', '--untracked-files=all']],
+    [['status', '--porcelain=v2', '-z', '--', 'vendor/lib']],
     [['diff', 'HEAD', '--', 'a.ts']],
     [['diff', '--cached', '--', 'a.ts']],
     [['diff', '--cached']],
@@ -158,6 +159,7 @@ describe('validateGitArgs', () => {
     [['add', '.git/config']],
     [['add', '-f', '--', 'x']],
     [['status', '--ignored']],
+    [['status', '--porcelain=v2', 'vendor/lib']],
     [['-c', 'core.pager=evil', 'log']],
   ])('rejects %j', (args) => expect(() => validateGitArgs(args)).toThrow())
 })

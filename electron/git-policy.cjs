@@ -32,7 +32,8 @@ const GIT_BASE_ENV = { GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', LC_ALL
 //   paths:    whether "--" and file paths may follow
 const ANYTHING = /^/
 const RULES = {
-  status: { flags: ['--porcelain=v1', '-b', '-z', '--untracked-files=all'], args: 'none' },
+  // v2 with a path is how one entry is asked about: only that format says an entry is a submodule and what changed in it.
+  status: { flags: ['--porcelain=v1', '--porcelain=v2', '-b', '-z', '--untracked-files=all'], args: 'none', paths: true },
   diff: { flags: ['--cached'], args: 'any', paths: true },
   log: { flags: ['--not'], prefixes: ['--format=', '--pretty=', '--remotes='], valued: { '-n': /^\d+$/ }, args: 'any', paths: true },
   show: { flags: ['--patch', '--diff-merges=first-parent', '--no-color'], prefixes: ['--format='], args: 'any' },
