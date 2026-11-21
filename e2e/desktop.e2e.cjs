@@ -9,6 +9,8 @@ const path = require('node:path')
 const LOCAL = process.env.E2E_LOCAL_REPO
 const PARENT = process.env.E2E_CLONE_PARENT
 const MERGE = process.env.E2E_MERGE_REPO
+const FETCH = process.env.E2E_FETCH_REPO
+const FETCH_OTHER = process.env.E2E_FETCH_OTHER_REPO
 const j = JSON.stringify
 
 const helpers = `
@@ -120,6 +122,8 @@ exports.steps = [
     js: `${helpers}
       const repo = await g.repos.add(${j(LOCAL)})
       if (${j(MERGE ?? '')}) await g.repos.add(${j(MERGE ?? '')})
+      // Added before the app first reads its folders, like the two above: one added behind its back later isn't known to it.
+      for (const dir of ${j([FETCH, FETCH_OTHER].filter(Boolean))}) await g.repos.add(dir)
       const before = await g.git(repo.id, ['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'])
       await g.git(repo.id, ['add', '--', 'notes.md'])
       const commit = await g.git(repo.id, ['commit', '-m', 'Add notes', '-m', 'Written by the gh-ui e2e test'])
@@ -1807,6 +1811,37 @@ exports.steps = [
       const back = await until(() => !main().querySelector('.ws-compare-bar') && rows().length === 2, 5000)
       await g.git(repoId, ['switch', 'main'])
       return { back: !!back, rows: rows().length, fail: !back }
+    `,
+  },
+  {
+    name: 'a folder fetches by itself: a branch pushed from elsewhere arrives on opening, and a later one on Refresh',
+    screenshot: 'auto-fetch',
+    js: `${helpers}
+      const folders = await g.repos.list()
+      const here = folders.find((f) => f.path === ${j(FETCH)})
+      const other = folders.find((f) => f.path === ${j(FETCH_OTHER)})
+      // Only a fetch puts a remote's branch in refs/remotes: asking the remote for its list, as the branch menu does, leaves it out.
+      const known = async (name) => (await g.git(here.id, ['rev-parse', '-q', '--verify', 'refs/remotes/origin/' + name])).code === 0
+      const untilKnown = async (name, ms) => {
+        const end = Date.now() + ms
+        while (Date.now() < end) { if (await known(name)) return true; await sleep(250) }
+        return false
+      }
+      const r = { knownBeforeOpening: await known('pushed-elsewhere') }
+      clickLink('/local/' + here.id)
+      r.opened = !!(await until(() => [...document.querySelectorAll('.ws-seg-branch .ws-seg-value')].some((s) => s.getClientRects().length), 15000))
+      r.onOpening = await untilKnown('pushed-elsewhere', 15000)
+      const sync = () => [...document.querySelectorAll('.ws-seg-sync')].find((x) => x.getClientRects().length)?.textContent ?? ''
+      // Nobody clicked Fetch, and the toolbar still says when the folder last heard from its remote.
+      r.hint = await until(() => /Synced at/.test(sync()) && sync(), 8000)
+      // The other machine pushes again. The folder fetched a moment ago, so it doesn't ask again by itself yet.
+      r.pushed = (await g.git(other.id, ['push', 'origin', 'pushed-later'])).code
+      await sleep(1500)
+      r.knownBeforeRefresh = await known('pushed-later')
+      ;[...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length && b.textContent.includes('Refresh'))?.click()
+      r.onRefresh = await untilKnown('pushed-later', 15000)
+      r.fail = !(!r.knownBeforeOpening && r.opened && r.onOpening && r.hint && r.pushed === 0 && !r.knownBeforeRefresh && r.onRefresh)
+      return r
     `,
   },
   {
