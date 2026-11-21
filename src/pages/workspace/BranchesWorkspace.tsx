@@ -1,8 +1,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Link } from 'react-router-dom'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { Link, useNavigate } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
-import { ArrowDownIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, FileDiffIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, StackIcon, UndoIcon, XIcon } from '@primer/octicons-react'
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, FileDiffIcon, FileSubmoduleIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, StackIcon, UndoIcon, XIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import type { FileDiff } from '../../lib/diff'
 import { changePaths, COMPARE_LIMIT, isStaged, isUnmerged, reorderableCommits, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
@@ -24,6 +24,8 @@ import { useTabBranch } from '../../lib/TabsProvider'
 import { useCommitMenu } from './CommitMenu'
 import { useCommitReorder, type GrabRow } from './CommitReorder'
 import { ComparePicker } from './ComparePicker'
+import { SubmoduleDiffBox, SubmoduleUrls, SubmoduleView } from './SubmoduleView'
+import { parseGitmodules, resolveSubmoduleUrl, submoduleChange } from '../../lib/submodule'
 
 type Selection = { kind: 'file'; path: string } | { kind: 'commit'; sha: string } | { kind: 'range'; anchor: string; focus: string } | { kind: 'stash' } | { kind: 'compare' } | null
 
@@ -63,11 +65,13 @@ function createCommitDraft() {
 
 type CommitDraft = ReturnType<typeof createCommitDraft>
 
-const ChangeRow = memo(function ChangeRow({ entry, staged, selected, onToggle, onSelect }: { entry: StatusEntry; staged: boolean; selected: boolean; onToggle(entry: StatusEntry, staged: boolean): void; onSelect(path: string): void }) {
+const ChangeRow = memo(function ChangeRow({ entry, staged, selected, submodule, onToggle, onSelect }: { entry: StatusEntry; staged: boolean; selected: boolean; submodule: boolean; onToggle(entry: StatusEntry, staged: boolean): void; onSelect(path: string): void }) {
   return (
     <div className={`ws-row ws-row-file ${selected ? 'is-selected' : ''}`}>
       <Checkbox checked={staged} aria-label={isUnmerged(entry) ? `Mark ${entry.path} as resolved` : `Stage ${entry.path}`} onChange={() => onToggle(entry, !staged)} />
-      <button type="button" className="ws-row-link text-mono" title={entry.path} onClick={() => onSelect(entry.path)}>
+      <button type="button" className="ws-row-link text-mono" title={submodule ? `${entry.path} (submodule)` : entry.path} onClick={() => onSelect(entry.path)}>
+        {/* Another repository, not a file: what changed is the commit it is kept at. */}
+        {submodule && <FileSubmoduleIcon className="ws-row-submodule" aria-label="Submodule" />}
         {entry.path}
       </button>
       <ChangeBadge e={entry} />
@@ -115,7 +119,7 @@ function CommitBox({ local, draft, branchName, stagedCount, conflictCount, onCom
 }
 
 /** The changed files and the commit box. A box shows the click at once; git catches up behind it (lib/repoOps.ts). */
-function ChangesList({ local, draft, entries, selectedPath, branchName, onSelect, onCommitted, beforeCommit }: { local: LocalRepoState; draft: CommitDraft; entries: StatusEntry[]; selectedPath: string | undefined; branchName: string; onSelect(path: string): void; onCommitted(): void; beforeCommit: ReactNode }) {
+function ChangesList({ local, draft, entries, selectedPath, submodules, branchName, onSelect, onCommitted, beforeCommit }: { local: LocalRepoState; draft: CommitDraft; entries: StatusEntry[]; selectedPath: string | undefined; submodules: ReadonlyMap<string, string>; branchName: string; onSelect(path: string): void; onCommitted(): void; beforeCommit: ReactNode }) {
   const confirm = useConfirm()
   const intents = useStageIntents(local.ops)
   const { setStaged } = local
@@ -145,7 +149,7 @@ function ChangesList({ local, draft, entries, selectedPath, branchName, onSelect
         </span>
       </label>
       {entries.map((e) => (
-        <ChangeRow key={e.path} entry={e} staged={stagedOf(e)} selected={selectedPath === e.path} onToggle={onToggle} onSelect={onSelect} />
+        <ChangeRow key={e.path} entry={e} staged={stagedOf(e)} selected={selectedPath === e.path} submodule={submodules.has(e.path)} onToggle={onToggle} onSelect={onSelect} />
       ))}
       <div className="ws-commit-foot">
         {beforeCommit}
@@ -365,10 +369,39 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     // The path alone: staging a file doesn't change what it differs by, so a click has no reason to reload this.
     queryKey: ['local-diff', repo.local?.id ?? '', entry?.path],
     enabled: !!entry && !!local.git,
-    queryFn: () => local.git!.fileDiff(entry!),
+    // A submodule's diff is one line with a commit id on it, or nothing at all, so what changed in it is read as well.
+    queryFn: async () => {
+      const file = await local.git!.fileDiff(entry!)
+      return { file, submodule: await local.git!.submodule(entry!, file) }
+    },
     // What's on screen is what Discard would throw away, so edits made in another program show up here.
     staleTime: 0,
     refetchInterval: 4000,
+  })
+  const gitmodules = useQuery({
+    queryKey: ['local-gitmodules', repo.local?.id ?? ''],
+    enabled: !!repo.local && !!native,
+    queryFn: async () => {
+      const bytes = await native!.readFile(repo.local!.id, null, '.gitmodules')
+      return bytes ? new TextDecoder().decode(bytes) : ''
+    },
+    staleTime: 30_000,
+  })
+  // A relative address is relative to this repository's own remote.
+  const parentRemote = repo.remote?.url ?? null
+  const submoduleUrls = useMemo(() => new Map([...parseGitmodules(gitmodules.data ?? '')].map(([path, url]) => [path, resolveSubmoduleUrl(url, parentRemote)])), [gitmodules.data, parentRemote])
+  const navigate = useNavigate()
+  const qc = useQueryClient()
+  // As GitHub Desktop offers: the submodule is a repository of its own, and its changes are made and committed there.
+  const openSubmodule = useMutation({
+    mutationFn: async (path: string) => {
+      const added = await native!.repos.add(`${repo.local!.path}/${path}`)
+      // Git answers for the folder around it when the submodule's own folder is empty, as one never checked out is.
+      if (added.id === repo.local!.id) throw new Error(`${path} hasn’t been checked out in this folder yet. Run “git submodule update --init” in a terminal, then try again.`)
+      await Promise.all([qc.invalidateQueries({ queryKey: ['local-repos'] }), qc.invalidateQueries({ queryKey: ['workspace-folders'] })])
+      return added
+    },
+    onSuccess: (added) => navigate(`/local/${added.id}`),
   })
   const stashFiles = useQuery({
     queryKey: ['local-stash', repo.local?.id ?? '', 'files', branchStash?.sha],
@@ -530,7 +563,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
         {tab === 'changes' && (
           <Section title="Changes" flush fill>
             {hasChanges ? (
-              <ChangesList local={local} draft={draft} entries={entries} selectedPath={entry?.path} branchName={branch.name} onSelect={selectFile} onCommitted={clearSelection} beforeCommit={stashRow} />
+              <ChangesList local={local} draft={draft} entries={entries} selectedPath={entry?.path} submodules={submoduleUrls} branchName={branch.name} onSelect={selectFile} onCommitted={clearSelection} beforeCommit={stashRow} />
             ) : (
               <>
                 {isCurrent && <p className="ws-note">No uncommitted changes.</p>}
@@ -736,11 +769,39 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       <div className="ws-details-head">
         <span className="ws-details-title text-mono">{entry.path}</span>
         <CopyButton text={entry.path} label="Copy file path" />
-        <Button size="small" variant="danger" onClick={() => void discard(entry)}>
-          Discard
-        </Button>
+        {/* A submodule's changes are undone inside it; restoring its path here would leave its folder as it is. */}
+        {!diff.data?.submodule && (
+          <Button size="small" variant="danger" onClick={() => void discard(entry)}>
+            Discard
+          </Button>
+        )}
       </div>
-      <div className="ws-scroll ws-diff">{diff.isLoading ? <Loading /> : diff.data ? <LocalFileDiff file={diff.data} split={split} eager source={worktreeSource} /> : <p className="ws-note">No textual changes to show.</p>}</div>
+      {diff.data?.submodule ? (
+        <div className="ws-scroll ws-submodule-page">
+          <h2 className="ws-submodule-title">Submodule changes</h2>
+          <SubmoduleView
+            path={entry.path}
+            change={diff.data.submodule}
+            action={
+              // Nothing to open once its folder is gone.
+              diff.data.submodule.to !== null || diff.data.submodule.from === null ? (
+                <div className="ws-submodule-action">
+                  <div>
+                    <div className="text-bold">Open this submodule as a repository</div>
+                    <div className="fg-muted">Open it like any other folder to see and commit the changes inside it.</div>
+                  </div>
+                  <Button size="small" variant="primary" loading={openSubmodule.isPending} onClick={() => openSubmodule.mutate(entry.path)}>
+                    Open repository
+                  </Button>
+                </div>
+              ) : undefined
+            }
+          />
+          {openSubmodule.error ? <div className="error-box mt-2">{errorMessage(openSubmodule.error)}</div> : null}
+        </div>
+      ) : (
+        <div className="ws-scroll ws-diff">{diff.isLoading ? <Loading /> : diff.data?.file ? <LocalFileDiff file={diff.data.file} split={split} eager source={worktreeSource} /> : <p className="ws-note">No textual changes to show.</p>}</div>
+      )}
     </div>
   ) : showCompare && base && branch ? (
     <div className="ws-details">
@@ -876,7 +937,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
                 )}
               </div>
               <div className="ws-branch-body">
-                {commitTab ? <SplitPane id="branch-timeline" firstLabel="Timeline" secondLabel="Details" defaultWidth={420} min={280} max={800} first={timeline} second={details} /> : timeline}
+                <SubmoduleUrls.Provider value={submoduleUrls}>{commitTab ? <SplitPane id="branch-timeline" firstLabel="Timeline" secondLabel="Details" defaultWidth={420} min={280} max={800} first={timeline} second={details} /> : timeline}</SubmoduleUrls.Provider>
               </div>
             </>
           ) : (
@@ -891,6 +952,9 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
 
 // A diff can be thousands of table rows. It only redraws when the diff itself changes.
 const LocalFileDiff = memo(function LocalFileDiff({ file, split, eager, source }: { file: FileDiff; split: boolean; eager?: boolean; source?: FileSource | null }) {
+  // In a commit, a comparison or a stash a submodule is one of the files: its commits are named instead of diffed.
+  const submodule = submoduleChange(file, null)
+  if (submodule) return <SubmoduleDiffBox path={file.newPath} change={submodule} />
   return (
     <FileDiffBox
       eager={eager}

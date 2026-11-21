@@ -2,6 +2,7 @@
 // and the tests run the same commands against a real repository. Electron checks every command (electron/git-policy.cjs).
 
 import { parseUnifiedDiff, type FileDiff } from './diff'
+import { parseSubmoduleDiff, parseSubmoduleStatus, submoduleChange, type SubmoduleChange } from './submodule'
 import { native, type GitAuth, type GitResult } from './platform'
 
 export interface StatusEntry {
@@ -327,6 +328,16 @@ export function createGitClient(run: GitRunner, reorder?: CommitReorderer) {
       }
       const out = await git(['diff', 'HEAD', '--', entry.path]).catch(() => git(['diff', '--cached', '--', entry.path]))
       return parseUnifiedDiff(out)[0] ?? null
+    },
+    /**
+     * What a submodule's entry in Changes stands for, given that entry's diff, or null for an ordinary file. Asked of git
+     * only when the diff could be a submodule's: its commit line, or nothing at all, which is all git shows for one whose
+     * only change is new files inside it.
+     */
+    async submodule(entry: StatusEntry, diff: FileDiff | null): Promise<SubmoduleChange | null> {
+      if (diff && !parseSubmoduleDiff(diff)) return null
+      const res = await run(['status', '--porcelain=v2', '-z', '--', entry.path], false)
+      return submoduleChange(diff, res.code === 0 ? parseSubmoduleStatus(res.stdout) : null)
     },
     stagedDiff: () => git(['diff', '--cached']),
     /** The newest commits of `ref`, or of the checked-out branch. Empty before the first commit. */

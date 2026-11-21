@@ -80,7 +80,26 @@ git -C "$O" push -q origin pushed-elsewhere
 git -C "$O" switch -q -c pushed-later
 git -C "$O" commit -q --allow-empty -m "Later"
 
+# For the submodule view: a folder whose submodule has moved to another commit and holds a new file. The address in
+# .gitmodules is a GitHub one, as a real project's would be; the submodule itself was cloned from the folder beside it.
+SL="$WORK/e2e-sub-lib"
+SP="$WORK/e2e-sub"
+for D in "$SL" "$SP"; do
+  git init -q -b main "$D"
+  git -C "$D" config user.name "gh-ui e2e"
+  git -C "$D" config user.email "e2e@example.invalid"
+done
+echo one > "$SL/lib.txt"; git -C "$SL" add lib.txt; git -C "$SL" commit -q -m "Lib one"
+echo two > "$SL/lib.txt"; git -C "$SL" commit -q -a -m "Lib two"
+git -C "$SP" commit -q --allow-empty -m "First"
+git -C "$SP" -c protocol.file.allow=always submodule --quiet add "$SL" vendor/lib 2>/dev/null
+git -C "$SP" config -f .gitmodules submodule.vendor/lib.url https://github.com/gh-ui-e2e/lib.git
+git -C "$SP" commit -q -a -m "Add lib"
+git -C "$SP/vendor/lib" checkout -q HEAD~1
+echo scratch > "$SP/vendor/lib/scratch.txt"
+
 GH_UI_USER_DATA="$WORK/profile" \
+E2E_SUBMODULE_REPO="$SP" \
 E2E_FETCH_REPO="$F" \
 E2E_FETCH_OTHER_REPO="$O" \
 E2E_MERGE_REPO="$M" \

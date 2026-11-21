@@ -11,6 +11,7 @@ const PARENT = process.env.E2E_CLONE_PARENT
 const MERGE = process.env.E2E_MERGE_REPO
 const FETCH = process.env.E2E_FETCH_REPO
 const FETCH_OTHER = process.env.E2E_FETCH_OTHER_REPO
+const SUBMODULE = process.env.E2E_SUBMODULE_REPO
 const j = JSON.stringify
 
 const helpers = `
@@ -123,7 +124,7 @@ exports.steps = [
       const repo = await g.repos.add(${j(LOCAL)})
       if (${j(MERGE ?? '')}) await g.repos.add(${j(MERGE ?? '')})
       // Added before the app first reads its folders, like the two above: one added behind its back later isn't known to it.
-      for (const dir of ${j([FETCH, FETCH_OTHER].filter(Boolean))}) await g.repos.add(dir)
+      for (const dir of ${j([FETCH, FETCH_OTHER, SUBMODULE].filter(Boolean))}) await g.repos.add(dir)
       const before = await g.git(repo.id, ['status', '--porcelain=v1', '-b', '-z', '--untracked-files=all'])
       await g.git(repo.id, ['add', '--', 'notes.md'])
       const commit = await g.git(repo.id, ['commit', '-m', 'Add notes', '-m', 'Written by the gh-ui e2e test'])
@@ -1841,6 +1842,46 @@ exports.steps = [
       ;[...document.querySelectorAll('.ws-tabs-end button')].find((b) => b.getClientRects().length && b.textContent.includes('Refresh'))?.click()
       r.onRefresh = await untilKnown('pushed-later', 15000)
       r.fail = !(!r.knownBeforeOpening && r.opened && r.onOpening && r.hint && r.pushed === 0 && !r.knownBeforeRefresh && r.onRefresh)
+      return r
+    `,
+  },
+  {
+    name: 'a submodule in Changes is said in words, as in GitHub Desktop, and opens as a repository of its own',
+    screenshot: 'submodule',
+    js: `${helpers}
+      const here = (await g.repos.list()).find((f) => f.path === ${j(SUBMODULE)})
+      const short = (sha) => sha.slice(0, 7)
+      const from = (await g.git(here.id, ['rev-parse', 'HEAD:vendor/lib'])).stdout.trim()
+      const to = /^\\+Subproject commit ([0-9a-f]+)/m.exec((await g.git(here.id, ['diff', 'HEAD', '--', 'vendor/lib'])).stdout)?.[1] ?? ''
+      clickLink('/local/' + here.id)
+      const branchTab = (name) => [...(main()?.querySelectorAll('.ws-branch-tabs [role=tab]') ?? [])].find((t) => t.textContent.includes(name))
+      ;(await until(() => branchTab('Changes'), 15000))?.click()
+      const view = await until(() => { const v = main()?.querySelector('.ws-submodule-page'); return v?.getClientRects().length && v }, 15000)
+      const text = view?.innerText ?? ''
+      const r = {
+        title: view?.querySelector('.ws-submodule-title')?.textContent,
+        repository: view?.querySelector('a')?.textContent,
+        shas: [...(view?.querySelectorAll('.ws-submodule-sha code') ?? [])].map((c) => c.textContent),
+        expected: [short(from), short(to)],
+        moved: text.includes('Its commit changed from'),
+        // Its new file is the submodule's to commit, which the one-line diff never said.
+        inside: text.includes('It has new files inside'),
+        rowMarked: !!main().querySelector('.ws-row-file .ws-row-submodule'),
+        noRawDiff: !main().querySelector('.ws-details .file-diff') && !text.includes('Subproject commit'),
+        noDiscard: !byText('.ws-details-head button', 'Discard'),
+      }
+      // In History it is one of the commit's files, with its commit named in the diff's place.
+      branchTab('History').click()
+      const box = await until(() => { const b = main()?.querySelector('.ws-submodule-box'); return b?.getClientRects().length && b }, 10000)
+      r.inHistory = !!box && box.innerText.includes('vendor/lib') && box.innerText.includes('It was added at commit') && !box.innerText.includes('You can commit')
+      branchTab('Changes').click()
+      const open = await until(() => byText('.ws-submodule-action button', 'Open repository'), 10000)
+      open?.click()
+      const opened = await until(() => savedActiveUrl() !== '/local/' + here.id && /^\\/local\\//.test(savedActiveUrl()) && savedActiveUrl(), 15000)
+      const inner = (await g.repos.list()).find((f) => f.path === ${j(SUBMODULE)} + '/vendor/lib')
+      r.openedItsOwnFolder = !!inner && opened === '/local/' + inner.id
+      r.itsNewFile = !!(await until(() => byText('.ws-row-file', 'scratch.txt'), 10000))
+      r.fail = !(r.title === 'Submodule changes' && r.repository === 'gh-ui-e2e/lib (github.com)' && r.shas.join() === r.expected.join() && from !== to && r.moved && r.inside && r.rowMarked && r.noRawDiff && r.noDiscard && r.inHistory && r.openedItsOwnFolder && r.itsNewFile)
       return r
     `,
   },
