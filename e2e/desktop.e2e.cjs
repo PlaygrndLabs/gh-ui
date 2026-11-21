@@ -374,7 +374,8 @@ exports.steps = [
       clickLink('/jqlang/jq')
       await until(() => main()?.querySelector('.ws-branch-head'), 15000)
       await until(() => main()?.querySelector('.ws-section .ws-row'), 15000)
-      await until(() => main()?.querySelector('.file-diff'), 15000)
+      // An earlier step left this page in the tab, where it's still hidden for a moment after the link: wait until it shows.
+      await until(() => [...(main()?.querySelectorAll('.ws-diff .file-diff') ?? [])].some((d) => d.getClientRects().length), 15000)
       const text = main().innerText
       const tabNames = await until(() => { const n = [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].map((t) => t.textContent.trim()); return n.includes('Checks') && n }, 8000)
       const r = { sidebar: main().querySelectorAll('.ws-list').length, commits: main().querySelectorAll('.ws-section .ws-row').length, diff: !!main().querySelector('.file-diff'), toolbar: !!byText('.ws-seg-value', 'Clone repository'), tabNames }
