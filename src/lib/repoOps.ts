@@ -46,6 +46,22 @@ export function createRepoOps({ stage, unstage, reconcile }: RepoOpsDeps) {
     return result
   }
 
+  /**
+   * Reads the folder while nothing here is changing it. Halfway through a branch switch git has rewritten some files
+   * and not yet moved HEAD, so a status read then lists the difference between the two branches as changes. A read
+   * waits for the queue, and one that a job overtook is thrown away and made again. Never call this from inside a job.
+   */
+  const steady = async <T>(read: () => Promise<T>): Promise<T> => {
+    for (;;) {
+      const idle = tail
+      await idle
+      // Every job asked for replaces the tail, so an unchanged one means nothing ran, or is waiting to.
+      if (tail !== idle) continue
+      const value = await read()
+      if (tail === idle) return value
+    }
+  }
+
   /** Writes one group, and if that fails file by file, so one vanished file doesn't take the others with it. */
   const write = async (items: StageIntent[], apply: (...entries: StatusEntry[]) => Promise<unknown>, failed: Map<string, unknown>) => {
     for (let i = 0; i < items.length; i += CHUNK) {
@@ -115,6 +131,7 @@ export function createRepoOps({ stage, unstage, reconcile }: RepoOpsDeps) {
 
   return {
     run,
+    steady,
     /** Ticks or unticks boxes now, and has git catch up. Clicks that land while it's busy go in its next command together. */
     setStaged(entries: StatusEntry[], staged: boolean) {
       if (!entries.length) return

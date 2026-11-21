@@ -708,7 +708,8 @@ a.commit-sha:hover { color: var(--fgColor-accent); }
 .pr-ready-confirm > * { max-width: 720px; }
 .pr-ready-error { padding: 8px 12px; font-size: 13px; border-top: 1px solid var(--borderColor-muted); }
 /* A narrow pane puts the merge button under the signals rather than squeezing them. */
-@container (max-width: 520px) { .pr-ready-main { flex-wrap: wrap; } .pr-ready-actions { margin-left: 44px; } }
+/* The text takes the rest of the first line, or it would shrink to nothing sooner than let the button wrap. */
+@container (max-width: 520px) { .pr-ready-main { flex-wrap: wrap; } .pr-ready-text { flex-basis: calc(100% - 44px); } .pr-ready-actions { margin-left: 44px; } }
 
 /* The conversation's All / Unresolved / Mine filter and its sort order. */
 .pr-comment-filters { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 16px 0; }

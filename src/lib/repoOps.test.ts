@@ -181,4 +181,51 @@ describe('createRepoOps', () => {
     await expect(ops.run(async () => Promise.reject(new Error('x')))).rejects.toThrow('x')
     await expect(ops.run(async () => 'ok')).resolves.toBe('ok')
   })
+
+  /** A job, or a read, that finishes only when the test says so. */
+  function held<T>(value: T) {
+    let release!: () => void
+    const done = new Promise<T>((resolve) => (release = () => resolve(value)))
+    return { done, release }
+  }
+
+  it('reads straight away when nothing is running', async () => {
+    const { ops } = setup()
+    await expect(ops.steady(async () => 'clean')).resolves.toBe('clean')
+  })
+
+  it('holds a read back until the job in front of it has finished', async () => {
+    const { ops } = setup()
+    const order: string[] = []
+    const switching = held(undefined)
+    void ops.run(() => switching.done.then(() => order.push('switched')))
+    const read = ops.steady(async () => order.push('read'))
+    await tick()
+    expect(order).toEqual([])
+    switching.release()
+    await read
+    expect(order).toEqual(['switched', 'read'])
+  })
+
+  it('throws away a read that a job overtook, and reads again once the job is done', async () => {
+    const { ops } = setup()
+    const halfway = held('half switched')
+    const reads = [() => halfway.done, async () => 'switched']
+    const read = ops.steady(() => reads.shift()!())
+    await tick()
+    const switching = held(undefined)
+    void ops.run(() => switching.done)
+    halfway.release()
+    await tick()
+    // The first answer came back while the switch was still running, so nothing has been handed over yet.
+    expect(reads).toHaveLength(1)
+    switching.release()
+    await expect(read).resolves.toBe('switched')
+  })
+
+  it('still reads after the job in front of it fails', async () => {
+    const { ops } = setup()
+    void ops.run(async () => Promise.reject(new Error('refused'))).catch(() => undefined)
+    await expect(ops.steady(async () => 'clean')).resolves.toBe('clean')
+  })
 })

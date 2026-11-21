@@ -203,8 +203,8 @@ exports.steps = [
         sideList: m.querySelectorAll('.ws-list').length,
         seg: pick()?.innerText.replace(/\\s+/g, ' '),
         chat: !!m.querySelector('.ws-pr-thread .timeline-comment'),
-        // Merge readiness sits under the title, above both panes, as on github.com's new overview page.
-        merge: !!m.querySelector('.ws-pr-head #pr-merge.pr-ready .pr-ready-title'),
+        // The title and merge readiness head the chat pane; the code pane holds nothing but the changes.
+        merge: !!m.querySelector('.ws-pr-chat > .ws-pr-head #pr-merge.pr-ready .pr-ready-title') && !m.querySelector('.ws-pr-code .ws-pr-head'),
         files: !!m.querySelector('.ws-pr-files .file-diff'),
         tree: !!m.querySelector('.ws-pr-files .files-tree'),
         reviewButton: !!byText('button', 'Review changes') || !!byText('button', 'Finish your review'),
