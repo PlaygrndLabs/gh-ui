@@ -2,11 +2,16 @@ import type { ElementType } from 'react'
 import { Link } from 'react-router-dom'
 import { IssueDraftIcon } from '@primer/octicons-react'
 import { IssueStateIcon, PullStateIcon } from '../../../components/Status'
-import type { ProjectField, ProjectItem, ProjectModel } from '../../../lib/projects'
+import type { ProjectField, ProjectItem, ProjectModel, ProjectScope, ProjectView } from '../../../lib/projects'
 
 /** What the board and table need to show and edit a project, provided by ProjectPage. */
 export interface ProjectEditor {
   model: ProjectModel
+  /** Where the project was opened from: "Add item" looks for issues and pull requests there. */
+  scope: ProjectScope
+  /** The saved view showing: its visible fields, sorting and grouping shape the table. */
+  view?: ProjectView
+  /** The single select field the board's columns come from: the view's column field, else Status. */
   statusField?: ProjectField
   /** viewerCanUpdate, and the token has not been refused the project scope. */
   canEdit: boolean

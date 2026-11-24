@@ -3,19 +3,20 @@ import { useQuery } from '@tanstack/react-query'
 import { ActionList, AnchoredOverlay, Button, Spinner } from '@primer/react'
 import { PlusIcon } from '@primer/octicons-react'
 import { useGitHub, errorMessage } from '../../../lib/github'
-import { useRepo } from '../../../lib/repo'
-import { addProjectItem, findItemByNumber, parseItemUrl, searchAddableItems, setItemField, type AddableItem, type NewItem } from '../../../lib/projects'
+import { addProjectItem, findItemByNumber, parseItemUrl, searchAddableItems, searchQualifier, setItemField, type AddableItem, type NewItem } from '../../../lib/projects'
 import { ItemIcon, type ProjectEditor } from './shared'
 
 /**
- * github.com's "Add item" row: type a title and press Enter for a draft issue, type # to pick one of
- * the repository's issues or pull requests, or paste an issue / pull request URL. From a board
- * column the new item also gets that column's status.
+ * github.com's "Add item" row: type a title and press Enter for a draft issue, type # to pick an
+ * issue or pull request (of the repository the page is on, or of any of the owner's repositories on
+ * an organization's or user's project), or paste an issue / pull request URL. From a board column
+ * the new item also gets that column's status.
  */
 export function AddItem({ editor, column }: { editor: ProjectEditor; column?: string | null }) {
   const { octokit, key, account } = useGitHub()
-  const { owner, repo } = useRepo()
-  const { model, statusField } = editor
+  const { model, statusField, scope } = editor
+  // "repo:acme/web", or "org:acme" where the project is not opened from a repository.
+  const where = searchQualifier(scope)
   const listId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
@@ -34,10 +35,10 @@ export function AddItem({ editor, column }: { editor: ProjectEditor; column?: st
   }, [text])
 
   const results = useQuery({
-    queryKey: [key, 'project-add-search', owner, repo, term],
+    queryKey: [key, 'project-add-search', where, term],
     enabled: searching,
     staleTime: 30_000,
-    queryFn: () => searchAddableItems(octokit, owner, repo, term),
+    queryFn: () => searchAddableItems(octokit, scope, term),
   })
   const inProject = new Set(model.items.map((i) => i.content?.id).filter(Boolean))
   const options = (results.data ?? []).filter((r) => !inProject.has(r.id))
@@ -148,7 +149,7 @@ export function AddItem({ editor, column }: { editor: ProjectEditor; column?: st
           ) : !options.length ? (
             <div className="project-add-empty fg-muted">No issues or pull requests found</div>
           ) : (
-            <ActionList id={listId} role="listbox" aria-label={`Issues and pull requests in ${owner}/${repo}`}>
+            <ActionList id={listId} role="listbox" aria-label={`Issues and pull requests in ${where.slice(where.indexOf(':') + 1)}`}>
               {options.map((r: AddableItem, i) => (
                 <ActionList.Item
                   key={r.id}
@@ -160,10 +161,13 @@ export function AddItem({ editor, column }: { editor: ProjectEditor; column?: st
                   onSelect={() => void add({ contentId: r.id })}
                 >
                   <ActionList.LeadingVisual>
-                    <ItemIcon item={{ content: { ...r, repository: { nameWithOwner: `${owner}/${repo}` } } }} />
+                    <ItemIcon item={{ content: r }} />
                   </ActionList.LeadingVisual>
                   {r.title}
-                  <ActionList.Description variant="inline">#{r.number}</ActionList.Description>
+                  {/* Across an owner's repositories a number alone does not say which issue it is. */}
+                  <ActionList.Description variant="inline">
+                    {scope.kind !== 'repo' && r.repository ? r.repository.nameWithOwner.split('/')[1] : ''}#{r.number}
+                  </ActionList.Description>
                 </ActionList.Item>
               ))}
             </ActionList>

@@ -1,14 +1,19 @@
-import { useRef, useState, type KeyboardEvent } from 'react'
-import { SelectPanel, type SelectPanelItemInput } from '@primer/react'
+import { Fragment, useRef, useState, type KeyboardEvent } from 'react'
+import { Link } from 'react-router-dom'
+import { CounterLabel, SelectPanel, type SelectPanelItemInput } from '@primer/react'
 import { TriangleDownIcon } from '@primer/octicons-react'
 import { useGitHub } from '../../../lib/github'
+import { IssueLabel, UserAvatar } from '../../../components/Bits'
 import {
-  EDITABLE_TYPES,
+  READ_ONLY_TYPES,
   displayValue,
+  groupItems,
   iterationRange,
   parseFieldInput,
   sameValue,
   setItemField,
+  sortItems,
+  viewColumns,
   withFieldValue,
   type ProjectField,
   type ProjectFieldValue,
@@ -18,10 +23,19 @@ import { AddItem } from './AddItem'
 import { ItemMenu } from './ItemMenu'
 import { ItemIcon, ItemTitle, OptionToken, optionDot, type ProjectEditor } from './shared'
 
-/** The table layout: a row per item, a column per text, number, date, single select and iteration field, editable in place. */
+/**
+ * The table layout: a row per item and a column per field the view shows, in the view's sort order and
+ * under its group headings. Text, number, date, single select and iteration cells are editable in
+ * place; assignees, labels and the other fields that mirror the issue or pull request are shown only.
+ */
 export function Table({ editor }: { editor: ProjectEditor }) {
-  const { model, canEdit } = editor
-  const fields = model.fields.filter((f) => EDITABLE_TYPES.includes(f.dataType))
+  const { model, canEdit, view } = editor
+  const fields = viewColumns(model.fields, view)
+  const rows = sortItems(model.items, model.fields, view?.sortBy ?? [])
+  const groupField = model.fields.find((f) => view?.groupBy.includes(f.id))
+  const groups = groupField ? groupItems(rows, groupField) : [{ key: '', label: '', color: undefined, items: rows }]
+  // Rows are numbered through the groups, as on github.com.
+  const firstRow = groups.map((_, i) => groups.slice(0, i).reduce((n, g) => n + g.items.length, 0))
   return (
     <div className="project-table-box">
       <div className="project-table-wrap">
@@ -38,22 +52,41 @@ export function Table({ editor }: { editor: ProjectEditor }) {
             </tr>
           </thead>
           <tbody>
-            {model.items.map((it, i) => (
-              <tr key={it.id}>
-                <td className="project-table-num">{i + 1}</td>
-                <th scope="row" className="project-table-title">
-                  <span className="project-table-title-inner">
-                    <ItemIcon item={it} />
-                    <ItemTitle item={it} className="project-table-title-text" />
-                    {it.content?.number !== undefined && <span className="fg-muted">#{it.content.number}</span>}
-                    {canEdit && <ItemMenu item={it} editor={editor} />}
-                  </span>
-                </th>
-                {fields.map((f) => (
-                  <FieldCell key={f.id} field={f} item={it} editor={editor} />
+            {groups.map((g, gi) => (
+              <Fragment key={g.key}>
+                {groupField && (
+                  <tr className="project-table-group">
+                    <th colSpan={fields.length + 2} scope="colgroup">
+                      <span className="project-table-group-inner">
+                        {g.color ? <OptionToken name={g.label} color={g.color} /> : <span className={g.key ? undefined : 'fg-muted'}>{g.label}</span>}
+                        <CounterLabel>{g.items.length}</CounterLabel>
+                      </span>
+                    </th>
+                  </tr>
+                )}
+                {g.items.map((it, i) => (
+                  <tr key={it.id}>
+                    <td className="project-table-num">{firstRow[gi] + i + 1}</td>
+                    <th scope="row" className="project-table-title">
+                      <span className="project-table-title-inner">
+                        <ItemIcon item={it} />
+                        <ItemTitle item={it} className="project-table-title-text" />
+                        {it.content?.number !== undefined && <span className="fg-muted">#{it.content.number}</span>}
+                        {canEdit && <ItemMenu item={it} editor={editor} />}
+                      </span>
+                    </th>
+                    {fields.map((f) => (READ_ONLY_TYPES.includes(f.dataType) ? <InfoCell key={f.id} field={f} item={it} /> : <FieldCell key={f.id} field={f} item={it} editor={editor} />))}
+                  </tr>
                 ))}
-              </tr>
+              </Fragment>
             ))}
+            {!rows.length && (
+              <tr>
+                <td className="project-table-empty" colSpan={fields.length + 2}>
+                  No items to show.
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -63,6 +96,41 @@ export function Table({ editor }: { editor: ProjectEditor }) {
         </div>
       )}
     </div>
+  )
+}
+
+/** A cell of a field that mirrors the issue or pull request: assignees, labels, linked pull requests, reviewers, milestone, repository. */
+function InfoCell({ field, item }: { field: ProjectField; item: ProjectItem }) {
+  const info = item.info[field.id]
+  return (
+    <td className="project-cell">
+      {!info ? null : 'users' in info ? (
+        <span className="project-cell-list">
+          <span className="project-cell-avatars">
+            {info.users.map((u) => (
+              <UserAvatar key={u.login} login={u.login} src={u.avatarUrl} size={20} />
+            ))}
+          </span>
+          <span className="text-truncate">{info.users.map((u) => u.login).join(', ')}</span>
+        </span>
+      ) : 'labels' in info ? (
+        <span className="project-cell-list">
+          {info.labels.map((l) => (
+            <IssueLabel key={l.name} name={l.name} color={l.color} />
+          ))}
+        </span>
+      ) : 'pulls' in info ? (
+        <span className="project-cell-list">
+          {info.pulls.map((p) => (
+            <Link key={`${p.repository.nameWithOwner}#${p.number}`} to={`/${p.repository.nameWithOwner}/pull/${p.number}`} title={p.title}>
+              #{p.number}
+            </Link>
+          ))}
+        </span>
+      ) : (
+        <span className="text-truncate">{info.text}</span>
+      )}
+    </td>
   )
 }
 

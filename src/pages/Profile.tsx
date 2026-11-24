@@ -27,6 +27,7 @@ import { useGitHub, errorMessage } from '../lib/github'
 import { compactNumber, plural } from '../lib/format'
 import { openExternal } from '../lib/platform'
 import { webUrl } from '../lib/links'
+import { projectPath } from '../lib/projects'
 import { useAgentPageContext } from '../lib/agent/AgentProvider'
 import { Blankslate, ErrorBox, Loading, UserAvatar } from '../components/Bits'
 import { Markdown } from '../components/Markdown'
@@ -889,9 +890,9 @@ function ProjectsTab({ login, kind, count }: { login: string; kind: 'user' | 'or
           <div key={p.number} className="Box-row hoverable">
             <TableIcon className="fg-muted" />
             <div className="flex-1" style={{ minWidth: 0 }}>
-              <ExternalLink href={p.url}>
-                <span className="Box-row-link">{p.title}</span>
-              </ExternalLink>{' '}
+              <Link to={projectPath({ kind: kind === 'organization' ? 'org' : 'user', owner: login }, p.number)} className="Box-row-link">
+                {p.title}
+              </Link>{' '}
               {p.closed && <Label variant="done">Closed</Label>}
               <div className="Box-row-meta">
                 #{p.number} updated <RelativeTime date={new Date(p.updatedAt)} />

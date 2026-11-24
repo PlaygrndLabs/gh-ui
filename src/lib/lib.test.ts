@@ -78,6 +78,13 @@ describe('links', () => {
     expect(appPathFromUrl('https://github.com/orgs/acme/repositories?q=web', 'github.com')).toBe('/acme?q=web&tab=repositories')
     expect(appPathFromUrl('https://github.com/orgs/acme/packages', 'github.com')).toBeNull()
     expect(appPathFromUrl('https://github.com/orgs/acme/teams/core', 'github.com')).toBeNull()
+    // Projects under an organization or user, and their saved views.
+    expect(appPathFromUrl('https://github.com/orgs/acme/projects/3', 'github.com')).toBe('/orgs/acme/projects/3')
+    expect(appPathFromUrl('https://github.com/orgs/acme/projects/3/views/2?filterQuery=is%3Aopen', 'github.com')).toBe('/orgs/acme/projects/3/views/2?filterQuery=is%3Aopen')
+    expect(appPathFromUrl('https://github.com/users/octocat/projects/1', 'github.com')).toBe('/users/octocat/projects/1')
+    expect(appPathFromUrl('https://github.com/orgs/acme/projects/3/settings', 'github.com')).toBeNull()
+    expect(appPathFromUrl('https://github.com/orgs/acme/projects/new', 'github.com')).toBeNull()
+    expect(appPathFromUrl('https://github.com/users/octocat/packages', 'github.com')).toBeNull()
     expect(appPathFromUrl('https://github.com/acme/web/releases/latest/download/app.dmg', 'github.com')).toBeNull()
     expect(appPathFromUrl('https://github.com/acme/web/releases/download/v1.2.0/app.dmg', 'github.com')).toBeNull()
     expect(appPathFromUrl('https://github.com/acme/web/releases/new', 'github.com')).toBe('/acme/web/releases/new')

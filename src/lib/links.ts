@@ -38,6 +38,12 @@ export function appPathFromUrl(href: string, host: string): string | null {
   const [owner, repo, section = '', ...rest] = parts
   if (RESERVED_OWNERS.has(owner.toLowerCase())) {
     if (['pulls', 'issues', 'notifications'].includes(owner) && parts.length === 1) return `/${owner}`
+    // A project under its organization or user, and its views: /orgs/<org>/projects/<n>[/views/<v>], /users/<user>/projects/<n>[/views/<v>].
+    if ((owner === 'orgs' || owner === 'users') && repo && section === 'projects' && /^\d+$/.test(rest[0] ?? '')) {
+      const view = rest[1] === 'views' && /^\d+$/.test(rest[2] ?? '') ? `/views/${rest[2]}` : ''
+      if (rest.length === 1 || (view && rest.length === 3)) return `/${owner}/${repo}/projects/${rest[0]}${view}` + url.search + url.hash
+      return null
+    }
     // /orgs/<org>[/<tab>] is the organization profile; only the tabs gh-ui has stay in-app.
     if (owner === 'orgs' && repo && (!section || ORG_TABS.has(section)) && rest.length === 0) {
       const search = new URLSearchParams(url.search)
