@@ -32,7 +32,7 @@ import { RunPage } from './pages/repo/Run'
 import { ReleasesPage, ReleasePage, LatestReleasePage } from './pages/repo/Releases'
 import { NewReleasePage, EditReleasePage } from './pages/repo/ReleaseForm'
 import { DiscussionsPage, DiscussionPage } from './pages/repo/Discussions'
-import { ProjectsPage, ProjectPage } from './pages/repo/Projects'
+import { ProjectsPage, ProjectPage, OwnerProjectPage } from './pages/repo/Projects'
 import { SecurityPage } from './pages/repo/Security'
 import { InsightsPage } from './pages/repo/Insights'
 import { WikiPage } from './pages/repo/Wiki'
@@ -285,6 +285,11 @@ export function pageRoutes(shell: ReactElement) {
       <Route path="local" element={<LocalReposPage />} />
       <Route path="local/:id" element={<LocalReposPage />} />
       <Route path="local/:id/:section" element={<LocalReposPage />} />
+      {/* github.com's paths of a project under its organization or user; static segments outrank :owner/:repo below. */}
+      <Route path="orgs/:owner/projects/:number" element={<FeatureGate feature="projects"><OwnerProjectPage kind="org" /></FeatureGate>} />
+      <Route path="orgs/:owner/projects/:number/views/:view" element={<FeatureGate feature="projects"><OwnerProjectPage kind="org" /></FeatureGate>} />
+      <Route path="users/:owner/projects/:number" element={<FeatureGate feature="projects"><OwnerProjectPage kind="user" /></FeatureGate>} />
+      <Route path="users/:owner/projects/:number/views/:view" element={<FeatureGate feature="projects"><OwnerProjectPage kind="user" /></FeatureGate>} />
       <Route path="orgs/:org" element={<OrgRedirect />} />
       <Route path="orgs/:org/:tab" element={<OrgRedirect />} />
       <Route path=":owner" element={<ProfilePage />} />
@@ -324,6 +329,7 @@ export function pageRoutes(shell: ReactElement) {
         <Route path="discussions/categories/:slug" element={<FeatureGate feature="discussions"><DiscussionsPage /></FeatureGate>} />
         <Route path="projects" element={<FeatureGate feature="projects"><ProjectsPage /></FeatureGate>} />
         <Route path="projects/:number" element={<FeatureGate feature="projects"><ProjectPage /></FeatureGate>} />
+        <Route path="projects/:number/views/:view" element={<FeatureGate feature="projects"><ProjectPage /></FeatureGate>} />
         <Route path="security/*" element={<FeatureGate feature="security"><SecurityPage /></FeatureGate>} />
         <Route path="pulse" element={<FeatureGate feature="insights"><InsightsPage /></FeatureGate>} />
         <Route path="graphs/*" element={<FeatureGate feature="insights"><InsightsPage /></FeatureGate>} />

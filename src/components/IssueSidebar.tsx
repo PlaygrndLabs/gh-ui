@@ -6,6 +6,7 @@ import { GearIcon, CheckIcon, FileDiffIcon, DotFillIcon, CommentIcon, BellIcon, 
 import { useGitHub, errorMessage, type PullRequest } from '../lib/github'
 import { useRepo, encodePath } from '../lib/repo'
 import { openExternal } from '../lib/platform'
+import { appPathFromUrl } from '../lib/links'
 import { IssueLabel, UserAvatar, isBot, botName } from './Bits'
 import { IssueStateIcon, PullStateIcon } from './Status'
 import { useFeature } from '../lib/features'
@@ -270,8 +271,9 @@ function PickerSection({
 export function IssueSidebar({ number, isPull, pull, labels, assignees, milestone, onChanged }: IssueSidebarProps) {
   const subscriptionId = useId()
   const { owner, repo, data } = useRepo()
-  const { octokit, key } = useGitHub()
+  const { octokit, key, account } = useGitHub()
   const qc = useQueryClient()
+  const projectsOn = useFeature('projects')
   const canEdit = !!data.permissions?.push || !!data.permissions?.triage
   // github.com's issue sidebar also has Type, Projects, Relationships, Development, Notifications and Participants.
   const extra = useIssueExtra(owner, repo, number, !isPull)
@@ -453,21 +455,31 @@ export function IssueSidebar({ number, isPull, pull, labels, assignees, mileston
             <span className="fg-muted">{/scope|INSUFFICIENT/i.test(errorMessage(projects.error)) ? 'Projects need the read:project scope' : 'Projects are currently unavailable'}</span>
           ) : projects.data?.length ? (
             <div className="flex" style={{ flexDirection: 'column', gap: 6 }}>
-              {projects.data.map((p) => (
+              {projects.data.map((p) => {
+                // A project opens in-app (its organization's or user's page) unless Projects is switched off.
+                const path = projectsOn ? appPathFromUrl(p.project.url, account.host) : null
+                return (
                 <div key={p.project.url}>
-                  <a
-                    href={p.project.url}
-                    className="fg-default text-bold flex-center gap-1"
-                    onClick={(ev) => {
-                      ev.preventDefault()
-                      openExternal(p.project.url)
-                    }}
-                  >
-                    <TableIcon className="fg-muted" /> {p.project.title}
-                  </a>
+                  {path ? (
+                    <Link to={path} className="fg-default text-bold flex-center gap-1">
+                      <TableIcon className="fg-muted" /> {p.project.title}
+                    </Link>
+                  ) : (
+                    <a
+                      href={p.project.url}
+                      className="fg-default text-bold flex-center gap-1"
+                      onClick={(ev) => {
+                        ev.preventDefault()
+                        openExternal(p.project.url)
+                      }}
+                    >
+                      <TableIcon className="fg-muted" /> {p.project.title}
+                    </a>
+                  )}
                   {p.status?.name && <div className="fg-muted mt-1">Status: {p.status.name}</div>}
                 </div>
-              ))}
+                )
+              })}
             </div>
           ) : (
             <span className="fg-muted">{projects.isLoading ? '…' : 'No projects'}</span>

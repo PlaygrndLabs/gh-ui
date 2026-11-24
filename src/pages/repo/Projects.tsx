@@ -1,24 +1,15 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionList, ActionMenu, Banner, CounterLabel, IconButton, Label, PageHeader, RelativeTime, SegmentedControl, TextInput } from '@primer/react'
+import { useQuery } from '@tanstack/react-query'
+import { ActionList, ActionMenu, CounterLabel, IconButton, Label, PageHeader, RelativeTime, TextInput } from '@primer/react'
 import { TableIcon, ProjectIcon, LinkExternalIcon, SearchIcon } from '@primer/octicons-react'
-import { useGitHub, errorMessage } from '../../lib/github'
+import { useGitHub } from '../../lib/github'
 import { useRepo } from '../../lib/repo'
 import { useAgentPageContext } from '../../lib/agent/AgentProvider'
-import { isNative, openExternal } from '../../lib/platform'
-import { fetchProject, isScopeError, statusFieldOf, type ProjectModel } from '../../lib/projects'
+import { openExternal } from '../../lib/platform'
+import type { ProjectScope } from '../../lib/projects'
 import { Blankslate, ErrorBox, Loading } from '../../components/Bits'
-import { Board } from './project/Board'
-import { Table } from './project/Table'
-import type { ProjectEditor } from './project/shared'
-
-function scopeHint(err: unknown) {
-  const msg = String((err as Error)?.message ?? '')
-  return isScopeError(err) || /scope|read:project|INSUFFICIENT/i.test(msg) ? 'Projects need the read:project scope (classic token) or Projects read access (fine-grained).' : null
-}
-
-const WRITE_SCOPE_HINT = 'Editing projects needs the project scope (classic token) or Projects read and write access (fine-grained). Your changes were not saved.'
+import { ProjectScreen, scopeHint } from './project/ProjectScreen'
 
 type ProjectSort = 'updated' | 'newest' | 'oldest' | 'least-updated' | 'name'
 const PROJECT_SORTS: Array<[ProjectSort, string]> = [
@@ -151,94 +142,16 @@ export function ProjectsPage() {
   )
 }
 
+/** A project opened from a repository's Projects tab: /:owner/:repo/projects/:number[/views/:view]. */
 export function ProjectPage() {
-  const { owner, repo, fullName } = useRepo()
-  const { number: n = '' } = useParams()
-  const number = Number(n)
-  const { octokit, key } = useGitHub()
-  const qc = useQueryClient()
-  const [view, setView] = useState<'board' | 'table'>('board')
-  const [editError, setEditError] = useState<unknown>(null)
-  const [scopeRefused, setScopeRefused] = useState(false)
-  const queryKey = useMemo(() => [key, 'project', owner, repo, number], [key, owner, repo, number])
+  const { owner, repo } = useRepo()
+  const scope = useMemo<ProjectScope>(() => ({ kind: 'repo', owner, repo }), [owner, repo])
+  return <ProjectScreen scope={scope} />
+}
 
-  const project = useQuery({ queryKey, queryFn: () => fetchProject(octokit, owner, repo, number) })
-
-  // Item edits: optimistic on the cached project, rolled back on failure. The project is refetched once
-  // the last of several overlapping edits settles, so a slow response cannot undo a newer optimistic change.
-  const editKey = useMemo(() => [...queryKey, 'edit'], [queryKey])
-  const edit = useMutation({
-    mutationKey: editKey,
-    mutationFn: ({ action }: { action: () => Promise<unknown>; optimistic?: (m: ProjectModel) => ProjectModel }) => action(),
-    onMutate: async ({ optimistic }) => {
-      setEditError(null)
-      await qc.cancelQueries({ queryKey })
-      const previous = qc.getQueryData<ProjectModel | null>(queryKey)
-      if (previous && optimistic) qc.setQueryData(queryKey, optimistic(previous))
-      return { previous }
-    },
-    onError: (err, _vars, ctx) => {
-      if (ctx?.previous) qc.setQueryData(queryKey, ctx.previous)
-      if (isScopeError(err)) setScopeRefused(true)
-      else setEditError(err)
-    },
-    onSettled: () => {
-      if (qc.isMutating({ mutationKey: editKey }) <= 1) void qc.invalidateQueries({ queryKey })
-    },
-  })
-  const { mutateAsync } = edit
-  const run = useCallback<ProjectEditor['run']>(
-    (action, optimistic) =>
-      mutateAsync({ action, optimistic }).then(
-        () => true,
-        () => false,
-      ),
-    [mutateAsync],
-  )
-
-  const model = project.data ?? null
-  const editor = useMemo<ProjectEditor | null>(
-    () => (model ? { model, statusField: statusFieldOf(model), canEdit: model.viewerCanUpdate && !scopeRefused, run } : null),
-    [model, scopeRefused, run],
-  )
-
-  useAgentPageContext(model ? { label: `project “${model.title}” (#${number}) of ${fullName}`, tabTitle: model.title, owner, repo, details: { items: model.total } } : null)
-
-  if (project.isLoading) return <Loading />
-  if (project.error || !model || !editor)
-    return (
-      <div className="container-xl">
-        {scopeHint(project.error) ? (
-          <Blankslate icon={<ProjectIcon size={32} />} title="Your token can’t read projects">
-            {scopeHint(project.error)}
-          </Blankslate>
-        ) : (
-          <ErrorBox error={project.error ?? new Error('Project not found')} />
-        )}
-      </div>
-    )
-
-  return (
-    <div className="container-full">
-      <div className="flex-center gap-2 mb-3">
-        <Link to={`/${owner}/${repo}/projects`} className="link-muted">
-          Projects
-        </Link>
-        <span className="fg-muted">/</span>
-        <h2 className="project-page-title flex-1">{model.title}</h2>
-        <SegmentedControl aria-label="View" size="small" onChange={(i) => setView(i === 0 ? 'board' : 'table')}>
-          <SegmentedControl.Button selected={view === 'board'}>Board</SegmentedControl.Button>
-          <SegmentedControl.Button selected={view === 'table'}>Table</SegmentedControl.Button>
-        </SegmentedControl>
-        {!isNative && <IconButton icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(model.url)} />}
-      </div>
-      {/* Not dismissible: editing stays off once GitHub has refused the scope, so the notice explains why. */}
-      {scopeRefused && <Banner className="mb-3" variant="warning" title="Your token can’t edit projects" description={WRITE_SCOPE_HINT} />}
-      {editError !== null && (
-        <Banner className="mb-3" variant="critical" title="Could not update the project" description={errorMessage(editError)} onDismiss={() => setEditError(null)} />
-      )}
-      {model.total > model.items.length && <p className="fg-muted text-small">Showing the first {model.items.length} of {model.total} items.</p>}
-      {view === 'board' ? <Board editor={editor} /> : <Table editor={editor} />}
-    </div>
-  )
+/** A project under its organization or user, github.com's /orgs/:owner/projects/:number and /users/:owner/projects/:number. */
+export function OwnerProjectPage({ kind }: { kind: 'org' | 'user' }) {
+  const { owner = '' } = useParams()
+  const scope = useMemo<ProjectScope>(() => ({ kind, owner }), [kind, owner])
+  return <ProjectScreen scope={scope} />
 }
