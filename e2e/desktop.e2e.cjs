@@ -215,7 +215,7 @@ exports.steps = [
         reviewButton: !!byText('button', 'Review changes') || !!byText('button', 'Finish your review'),
         status: m.querySelector('.pr-ready')?.innerText.replace(/\\s+/g, ' '),
         filters: !!m.querySelector('.ws-pr-thread .pr-comment-filters'),
-        // The tab row links to the pull request; the page doesn't repeat it.
+        // The link is copied from the title's row, as well as from the tab's menu.
         pageLink: m.innerHTML.includes('Copy pull request link'),
       }
       const nav = [...document.querySelectorAll('.ws-tabs')].find((n) => n.getClientRects().length)
@@ -230,7 +230,7 @@ exports.steps = [
       ;[...nav.querySelectorAll('a.ws-tab')].find((a) => a.textContent.includes('Pull requests')).click()
       await new Promise((res) => setTimeout(res, 1500))
       r.stayed = pick()?.innerText === shown && !!main()?.querySelector('.ws-pr-thread')
-      r.fail = !(r.pulls > 1 && r.moved && r.menuClosed && r.sideList === 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /viewed/.test(r.status) && r.filters && !r.pageLink && r.tabLink && r.stayed)
+      r.fail = !(r.pulls > 1 && r.moved && r.menuClosed && r.sideList === 0 && r.chat && r.merge && r.files && r.tree && r.reviewButton && /viewed/.test(r.status) && r.filters && r.pageLink && r.tabLink && r.stayed)
       return r
     `,
   },
