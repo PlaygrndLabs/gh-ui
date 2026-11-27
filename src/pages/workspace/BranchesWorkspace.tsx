@@ -2,7 +2,7 @@ import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, useS
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
-import { ArrowDownIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, FileDiffIcon, FileSubmoduleIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, StackIcon, UndoIcon, XIcon } from '@primer/octicons-react'
+import { ArrowDownIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, FileDiffIcon, FileSubmoduleIcon, GitPullRequestDraftIcon, GitPullRequestIcon, LinkExternalIcon, LinkIcon, SparkleFillIcon, StackIcon, UndoIcon, XIcon } from '@primer/octicons-react'
 import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import type { FileDiff } from '../../lib/diff'
 import { changePaths, COMPARE_LIMIT, isStaged, isUnmerged, reorderableCommits, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
@@ -160,7 +160,7 @@ function ChangesList({ local, draft, entries, selectedPath, submodules, branchNa
   )
 }
 
-type BranchTab = 'changes' | 'history' | 'pull' | 'checks'
+type BranchTab = 'changes' | 'history' | 'checks'
 
 interface GitHubFile {
   filename: string
@@ -287,7 +287,6 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const branch = target ?? (repo.local ? undefined : branches.find((b) => b.name === picked)) ?? branches.find((b) => b.current) ?? branches[0] ?? null
   const isCurrent = !!target || !!branch?.current
   const info = useRepoQuery(github?.owner ?? '', github?.repo ?? '', !!github)
-  // Pull requests merge into the default branch, so it never has one of its own.
   const isDefault = !!branch && branch.name === info.data?.default_branch
 
   const commits = useQuery({
@@ -307,7 +306,9 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     queryFn: async () => (await octokit.rest.pulls.list({ owner: github!.owner, repo: github!.repo, state: 'open', per_page: 100 })).data,
   })
   const pullFor = (name: string) => pulls.data?.find((p) => p.head.ref === name && p.head.repo?.full_name.toLowerCase() === `${github!.owner}/${github!.repo}`.toLowerCase())
-  const pull = branch ? pullFor(branch.name) : undefined
+  // Pull requests merge into the default branch, so it never has one of its own. Nor does a detached HEAD, which is no branch.
+  const canPull = !!github && !!info.data && !!branch && !isDefault && branch.name !== 'HEAD'
+  const pull = canPull ? pullFor(branch.name) : undefined
   const runs = useQuery({
     queryKey: [key, 'workspace-branch-runs', github?.owner, github?.repo, branch?.name],
     enabled: !!github && !!branch && branch.location !== 'local',
@@ -350,10 +351,10 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const branchStash = (isCurrent && stashes.data?.find((s) => s.branch === branch?.name)) || null
   const data = commits.data
   const shown = data?.history ?? []
-  const tabShown: Record<BranchTab, boolean> = { changes: !!repo.local, history: true, pull: !!github && !isDefault, checks: !!github }
+  const tabShown: Record<BranchTab, boolean> = { changes: !!repo.local, history: true, checks: !!github }
   // Until you choose a tab, or when this branch lacks the one you chose, it opens on whichever has something to do.
   const tab: BranchTab = chosenTab && tabShown[chosenTab] ? chosenTab : !repo.local ? 'history' : entries.length || branchStash ? 'changes' : data?.local.length || github || repo.remote ? 'history' : 'changes'
-  // The pull request and checks tabs link elsewhere, so they leave the commit pane out.
+  // The checks tab links elsewhere, so it leaves the commit pane out.
   const commitTab = tab === 'changes' || tab === 'history'
   // With nowhere to push to, every commit is "not pushed", so saying so tells you nothing.
   const canPush = !!(github || repo.remote)
@@ -519,7 +520,6 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
   const tabs: Array<{ id: BranchTab; label: string; count?: number; show: boolean }> = [
     { id: 'changes', label: 'Changes', count: entries.length, show: tabShown.changes },
     { id: 'history', label: 'History', show: tabShown.history },
-    { id: 'pull', label: 'Pull request', show: tabShown.pull },
     { id: 'checks', label: 'Checks', show: tabShown.checks },
   ]
 
@@ -704,28 +704,6 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
             {comparing && compared.data && compareRows.length < (compareSide === 'ahead' ? compared.data.aheadBy : compared.data.behindBy) && <p className="ws-note">Showing the newest {compareRows.length}.</p>}
             {!comparing && data && !shown.length && <p className="ws-note">No commits on this branch yet.</p>}
             {!comparing && canPush && branch.location === 'local' && <p className="ws-note">This branch isn’t on {host} yet.</p>}
-          </Section>
-        )}
-
-        {github && tab === 'pull' && (
-          <Section title="Pull request" flush>
-            {pull ? (
-              <Link className="ws-row ws-row-link-block" to={`/${github.owner}/${github.repo}/pull/${pull.number}`}>
-                <span className="ws-row-main">{pull.title}</span>
-                <span className="ws-row-sub">#{pull.number}{pull.draft ? ' · Draft' : ''}</span>
-              </Link>
-            ) : (
-              <>
-                <p className="ws-note">No open pull request for this branch.</p>
-                {branch.location !== 'local' && (
-                  <div className="ws-section-pad">
-                    <Button size="small" as={Link} to={`/${github.owner}/${github.repo}/compare/${encodeURIComponent(branch.name)}`}>
-                      Create pull request
-                    </Button>
-                  </div>
-                )}
-              </>
-            )}
           </Section>
         )}
 
@@ -950,6 +928,20 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
                     </span>
                   )}
                 </div>
+                {/* The branch's pull request, or the way to open one, whichever tab is showing. */}
+                {github && pull && (
+                  <Link className={`ws-branch-pull ${pull.draft ? 'is-draft' : ''}`} to={`/${github.owner}/${github.repo}/pull/${pull.number}`} title={pull.title} aria-label={`${pull.draft ? 'Draft pull request' : 'Pull request'} #${pull.number}: ${pull.title}`}>
+                    {pull.draft ? <GitPullRequestDraftIcon size={14} /> : <GitPullRequestIcon size={14} />}
+                    <span className="ws-branch-pull-number">#{pull.number}</span>
+                    <span className="ws-branch-pull-title">{pull.title}</span>
+                    {pull.draft && <span className="ws-tag">Draft</span>}
+                  </Link>
+                )}
+                {github && canPull && pulls.data && !pull && branch.location !== 'local' && (
+                  <Button size="small" as={Link} to={`/${github.owner}/${github.repo}/compare/${encodeURIComponent(branch.name)}`} leadingVisual={GitPullRequestIcon}>
+                    Create pull request
+                  </Button>
+                )}
                 {repo.location === 'local' && (
                   <Button size="small" variant="primary" onClick={() => setDialog('publish')}>
                     Publish repository
