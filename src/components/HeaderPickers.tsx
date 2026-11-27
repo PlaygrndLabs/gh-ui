@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ActionList, ActionMenu, RelativeTime, TextInput } from '@primer/react'
@@ -20,15 +20,23 @@ interface PickerProps<F extends string> {
   filter?: F
   onFilter?(f: F): void
   loading: boolean
+  /** Said while loading, when "Loading…" is not it. */
+  loadingText?: string
   empty: string
   foot?: ReactNode
+  /** Told what is typed in the box, for a picker that asks the server instead of filtering its rows. */
+  onQuery?(text: string): void
   children(query: string, close: () => void): ReactNode
 }
 
 /** A header segment that picks one item of the open tab, the way the branch menu picks a branch. */
-function Picker<F extends string>({ icon: Glyph, kind, value, placeholder, filters, filter, onFilter, loading, empty, foot, children }: PickerProps<F>) {
+function Picker<F extends string>({ icon: Glyph, kind, value, placeholder, filters, filter, onFilter, loading, loadingText = 'Loading…', empty, foot, onQuery, children }: PickerProps<F>) {
   const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
+  const [query, setQueryText] = useState('')
+  const setQuery = (text: string) => {
+    setQueryText(text)
+    onQuery?.(text)
+  }
   const { anchor, frame } = useToolbarPanel(open)
   const close = () => {
     setOpen(false)
@@ -65,7 +73,7 @@ function Picker<F extends string>({ icon: Glyph, kind, value, placeholder, filte
           <ActionList selectionVariant="single" className="ws-menu-list">
             {items}
           </ActionList>
-          {loading ? <p className="ws-note p-3">Loading…</p> : none && <p className="ws-note p-3">{empty}</p>}
+          {loading ? <p className="ws-note p-3">{loadingText}</p> : none && <p className="ws-note p-3">{empty}</p>}
           {foot && (
             <div className="ws-list-foot" onClick={close}>
               {foot}
@@ -77,28 +85,67 @@ function Picker<F extends string>({ icon: Glyph, kind, value, placeholder, filte
   )
 }
 
+const PULL_FILTERS: Array<[PullFilter, string]> = [
+  ['open', 'Open'],
+  ['review', 'To review'],
+  ['mine', 'Mine'],
+  ['assigned', 'Assigned'],
+  ['closed', 'Closed'],
+  ['all', 'All'],
+]
+const PULL_EMPTY: Record<PullFilter, string> = {
+  open: 'No open pull requests.',
+  review: 'Nothing waiting for your review.',
+  mine: 'You have no open pull requests here.',
+  assigned: 'No open pull requests are assigned to you.',
+  closed: 'No closed pull requests.',
+  all: 'No pull requests yet.',
+}
+
+/** `value`, once it has stayed the same for `ms`. */
+function useSettled<T>(value: T, ms: number) {
+  const [settled, setSettled] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setSettled(value), ms)
+    return () => clearTimeout(t)
+  }, [value, ms])
+  return settled
+}
+
 function PullPicker({ owner, repo, current }: { owner: string; repo: string; current: string | null }) {
   const navigate = useNavigate()
-  const [filter, setFilter] = useState<PullFilter>('all')
+  const [filter, setFilter] = useState<PullFilter>('open')
+  const [typed, setTyped] = useState('')
+  const q = typed.trim()
+  const term = useSettled(q, 300)
   const pulls = usePullList(owner, repo, filter)
+  // The list holds GitHub's first 50, so what is typed is asked of GitHub: it finds the rest, and takes author:, label: and the like.
+  const found = usePullList(owner, repo, filter, term)
   const all = usePullList(owner, repo, 'all')
-  const picked = all.rows.find((p) => String(p.number) === current) ?? pulls.rows.find((p) => String(p.number) === current)
+  const picked = [...pulls.rows, ...all.rows].find((p) => String(p.number) === current)
   const base = `/${owner}/${repo}`
+  const answered = !!q && q === term && !!found.data
+  const searching = !!q && !answered && !found.error
+  // Until GitHub answers, the rows already here that match stand in.
+  const needle = q.toLowerCase()
+  const number = /^#?\d+$/.test(q) ? Number(q.replace('#', '')) : null
+  const rows = answered
+    ? // A number typed means that pull request: it leads, ahead of the ones that only mention it.
+      [...found.rows].sort((a, b) => Number(b.number === number) - Number(a.number === number))
+    : pulls.rows.filter((p) => !q || `#${p.number} ${p.title} ${p.author?.login ?? ''} ${p.headRefName}`.toLowerCase().includes(needle))
   return (
     <Picker
       icon={GitPullRequestIcon}
       kind="Pull request"
       value={picked ? `#${picked.number} ${firstLine(picked.title)}` : current ? `#${current}` : 'Choose a pull request'}
-      placeholder="Filter pull requests"
-      filters={[
-        ['all', 'All'],
-        ['review', 'To review'],
-        ['mine', 'Mine'],
-      ]}
+      placeholder="Search pull requests"
+      filters={PULL_FILTERS}
       filter={filter}
-      onFilter={(f) => setFilter(f as typeof filter)}
-      loading={pulls.isLoading}
-      empty={filter === 'review' ? 'Nothing waiting for your review.' : filter === 'mine' ? 'You have no open pull requests here.' : 'No pull requests match.'}
+      onFilter={(f) => setFilter(f as PullFilter)}
+      onQuery={setTyped}
+      loading={pulls.isLoading || searching}
+      loadingText={searching ? 'Searching GitHub…' : undefined}
+      empty={q ? 'No pull requests match.' : PULL_EMPTY[filter]}
       foot={
         <>
           <Link to={`${base}/pulls/all`}>Search and filter all</Link>
@@ -106,10 +153,9 @@ function PullPicker({ owner, repo, current }: { owner: string; repo: string; cur
         </>
       }
     >
-      {(q, close) =>
-        pulls.rows
-          .filter((p) => !q || `#${p.number} ${p.title} ${p.author?.login ?? ''} ${p.headRefName}`.toLowerCase().includes(q))
-          .map((p) => {
+      {(_q, close) =>
+        rows.map((p) => {
+
             const check = p.commits.nodes[0]?.commit.statusCheckRollup?.state.toLowerCase() as 'success' | 'failure' | 'pending' | 'error' | undefined
             const review = p.reviewDecision ? REVIEW_NOTE[p.reviewDecision] : ''
             return (

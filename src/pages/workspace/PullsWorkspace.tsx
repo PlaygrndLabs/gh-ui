@@ -5,6 +5,7 @@ import { Button } from '@primer/react'
 import { GitPullRequestIcon } from '@primer/octicons-react'
 import { useGitHub, type PullRequest } from '../../lib/github'
 import { isNative } from '../../lib/platform'
+import { pullSearch, type PullFilter } from '../../lib/pullSearch'
 import { useRepo } from '../../lib/repo'
 import { ErrorBox, Loading } from '../../components/Bits'
 import { FileDiffBox } from '../../components/DiffView'
@@ -14,7 +15,7 @@ import { PullsPage } from '../repo/Pulls'
 import { useCheckedOutBranch } from './ActionsWorkspace'
 import { UserCard } from '../../components/UserCard'
 
-export type PullFilter = 'all' | 'review' | 'mine'
+export type { PullFilter }
 
 export interface PullNode {
   number: number
@@ -28,14 +29,15 @@ export interface PullNode {
 }
 
 export const REVIEW_NOTE: Record<string, string> = { APPROVED: 'Approved', CHANGES_REQUESTED: 'Changes requested', REVIEW_REQUIRED: 'Review required' }
-const QUALIFIER: Record<PullFilter, string> = { all: '', review: 'is:open review-requested:@me', mine: 'is:open author:@me' }
-
-/** A repository's pull requests, newest activity first, with the checked-out branch's open one on top. */
-export function usePullList(owner: string, repo: string, filter: PullFilter) {
+/**
+ * A repository's pull requests, newest activity first, with the checked-out branch's open one on top.
+ * GitHub answers with the first 50, so `term` is how one further down is found.
+ */
+export function usePullList(owner: string, repo: string, filter: PullFilter, term = '') {
   const { octokit, key } = useGitHub()
   const { branch } = useCheckedOutBranch(owner, repo)
   const pulls = useQuery({
-    queryKey: [key, 'workspace-pulls', owner, repo, filter],
+    queryKey: [key, 'workspace-pulls', owner, repo, filter, term],
     enabled: !!owner && !!repo,
     staleTime: 30_000,
     // The header's list stays in view while pull requests open, change and merge, here or anywhere else.
@@ -43,9 +45,10 @@ export function usePullList(owner: string, repo: string, filter: PullFilter) {
     queryFn: async () => {
       const res: { search: { nodes: PullNode[] } } = await octokit.graphql(
         `query($q:String!){ search(query:$q,type:ISSUE,first:50){ nodes{ ... on PullRequest{ number title state isDraft headRefName author{login} reviewDecision commits(last:1){nodes{commit{statusCheckRollup{state}}}} } } } }`,
-        { q: `repo:${owner}/${repo} is:pr ${QUALIFIER[filter]} sort:updated-desc` },
+        { q: pullSearch(owner, repo, filter, term) },
       )
-      return res.search.nodes
+      // A node the token may not read comes back empty.
+      return res.search.nodes.filter((p) => p?.number)
     },
   })
   const isMine = (p: PullNode) => p.headRefName === branch && p.state === 'OPEN'
