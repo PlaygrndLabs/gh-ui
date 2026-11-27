@@ -452,11 +452,11 @@ exports.steps = [
       item.click()
       const moved = await until(() => activeTab().textContent.trim() === 'jq - ' + name, 5000)
       const row = await until(() => main()?.querySelector('.ws-branch-title')?.textContent.includes(name), 5000)
-      const pullTab = await until(() => [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].find((t) => t.textContent.trim() === 'Pull request'), 5000)
-      pullTab?.click()
-      const pullPanel = await until(() => main().querySelector('.ws-section[aria-label="Pull request"]'), 3000)
-      const r = { before, name, title: activeTab().textContent.trim(), seg: seg().innerText, row: !!row, pullTab: !!pullTab, pullPanel: !!pullPanel, commitPane: !!main().querySelector('.ws-details') }
-      r.fail = !(moved && row && seg().innerText.includes(name) && pullTab && pullPanel && !r.commitPane)
+      // The branch's pull request, or the way to open one, sits beside its name; it has no tab of its own.
+      const pullHead = await until(() => main().querySelector('.ws-branch-head .ws-branch-pull, .ws-branch-head a[href*="/compare/"]'), 8000)
+      const pullTab = [...main().querySelectorAll('.ws-branch-tabs [role=tab]')].some((t) => t.textContent.trim() === 'Pull request')
+      const r = { before, name, title: activeTab().textContent.trim(), seg: seg().innerText, row: !!row, pullTab, pullHead: pullHead?.textContent.trim() }
+      r.fail = !(moved && row && seg().innerText.includes(name) && !pullTab && pullHead)
       return r
     `,
   },

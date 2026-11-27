@@ -170,6 +170,13 @@ ul:is([role='menu'], [role='listbox']) { padding-block: 0; }
 .ws-branch-body { flex: 1; display: flex; min-height: 0; }
 .ws-tag { display: inline-flex; align-items: center; gap: 4px; padding: 0 7px; font-size: 11px; font-weight: 600; line-height: 18px; color: var(--ws-muted); border: 1px solid var(--ws-line); border-radius: 9px; }
 .ws-tag-ok { color: var(--ws-ok); border-color: currentColor; }
+a.ws-branch-pull { flex: 0 1 auto; display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 55%; height: 28px; padding: 0 10px; font-size: 12px; color: var(--ws-text); border: 1px solid var(--ws-line); border-radius: 6px; text-decoration: none; }
+a.ws-branch-pull:hover { background: var(--ws-hover); text-decoration: none; }
+.ws-branch-pull > svg { flex: none; color: var(--ws-ok); }
+.ws-branch-pull.is-draft > svg { color: var(--ws-muted); }
+.ws-branch-pull > .ws-tag { flex: none; }
+.ws-branch-pull-number { flex: none; color: var(--ws-muted); }
+.ws-branch-pull-title { min-width: 0; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .ws-section { padding: 12px 16px; }
 .ws-section-head { display: flex; justify-content: flex-end; margin-bottom: 6px; }
 .ws-section-flush { padding: 0; }
