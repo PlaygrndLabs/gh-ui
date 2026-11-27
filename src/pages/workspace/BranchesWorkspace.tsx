@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Banner, Button, Checkbox, IconButton, RelativeTime, TextInput, Textarea, useConfirm } from '@primer/react'
@@ -6,6 +6,7 @@ import { ArrowDownIcon, ArrowUpIcon, CheckIcon, ChevronRightIcon, FileDiffIcon, 
 import { AgentOnly, useAgentPageContext } from '../../lib/agent/AgentProvider'
 import type { FileDiff } from '../../lib/diff'
 import { changePaths, COMPARE_LIMIT, isStaged, isUnmerged, reorderableCommits, type HistoryRow, type LogEntry, type StatusEntry } from '../../lib/git'
+import { splitCommitMessage } from '../../lib/commitMessage'
 import { errorMessage, useGitHub } from '../../lib/github'
 import { webUrl } from '../../lib/links'
 import { native, openExternal } from '../../lib/platform'
@@ -189,13 +190,29 @@ const ignoreMenu = () => {}
 /** A row while a commit is being reordered: the one picked up, one it can land among, or one that has to stay put. */
 type ReorderRole = 'moving' | 'movable' | 'fixed'
 
-/** The author of a history row: their picture and name, with their card on hover. */
+/** Who made a commit, as GitHub Desktop shows it: the author's picture and those of anyone a Co-authored-by line names, then their names. Each name has its card on hover. */
 function CommitAuthor({ commit }: { commit: LogEntry }) {
+  const others = commit.coAuthors ?? []
   return (
-    <UserCard login={commit.login} name={commit.author} email={commit.email} className="ws-commit-author">
-      <UserAvatar login={commit.login} name={commit.author} email={commit.email} size={14} card={false} />
-      <span className="ws-commit-author-name">{commit.author}</span>
-    </UserCard>
+    <span className="ws-commit-author">
+      <span className="ws-commit-avatars">
+        <UserAvatar login={commit.login} name={commit.author} email={commit.email} size={14} card={false} />
+        {others.map((o) => (
+          <UserAvatar key={o.email ?? o.name} name={o.name} email={o.email} size={14} card={false} />
+        ))}
+      </span>
+      <UserCard login={commit.login} name={commit.author} email={commit.email} className="ws-commit-author-name">
+        {commit.author}
+      </UserCard>
+      {others.map((o) => (
+        <Fragment key={o.email ?? o.name}>
+          {', '}
+          <UserCard name={o.name} email={o.email} className="ws-commit-author-name">
+            {o.name}
+          </UserCard>
+        </Fragment>
+      ))}
+    </span>
   )
 }
 
@@ -279,7 +296,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
     queryFn: async () => {
       if (local.git) return local.git.branchCommits(branch!)
       const { data } = await octokit.rest.repos.listCommits({ owner: github!.owner, repo: github!.repo, sha: branch!.name, per_page: 100 })
-      const remote = data.map((c): LogEntry => ({ sha: c.sha, author: c.commit.author?.name ?? c.author?.login ?? '', email: c.commit.author?.email, login: c.author?.login, date: c.commit.author?.date ?? '', subject: c.commit.message, parents: c.parents.map((p) => p.sha) }))
+      const remote = data.map((c): LogEntry => ({ sha: c.sha, author: c.commit.author?.name ?? c.author?.login ?? '', email: c.commit.author?.email, login: c.author?.login, date: c.commit.author?.date ?? '', subject: c.commit.message, parents: c.parents.map((p) => p.sha), coAuthors: splitCommitMessage(c.commit.message).coAuthors }))
       return { local: [] as LogEntry[], incoming: [] as LogEntry[], remote, notOnRemote: [] as string[], history: remote as HistoryRow[] }
     },
   })
@@ -323,7 +340,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       const compare = async (from: string, to: string) => (await octokit.rest.repos.compareCommitsWithBasehead({ owner: github!.owner, repo: github!.repo, basehead: `${from}...${to}` })).data
       const [a, b] = await Promise.all([compare(base!.name, branch!.name), compare(branch!.name, base!.name)])
       // GitHub lists them oldest first.
-      const commitsOf = (c: typeof a) => c.commits.map((x): LogEntry => ({ sha: x.sha, author: x.commit.author?.name ?? x.author?.login ?? '', email: x.commit.author?.email, login: x.author?.login, date: x.commit.author?.date ?? '', subject: x.commit.message, parents: x.parents.map((p) => p.sha) })).reverse()
+      const commitsOf = (c: typeof a) => c.commits.map((x): LogEntry => ({ sha: x.sha, author: x.commit.author?.name ?? x.author?.login ?? '', email: x.commit.author?.email, login: x.author?.login, date: x.commit.author?.date ?? '', subject: x.commit.message, parents: x.parents.map((p) => p.sha), coAuthors: splitCommitMessage(x.commit.message).coAuthors })).reverse()
       return { ref: branch!.name, baseRef: base!.name, mergeBase: a.merge_base_commit.sha as string | null, ahead: commitsOf(a), behind: commitsOf(b), aheadBy: a.ahead_by, behindBy: a.behind_by, files: { ahead: (a.files ?? []).map(toFileDiff), behind: (b.files ?? []).map(toFileDiff) } }
     },
   })
@@ -420,6 +437,8 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
       }
     },
   })
+  // A commit read from GitHub carries its whole message in the row; a local one has it once the commit is read.
+  const commitBody = commit ? splitCommitMessage(shownCommit.data?.message ?? commit.subject).body : ''
 
   const combined = useQuery({
     queryKey: repo.local ? ['local-show', repo.local.id, 'combined', oldest?.sha, newest?.sha, inRange?.length] : [key, 'workspace-combined', github?.owner, github?.repo, oldest?.sha, newest?.sha, inRange?.length],
@@ -756,7 +775,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           <Loading />
         </div>
       ) : stashFiles.data?.length ? (
-        <CommitFiles key={branchStash.sha} files={stashFiles.data} split={split} message="" source={stashSource} />
+        <CommitFiles key={branchStash.sha} files={stashFiles.data} split={split} source={stashSource} />
       ) : (
         <div className="ws-scroll ws-diff">
           {stashFiles.data && <p className="ws-note">This stash has no file changes.</p>}
@@ -824,7 +843,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           <Loading />
         </div>
       ) : compareFiles.data?.length ? (
-        <CommitFiles key={`compare-${base.name}-${compareSide}`} files={compareFiles.data} split={split} message="" source={compareSource} />
+        <CommitFiles key={`compare-${base.name}-${compareSide}`} files={compareFiles.data} split={split} source={compareSource} />
       ) : (
         <div className="ws-scroll ws-diff">
           {compareFiles.data && <p className="ws-note">No file changes.</p>}
@@ -848,7 +867,7 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
           <Loading />
         </div>
       ) : combined.data?.files.length ? (
-        <CommitFiles key={`${oldest!.sha}-${newest!.sha}`} files={combined.data.files} split={split} message="" source={combinedSource} />
+        <CommitFiles key={`${oldest!.sha}-${newest!.sha}`} files={combined.data.files} split={split} source={combinedSource} />
       ) : (
         <div className="ws-scroll ws-diff">
           {combined.data && <p className="ws-note">{combined.data.related ? 'These commits add up to no change.' : 'These commits aren’t on one line of history, so they have no combined change. Select commits from one side only.'}</p>}
@@ -878,16 +897,17 @@ export function BranchesWorkspace({ repo }: { repo: WorkspaceRepo }) {
             <IconButton size="small" variant="invisible" icon={LinkExternalIcon} aria-label="Open commit in browser" onClick={() => openExternal(webUrl(account.host, `/${github.owner}/${github.repo}/commit/${commit.sha}`))} />
           </>
         )}
+        {/* The description heads the commit, as in GitHub Desktop; its Co-authored-by lines are the people named above. */}
+        {commitBody && <pre className="ws-commit-message">{commitBody}</pre>}
       </div>
       {shownCommit.isLoading ? (
         <div className="ws-scroll ws-diff">
           <Loading />
         </div>
       ) : shownCommit.data?.files.length ? (
-        <CommitFiles key={commit.sha} files={shownCommit.data.files} split={split} message={shownCommit.data.message} source={commitSource} />
+        <CommitFiles key={commit.sha} files={shownCommit.data.files} split={split} source={commitSource} />
       ) : (
         <div className="ws-scroll ws-diff">
-          {shownCommit.data && shownCommit.data.message.includes('\n') && <pre className="ws-commit-message">{shownCommit.data.message.split('\n').slice(1).join('\n').trim()}</pre>}
           {shownCommit.data && <p className="ws-note">No file changes in this commit.</p>}
           {shownCommit.error ? <div className="error-box">{errorMessage(shownCommit.error)}</div> : null}
         </div>
@@ -976,12 +996,11 @@ const STATUS_MARK: Partial<Record<FileDiff['status'], { code: string; color: str
 }
 
 /** A commit's changed files beside all of their diffs, as in GitHub Desktop: picking a file scrolls to it, and scrolling marks the file in view. */
-function CommitFiles({ files, split, message, source }: { files: FileDiff[]; split: boolean; message: string; source?: FileSource | null }) {
+function CommitFiles({ files, split, source }: { files: FileDiff[]; split: boolean; source?: FileSource | null }) {
   const scroller = useRef<HTMLDivElement>(null)
   const [current, setCurrent] = useState(0)
   // Where a click scrolled to: until you scroll away from it, the clicked file stays marked, even one too short to reach the top.
   const jumpedTo = useRef<number | null>(null)
-  const body = message.includes('\n') ? message.split('\n').slice(1).join('\n').trim() : ''
 
   useEffect(() => {
     const el = scroller.current
@@ -1046,7 +1065,6 @@ function CommitFiles({ files, split, message, source }: { files: FileDiff[]; spl
   const diffs = useMemo(
     () => (
       <div className="ws-scroll ws-diff" ref={scroller}>
-        {body && <pre className="ws-commit-message">{body}</pre>}
         {files.map((f, i) => (
           <div key={f.newPath} data-file-index={i}>
             <LocalFileDiff file={f} split={split} eager={i < EAGER_FILES} source={source} />
@@ -1054,7 +1072,7 @@ function CommitFiles({ files, split, message, source }: { files: FileDiff[]; spl
         ))}
       </div>
     ),
-    [files, split, body, source],
+    [files, split, source],
   )
 
   return <SplitPane id="commit-files" firstLabel="Changed files" secondLabel="Diff" defaultWidth={260} min={160} max={520} first={list} second={diffs} />

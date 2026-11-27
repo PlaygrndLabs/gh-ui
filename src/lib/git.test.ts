@@ -76,6 +76,17 @@ describe('parseCommitLog', () => {
     // A root commit has no parents, and a commit may have no author email.
     expect(parseCommitLog('def\x1fLena\x1f2026-01-01T00:00:00Z\x1finit\x1f\x1f\n')).toEqual([{ sha: 'def', author: 'Lena', date: '2026-01-01T00:00:00Z', subject: 'init', parents: [] }])
   })
+
+  it('reads the people a commit\'s Co-authored-by lines name', () => {
+    const line = 'abc\x1fLena\x1f2026-01-01T00:00:00Z\x1ffix\x1fp1\x1flena@example.com\x1fMona <mona@example.com>\x1eClaude <noreply@example.com>\n'
+    expect(parseCommitLog(line)[0].coAuthors).toEqual([
+      { name: 'Mona', email: 'mona@example.com' },
+      { name: 'Claude', email: 'noreply@example.com' },
+    ])
+    // None named, and a git too old for the format, both leave the commit with only its author.
+    expect(parseCommitLog('abc\x1fLena\x1f2026-01-01T00:00:00Z\x1ffix\x1fp1\x1flena@example.com\x1f\n')[0].coAuthors).toBeUndefined()
+    expect(parseCommitLog('abc\x1fLena\x1f2026-01-01T00:00:00Z\x1ffix\x1fp1\x1flena@example.com\x1f%(trailers:key=Co-authored-by,valueonly=true,separator=%x1e)\n')[0].coAuthors).toBeUndefined()
+  })
 })
 
 describe('moveCommit', () => {

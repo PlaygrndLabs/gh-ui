@@ -4,6 +4,7 @@
 import { parseUnifiedDiff, type FileDiff } from './diff'
 import { parseSubmoduleDiff, parseSubmoduleStatus, submoduleChange, type SubmoduleChange } from './submodule'
 import { native, type GitAuth, type GitResult } from './platform'
+import { parseCoAuthor, uniqueCoAuthors, type CoAuthor } from './commitMessage'
 
 export interface StatusEntry {
   path: string
@@ -30,6 +31,8 @@ export interface LogEntry {
   date: string
   subject: string
   parents: string[]
+  /** The people the commit's Co-authored-by lines name. */
+  coAuthors?: CoAuthor[]
 }
 
 /** Where a branch exists: both means a local branch and origin's branch of the same name. */
@@ -89,15 +92,17 @@ export const isStaged = (e: StatusEntry) => !isUnmerged(e) && e.index !== ' ' &&
 /** Paths to restore or stage together: a rename's old path goes with the new one; a copy's source does not. */
 export const changePaths = (e: StatusEntry) => ((e.index === 'R' || e.worktree === 'R') && e.origPath ? [e.origPath, e.path] : [e.path])
 
-const LOG_FORMAT = '--pretty=format:%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1f%ae'
+// The last field is each Co-authored-by line's value, "Name <email>", one after another.
+const LOG_FORMAT = '--pretty=format:%H%x1f%an%x1f%aI%x1f%s%x1f%P%x1f%ae%x1f%(trailers:key=Co-authored-by,valueonly=true,separator=%x1e)'
 
 export function parseCommitLog(out: string): LogEntry[] {
   return out
     .split('\n')
     .filter(Boolean)
     .map((l) => {
-      const [sha, author, date, subject, parents, email] = l.split('\x1f')
-      return { sha, author, ...(email ? { email } : {}), date, subject, parents: parents ? parents.split(' ') : [] }
+      const [sha, author, date, subject, parents, email, trailers] = l.split('\x1f')
+      const coAuthors = uniqueCoAuthors((trailers ?? '').split('\x1e').map(parseCoAuthor))
+      return { sha, author, ...(email ? { email } : {}), date, subject, parents: parents ? parents.split(' ') : [], ...(coAuthors.length ? { coAuthors } : {}) }
     })
 }
 
