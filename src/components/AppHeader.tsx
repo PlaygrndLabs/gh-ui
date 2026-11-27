@@ -316,6 +316,13 @@ function AccountPanel({ onClose }: { onClose(): void }) {
   const { accounts, active, rejected, signOut } = useAuth()
   const switchTo = useSwitchAccount()
   const navigate = useNavigate()
+  const { octokit, key } = useGitHub()
+  // Each opens its profile here, the way to an organization's repositories, people and projects.
+  const orgs = useQuery({
+    queryKey: [key, 'viewer-orgs'],
+    staleTime: 5 * 60_000,
+    queryFn: async () => (await octokit.rest.orgs.listForAuthenticatedUser({ per_page: 100 })).data,
+  })
   if (!active) return null
   const { login, host } = active
   const go = (to: string) => {
@@ -388,13 +395,31 @@ function AccountPanel({ onClose }: { onClose(): void }) {
           Your gists
           {externalMark}
         </ActionList.Item>
-        <ActionList.Item onSelect={() => external('/settings/organizations')}>
-          <ActionList.LeadingVisual>
-            <OrganizationIcon />
-          </ActionList.LeadingVisual>
-          Your organizations
-          {externalMark}
-        </ActionList.Item>
+        {orgs.data?.length ? (
+          <>
+            <ActionList.Divider />
+            <ActionList.Group>
+              <ActionList.GroupHeading as="h3">Your organizations</ActionList.GroupHeading>
+              {orgs.data.map((o) => (
+                <ActionList.Item key={o.login} onSelect={() => go(`/${o.login}`)}>
+                  <ActionList.LeadingVisual>
+                    <Avatar src={o.avatar_url} size={16} square alt="" />
+                  </ActionList.LeadingVisual>
+                  {o.login}
+                </ActionList.Item>
+              ))}
+            </ActionList.Group>
+          </>
+        ) : (
+          // None listed (or the token cannot list them): github.com's own page still can.
+          <ActionList.Item onSelect={() => external('/settings/organizations')}>
+            <ActionList.LeadingVisual>
+              <OrganizationIcon />
+            </ActionList.LeadingVisual>
+            Your organizations
+            {externalMark}
+          </ActionList.Item>
+        )}
         <ActionList.Divider />
         <ActionList.Item onSelect={() => go('/settings')}>
           <ActionList.LeadingVisual>
