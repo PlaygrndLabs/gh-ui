@@ -27,7 +27,7 @@ import { useGitHub, errorMessage } from '../lib/github'
 import { compactNumber, plural } from '../lib/format'
 import { openExternal } from '../lib/platform'
 import { webUrl } from '../lib/links'
-import { projectPath } from '../lib/projects'
+import { isScopeError, projectPath } from '../lib/projects'
 import { useAgentPageContext } from '../lib/agent/AgentProvider'
 import { Blankslate, ErrorBox, Loading, UserAvatar } from '../components/Bits'
 import { Markdown } from '../components/Markdown'
@@ -343,7 +343,7 @@ function UserProfile({ u }: { u: ProfileUser }) {
             ) : tab === 'stars' ? (
               <StarsTab login={login} />
             ) : tab === 'projects' ? (
-              <ProjectsTab login={login} kind="user" count={x?.projectsV2.totalCount} />
+              <ProjectsTab login={login} kind="user" count={x?.projectsV2.totalCount} withOrgs={isSelf} />
             ) : tab === 'followers' || tab === 'following' ? (
               <PeopleTab key={tab} login={login} kind={tab} />
             ) : (
@@ -855,15 +855,50 @@ function StarsTab({ login }: { login: string }) {
   )
 }
 
-function ProjectsTab({ login, kind, count }: { login: string; kind: 'user' | 'organization'; count?: number }) {
+interface OwnerProject {
+  number: number
+  title: string
+  shortDescription: string | null
+  url: string
+  closed: boolean
+  updatedAt: string
+}
+const OWNER_PROJECT = 'number title shortDescription url closed updatedAt'
+
+const needsProjectScope = (err: unknown) => isScopeError(err) || /scope/i.test(errorMessage(err))
+
+function ProjectRows({ owner, kind, list }: { owner: string; kind: 'org' | 'user'; list: OwnerProject[] }) {
+  return (
+    <>
+      {list.map((p) => (
+        <div key={p.number} className="Box-row hoverable">
+          <TableIcon className="fg-muted" />
+          <div className="flex-1" style={{ minWidth: 0 }}>
+            <Link to={projectPath({ kind, owner }, p.number)} className="Box-row-link">
+              {p.title}
+            </Link>{' '}
+            {p.closed && <Label variant="done">Closed</Label>}
+            <div className="Box-row-meta">
+              #{p.number} updated <RelativeTime date={new Date(p.updatedAt)} />
+              {p.shortDescription && <> · {p.shortDescription}</>}
+            </div>
+          </div>
+        </div>
+      ))}
+    </>
+  )
+}
+
+/** `withOrgs` is the viewer's own tab: their organizations' projects follow their own. */
+function ProjectsTab({ login, kind, count, withOrgs }: { login: string; kind: 'user' | 'organization'; count?: number; withOrgs?: boolean }) {
   const { octokit, key } = useGitHub()
   const projects = useQuery({
     queryKey: [key, 'owner-projects', kind, login],
     // The count needs no scope, the list needs read:project: skip the request when there is nothing to list.
     enabled: count !== 0,
     queryFn: async () => {
-      const res: Record<string, { projectsV2: { nodes: Array<{ number: number; title: string; shortDescription: string | null; url: string; closed: boolean; updatedAt: string }> } }> = await octokit.graphql(
-        `query($login:String!){ ${kind}(login:$login){ projectsV2(first:50, orderBy:{field:UPDATED_AT, direction:DESC}){ nodes{ number title shortDescription url closed updatedAt } } } }`,
+      const res: Record<string, { projectsV2: { nodes: OwnerProject[] } }> = await octokit.graphql(
+        `query($login:String!){ ${kind}(login:$login){ projectsV2(first:50, orderBy:{field:UPDATED_AT, direction:DESC}){ nodes{ ${OWNER_PROJECT} } } } }`,
         { login },
       )
       return res[kind].projectsV2.nodes
@@ -871,7 +906,7 @@ function ProjectsTab({ login, kind, count }: { login: string; kind: 'user' | 'or
   })
   if (projects.isLoading) return <Loading />
   if (projects.error) {
-    return /scope|read:project|INSUFFICIENT/i.test(errorMessage(projects.error)) ? (
+    return needsProjectScope(projects.error) ? (
       <Blankslate icon={<TableIcon size={24} />} title="Projects need the read:project scope">
         Add the read:project scope (classic token) or Projects read access (fine-grained) to list {login}’s projects.
       </Blankslate>
@@ -881,28 +916,71 @@ function ProjectsTab({ login, kind, count }: { login: string; kind: 'user' | 'or
   }
   const list = projects.data ?? []
   return (
-    <div className="Box">
-      <div className="Box-header compact text-bold">Projects</div>
-      {list.length === 0 ? (
-        <Blankslate icon={<TableIcon size={24} />} title="There aren't any projects yet" />
-      ) : (
-        list.map((p) => (
-          <div key={p.number} className="Box-row hoverable">
-            <TableIcon className="fg-muted" />
-            <div className="flex-1" style={{ minWidth: 0 }}>
-              <Link to={projectPath({ kind: kind === 'organization' ? 'org' : 'user', owner: login }, p.number)} className="Box-row-link">
-                {p.title}
-              </Link>{' '}
-              {p.closed && <Label variant="done">Closed</Label>}
-              <div className="Box-row-meta">
-                #{p.number} updated <RelativeTime date={new Date(p.updatedAt)} />
-                {p.shortDescription && <> · {p.shortDescription}</>}
-              </div>
-            </div>
+    <>
+      <div className="Box">
+        <div className="Box-header compact text-bold">Projects</div>
+        {list.length === 0 ? <Blankslate icon={<TableIcon size={24} />} title="There aren't any projects yet" /> : <ProjectRows owner={login} kind={kind === 'organization' ? 'org' : 'user'} list={list} />}
+      </div>
+      {withOrgs && <OrgProjects />}
+    </>
+  )
+}
+
+interface OrgWithProjects {
+  login: string
+  avatarUrl: string
+  /** Null when the organization refused this token, as one that wants SSO authorization does. */
+  projectsV2: { totalCount: number; nodes: OwnerProject[] } | null
+}
+
+/** The projects of the viewer's organizations, a box per organization: most projects live under one. */
+function OrgProjects() {
+  const { octokit, key } = useGitHub()
+  const orgs = useQuery({
+    queryKey: [key, 'viewer-org-projects'],
+    queryFn: async () => {
+      type Res = { viewer: { organizations: { nodes: Array<OrgWithProjects | null> } } }
+      let res: Res
+      try {
+        res = await octokit.graphql(`query{ viewer{ organizations(first:50){ nodes{ login avatarUrl projectsV2(first:20, orderBy:{field:UPDATED_AT, direction:DESC}){ totalCount nodes{ ${OWNER_PROJECT} } } } } } }`)
+      } catch (e) {
+        // One organization refusing the token fails the request but still answers for the others.
+        const partial = (e as { data?: Res | null }).data
+        if (needsProjectScope(e) || !partial?.viewer?.organizations) throw e
+        res = partial
+      }
+      return res.viewer.organizations.nodes.filter((o): o is OrgWithProjects => !!o && (!o.projectsV2 || o.projectsV2.nodes.length > 0))
+    },
+  })
+  if (orgs.isLoading) return <Loading />
+  if (orgs.error) {
+    return needsProjectScope(orgs.error) ? (
+      <Blankslate icon={<TableIcon size={24} />} title="Organization projects need the read:project scope">
+        Add the read:project scope (classic token) or Projects read access (fine-grained) to list your organizations’ projects.
+      </Blankslate>
+    ) : (
+      <ErrorBox error={orgs.error} />
+    )
+  }
+  return (
+    <>
+      {(orgs.data ?? []).map((o) => (
+        <div key={o.login} className="Box mt-3">
+          <div className="Box-header compact flex-center gap-2">
+            <UserAvatar login={o.login} src={o.avatarUrl} size={20} square />
+            <Link to={`/${o.login}?tab=projects`} className="Box-row-link text-bold">
+              {o.login}
+            </Link>
+            {o.projectsV2 && o.projectsV2.totalCount > o.projectsV2.nodes.length && (
+              <Link to={`/${o.login}?tab=projects`} className="text-small" style={{ marginLeft: 'auto' }}>
+                All {o.projectsV2.totalCount} projects
+              </Link>
+            )}
           </div>
-        ))
-      )}
-    </div>
+          {o.projectsV2 ? <ProjectRows owner={o.login} kind="org" list={o.projectsV2.nodes} /> : <div className="Box-row fg-muted">{o.login} did not let this token read its projects. It may need SSO authorization or access to this organization.</div>}
+        </div>
+      ))}
+    </>
   )
 }
 
