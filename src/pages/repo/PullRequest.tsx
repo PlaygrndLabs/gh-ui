@@ -164,13 +164,9 @@ function PullRequestView() {
             </h1>
             <span className="pr-title-actions flex-center gap-1 shrink-0" style={{ marginTop: 6 }}>
               {canEdit && <IconButton size="small" variant="invisible" icon={PencilIcon} aria-label="Edit title" onClick={() => (setTitle(pr.title), setEditingTitle(true))} />}
-              {/* The desktop app's tab row links to the page on show. */}
-              {!isNative && (
-                <>
-                  <CopyButton text={pr.html_url} label="Copy pull request link" icon={LinkIcon} />
-                  <IconButton size="small" variant="invisible" icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/pull/${number}`))} />
-                </>
-              )}
+              <CopyButton text={pr.html_url} label="Copy pull request link" icon={LinkIcon} />
+              {/* The desktop app's tab row opens the page on show in the browser. */}
+              {!isNative && <IconButton size="small" variant="invisible" icon={LinkExternalIcon} aria-label="Open on GitHub" onClick={() => openExternal(webUrl(account.host, `/${owner}/${repo}/pull/${number}`))} />}
               <span style={{ width: 4 }} />
               <PullStateActions pr={pr} owner={owner} repo={repo} />
               <CheckoutMenu pr={pr} owner={owner} repo={repo} />
